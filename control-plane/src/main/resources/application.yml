@@ -89,3 +89,46 @@ logging:
   level:
     com.airflow.platform: INFO
     org.springframework: WARN
+
+---
+# ECS deployment profile configuration (for test deployments)
+spring:
+  config:
+    activate:
+      on-profile: ecs
+
+  datasource:
+    url: jdbc:h2:mem:controlplane
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+# Deployment provider configuration
+deployment:
+  provider: ecs
+
+# AWS configuration
+aws:
+  region: us-east-1
+  ecs:
+    cluster-prefix: managed-airflow
+    task-execution-role-arn: arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole
+    task-role-arn: arn:aws:iam::YOUR_ACCOUNT_ID:role/airflowTaskRole
+    postgres-host: airflow-postgres.YOUR_REGION.rds.amazonaws.com
+    redis-host: airflow-redis.YOUR_REGION.cache.amazonaws.com
+  vpc:
+    subnet-ids:
+      - subnet-xxxxxxxx
+      - subnet-yyyyyyyy
+    security-group-ids:
+      - sg-xxxxxxxxx
+
+logging:
+  level:
+    com.airflow.platform: INFO
+    org.springframework: INFO
+    software.amazon.awssdk: WARN

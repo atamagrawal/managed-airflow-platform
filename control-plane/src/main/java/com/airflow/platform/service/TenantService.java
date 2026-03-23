@@ -4,9 +4,11 @@ import com.airflow.platform.dto.TenantCreateRequest;
 import com.airflow.platform.dto.TenantResponse;
 import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.Tenant;
+import com.airflow.platform.provider.CloudProvider;
 import com.airflow.platform.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +18,7 @@ import java.util.stream.Collectors;
 
 /**
  * Service for managing tenants
+ * Supports multiple cloud providers (Kubernetes, AWS ECS, etc.)
  */
 @Service
 @RequiredArgsConstructor
@@ -23,7 +26,9 @@ import java.util.stream.Collectors;
 public class TenantService {
 
     private final TenantRepository tenantRepository;
-    private final KubernetesService kubernetesService;
+
+    @Autowired(required = false)
+    private CloudProvider cloudProvider;
 
     @Transactional
     public TenantResponse createTenant(TenantCreateRequest request) {
@@ -54,11 +59,11 @@ public class TenantService {
         tenant = tenantRepository.save(tenant);
 
         try {
-            // Create Kubernetes namespace for the tenant
-            kubernetesService.createNamespace(namespace, tenantId);
+            // Create namespace/cluster for the tenant using cloud provider
+            cloudProvider.createNamespace(tenant);
             tenant.setStatus(Tenant.TenantStatus.ACTIVE);
             tenant = tenantRepository.save(tenant);
-            log.info("Tenant created successfully: {}", tenantId);
+            log.info("Tenant created successfully: {} with provider: {}", tenantId, cloudProvider.getProviderType());
         } catch (Exception e) {
             log.error("Failed to create namespace for tenant: {}", tenantId, e);
             tenant.setStatus(Tenant.TenantStatus.PENDING);
@@ -88,9 +93,9 @@ public class TenantService {
         Tenant tenant = tenantRepository.findByTenantId(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found: " + tenantId));
 
-        // Delete Kubernetes namespace
+        // Delete namespace/cluster using cloud provider
         try {
-            kubernetesService.deleteNamespace(tenant.getKubernetesNamespace());
+            cloudProvider.deleteNamespace(tenant);
         } catch (Exception e) {
             log.error("Failed to delete namespace for tenant: {}", tenantId, e);
         }

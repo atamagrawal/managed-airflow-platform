@@ -6,19 +6,23 @@ import com.airflow.platform.exception.DeploymentException;
 import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.AirflowDeployment;
 import com.airflow.platform.model.Tenant;
+import com.airflow.platform.provider.DeploymentProvider;
 import com.airflow.platform.repository.AirflowDeploymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
  * Service for managing Airflow deployments
+ * Supports multiple deployment providers (Kubernetes/Helm, AWS ECS, etc.)
  */
 @Service
 @RequiredArgsConstructor
@@ -27,7 +31,12 @@ public class AirflowDeploymentService {
 
     private final AirflowDeploymentRepository deploymentRepository;
     private final TenantService tenantService;
-    private final HelmService helmService;
+
+    @Autowired(required = false)
+    private DeploymentProvider deploymentProvider;
+
+    @Autowired(required = false)
+    private ECSScalingManager ecsScalingManager;
 
     @Transactional
     public DeploymentResponse createDeployment(DeploymentCreateRequest request) {
@@ -63,19 +72,24 @@ public class AirflowDeploymentService {
 
         deployment = deploymentRepository.save(deployment);
 
-        // Deploy via Helm asynchronously
+        // Deploy via deployment provider (Helm/Kubernetes or ECS)
         final AirflowDeployment finalDeployment = deployment;
         try {
             deployment.setStatus(AirflowDeployment.DeploymentStatus.DEPLOYING);
             deploymentRepository.save(deployment);
 
-            helmService.deployAirflow(deployment);
+            deploymentProvider.deploy(deployment);
+
+            // Configure auto-scaling for ECS if applicable
+            if (ecsScalingManager != null && "ecs".equals(deploymentProvider.getProviderType())) {
+                ecsScalingManager.configureAutoScaling(deployment);
+            }
 
             deployment.setStatus(AirflowDeployment.DeploymentStatus.RUNNING);
             deployment.setDeployedAt(LocalDateTime.now());
 
             // Set webserver URL
-            String webserverUrl = generateWebserverUrl(deployment);
+            String webserverUrl = deploymentProvider.getWebserverUrl(deployment);
             deployment.setWebserverUrl(webserverUrl);
 
             deployment = deploymentRepository.save(deployment);
@@ -120,7 +134,12 @@ public class AirflowDeploymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
 
         try {
-            helmService.uninstallAirflow(deployment);
+            // Remove auto-scaling for ECS if applicable
+            if (ecsScalingManager != null && "ecs".equals(deploymentProvider.getProviderType())) {
+                ecsScalingManager.removeAutoScaling(deployment);
+            }
+
+            deploymentProvider.uninstall(deployment);
             deployment.setStatus(AirflowDeployment.DeploymentStatus.DELETED);
             deploymentRepository.save(deployment);
             log.info("Airflow deployment deleted successfully: {}", deploymentId);
@@ -153,7 +172,13 @@ public class AirflowDeploymentService {
         deployment = deploymentRepository.save(deployment);
 
         try {
-            helmService.upgradeAirflow(deployment);
+            deploymentProvider.upgrade(deployment);
+
+            // Update auto-scaling for ECS if applicable
+            if (ecsScalingManager != null && "ecs".equals(deploymentProvider.getProviderType())) {
+                ecsScalingManager.updateAutoScaling(deployment, request.getMinWorkers(), request.getMaxWorkers());
+            }
+
             deployment.setStatus(AirflowDeployment.DeploymentStatus.RUNNING);
             deployment = deploymentRepository.save(deployment);
             log.info("Airflow deployment updated successfully: {}", deploymentId);
@@ -182,10 +207,4 @@ public class AirflowDeploymentService {
         return deploymentId;
     }
 
-    private String generateWebserverUrl(AirflowDeployment deployment) {
-        if (deployment.getIngressHost() != null && !deployment.getIngressHost().isEmpty()) {
-            return "https://" + deployment.getIngressHost();
-        }
-        return "http://" + deployment.getHelmReleaseName() + "-webserver." + deployment.getNamespace() + ".svc.cluster.local:8080";
-    }
 }

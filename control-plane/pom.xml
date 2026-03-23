@@ -24,6 +24,7 @@
         <java.version>17</java.version>
         <kubernetes.client.version>6.9.2</kubernetes.client.version>
         <springdoc.version>2.3.0</springdoc.version>
+        <aws.sdk.version>2.21.0</aws.sdk.version>
     </properties>
 
     <dependencies>
@@ -58,6 +59,43 @@
             <groupId>io.kubernetes</groupId>
             <artifactId>client-java</artifactId>
             <version>${kubernetes.client.version}</version>
+        </dependency>
+
+        <!-- AWS SDK v2 Dependencies -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ecs</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>secretsmanager</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>elasticloadbalancingv2</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>applicationautoscaling</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>regions</artifactId>
+            <version>${aws.sdk.version}</version>
         </dependency>
 
         <!-- PostgreSQL Driver -->
