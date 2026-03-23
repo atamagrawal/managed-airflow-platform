@@ -7,12 +7,14 @@ import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.applicationautoscaling.ApplicationAutoScalingClient;
+import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ecs.EcsClient;
 import software.amazon.awssdk.services.elasticloadbalancingv2.ElasticLoadBalancingV2Client;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import software.amazon.awssdk.services.ssm.SsmClient;
 
 /**
- * AWS SDK client configuration
+ * AWS SDK client configuration for ECS deployments
  * Only active when deployment.provider is set to "ecs"
  */
 @Configuration
@@ -49,6 +51,34 @@ public class AWSConfig {
     @Bean
     public ApplicationAutoScalingClient applicationAutoScalingClient() {
         return ApplicationAutoScalingClient.builder()
+                .region(Region.of(awsRegion))
+                .credentialsProvider(DefaultCredentialsProvider.create())
+                .build();
+    }
+}
+
+/**
+ * AWS SDK client configuration for EC2 deployments
+ * Only active when deployment.provider is set to "ec2"
+ */
+@Configuration
+@ConditionalOnProperty(name = "deployment.provider", havingValue = "ec2")
+class EC2AWSConfig {
+
+    @Value("${aws.region:us-east-1}")
+    private String awsRegion;
+
+    @Bean
+    public Ec2Client ec2Client() {
+        return Ec2Client.builder()
+                .region(Region.of(awsRegion))
+                .credentialsProvider(DefaultCredentialsProvider.create())
+                .build();
+    }
+
+    @Bean
+    public SsmClient ssmClient() {
+        return SsmClient.builder()
                 .region(Region.of(awsRegion))
                 .credentialsProvider(DefaultCredentialsProvider.create())
                 .build();

@@ -132,3 +132,42 @@ logging:
     com.airflow.platform: INFO
     org.springframework: INFO
     software.amazon.awssdk: WARN
+
+---
+# EC2 deployment profile configuration (for test/dev deployments)
+spring:
+  config:
+    activate:
+      on-profile: ec2
+
+  datasource:
+    url: jdbc:h2:mem:controlplane
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+# Deployment provider configuration
+deployment:
+  provider: ec2
+
+# AWS configuration
+aws:
+  region: us-east-1
+  ec2:
+    ami-id: ami-xxxxxxxxx  # Amazon Linux 2 AMI ID for your region
+    instance-type: t3.medium
+    key-name: your-key-pair-name
+    subnet-id: subnet-xxxxxxxxx
+    security-group-id: sg-xxxxxxxxx
+    iam-instance-profile: EC2AirflowInstanceProfile
+    command-timeout: 300
+
+logging:
+  level:
+    com.airflow.platform: INFO
+    org.springframework: INFO
+    software.amazon.awssdk: WARN

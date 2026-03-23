@@ -1,23 +1,34 @@
 # Managed Airflow Platform
 
-A production-ready, multi-cloud, multi-tenant platform for deploying and managing Apache Airflow instances on Kubernetes, similar to Astronomer.
+A production-ready, multi-cloud, multi-tenant platform for deploying and managing Apache Airflow instances across **Kubernetes, AWS ECS, and AWS EC2**, similar to Astronomer.
 
 ## Overview
 
-The Managed Airflow Platform provides a complete solution for organizations to deploy, manage, and scale Apache Airflow across multiple cloud providers. Built with Java Spring Boot and React, it offers a powerful control plane for managing Airflow deployments with features like auto-scaling, multi-tenancy, and comprehensive monitoring.
+The Managed Airflow Platform provides a complete solution for organizations to deploy, manage, and scale Apache Airflow across multiple cloud providers and deployment targets. Built with Java Spring Boot and React, it offers a powerful control plane for managing Airflow deployments with features like auto-scaling, multi-tenancy, and comprehensive monitoring.
+
+### 🎯 Multiple Deployment Options
+
+Choose the deployment option that fits your needs:
+
+- **EC2 + Docker** - Simplest option for dev/test (~$35/month per tenant)
+- **AWS ECS** - Managed containers for staging/production (~$70/month per tenant)
+- **Kubernetes** - Enterprise-scale with multi-cloud support (~$200/month cluster)
+
+See [DEPLOYMENT_OPTIONS.md](./DEPLOYMENT_OPTIONS.md) for detailed comparison.
 
 ## Key Features
 
-- **Multi-Tenant Architecture** - Isolated namespaces for each tenant with dedicated Airflow deployments
-- **Multi-Cloud Support** - Deploy on AWS EKS, Google GKE, Azure AKS, or on-premises Kubernetes
-- **Auto-Scaling** - KEDA-based worker autoscaling based on queue depth
+- **Multiple Deployment Options** - Choose from EC2+Docker, AWS ECS, or Kubernetes based on your needs
+- **Multi-Tenant Architecture** - Isolated environments for each tenant with dedicated Airflow deployments
+- **Multi-Cloud Support** - Deploy on AWS (EKS/ECS/EC2), Google GKE, Azure AKS, or on-premises
+- **Auto-Scaling** - KEDA (K8s), Application Auto Scaling (ECS), or manual (EC2)
 - **Control Plane UI** - React-based web interface for managing tenants and deployments
 - **REST API** - Complete API for programmatic management
-- **Kubernetes Native** - Leverages Kubernetes for orchestration and isolation
-- **Helm Integration** - Uses official Apache Airflow Helm charts
+- **Flexible Deployment** - Docker Compose, ECS Task Definitions, or Helm Charts
 - **Multiple Executor Support** - Local, Celery, Kubernetes, and hybrid executors
 - **Resource Management** - Configurable CPU and memory allocations per component
 - **Monitoring Ready** - Built-in health checks and metrics endpoints
+- **Provider Abstraction** - Switch between deployment providers with configuration change
 
 ## Architecture
 
@@ -60,14 +71,23 @@ For detailed architecture, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Prerequisites
 
+**Common:**
 - Java 17+
 - Maven 3.8+
-- Node.js 18+
-- Kubernetes cluster (Minikube, EKS, GKE, AKS)
-- kubectl
-- Helm 3.x
+- Node.js 18+ (optional, for frontend)
+- AWS CLI (for ECS/EC2 deployments)
 
-### Local Development
+**Deployment-specific:**
+- **Kubernetes**: kubectl, Helm 3.x, K8s cluster (Minikube, EKS, GKE, AKS)
+- **ECS**: AWS account, ECS Fargate, RDS, ElastiCache
+- **EC2**: AWS account, EC2, SSH key pair
+
+Choose your deployment option:
+- 📖 [EC2 Setup Guide](./infrastructure/ec2/README.md) - Simplest, lowest cost
+- 📖 [ECS Setup Guide](./infrastructure/ecs/README.md) - Managed containers
+- 📖 [Kubernetes Setup](#local-development) - See below for K8s setup
+
+### Kubernetes Local Development
 
 1. **Clone the repository**
 
@@ -223,6 +243,7 @@ managed-airflow-platform/
 - **Spring Data JPA** - Data access
 - **Spring Security** - Security framework
 - **Kubernetes Java Client** - K8s integration
+- **AWS SDK v2** - ECS and EC2 integration
 - **PostgreSQL** - Database (production)
 - **H2** - Database (development)
 - **Maven** - Build tool
@@ -235,9 +256,13 @@ managed-airflow-platform/
 - **Recharts** - Data visualization
 
 ### Infrastructure
-- **Kubernetes** - Container orchestration
-- **Helm** - Package manager
-- **KEDA** - Event-driven autoscaling
+- **Kubernetes** - Container orchestration (K8s deployments)
+- **AWS ECS** - Managed container service (ECS deployments)
+- **AWS EC2** - Virtual machines with Docker (EC2 deployments)
+- **Helm** - Kubernetes package manager
+- **Docker Compose** - Multi-container application deployment (EC2)
+- **KEDA** - Event-driven autoscaling (Kubernetes)
+- **AWS Systems Manager** - Remote EC2 management
 - **Apache Airflow** - Workflow orchestration
 - **PostgreSQL** - Airflow metadata database
 - **Redis** - Celery message broker
@@ -426,6 +451,14 @@ For detailed troubleshooting, see [USER_GUIDE.md](docs/USER_GUIDE.md#monitoring-
 
 ## Roadmap
 
+### Completed Features
+
+- [x] Multiple deployment options (Kubernetes, ECS, EC2)
+- [x] Provider abstraction for multi-cloud support
+- [x] Docker Compose-based deployment
+- [x] AWS ECS with Fargate support
+- [x] Auto-scaling across all platforms
+
 ### Planned Features
 
 - [ ] DAG management (Git integration)
@@ -438,6 +471,7 @@ For detailed troubleshooting, see [USER_GUIDE.md](docs/USER_GUIDE.md#monitoring-
 - [ ] CI/CD integration for DAGs
 - [ ] Advanced authentication (SSO, MFA)
 - [ ] Resource quota management
+- [ ] Additional cloud providers (GCP, Azure)
 
 ## License
 
@@ -458,11 +492,22 @@ This project is licensed under the Apache License 2.0 - see the LICENSE file for
 - [Spring Boot](https://spring.io/projects/spring-boot) - Application framework
 - [React](https://reactjs.org/) - UI framework
 
+## Documentation
+
+- **[Deployment Options Comparison](./DEPLOYMENT_OPTIONS.md)** - Choose the right deployment option
+- **[ECS Implementation Guide](./ECS_IMPLEMENTATION.md)** - Deep dive into ECS deployment
+- **[EC2 Implementation Guide](./EC2_IMPLEMENTATION.md)** - Deep dive into EC2 deployment
+- **[ECS Infrastructure Setup](./infrastructure/ecs/README.md)** - ECS deployment guide
+- **[EC2 Infrastructure Setup](./infrastructure/ec2/README.md)** - EC2 deployment guide
+
 ## Related Projects
 
 - [Apache Airflow](https://github.com/apache/airflow)
 - [Official Airflow Helm Chart](https://github.com/apache/airflow/tree/main/chart)
 - [KEDA](https://github.com/kedacore/keda)
+- [Docker Compose](https://docs.docker.com/compose/)
+- [AWS ECS](https://aws.amazon.com/ecs/)
+- [AWS Systems Manager](https://aws.amazon.com/systems-manager/)
 
 ## Authors
 
