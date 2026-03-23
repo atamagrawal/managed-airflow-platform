@@ -43,20 +43,38 @@ public class ECSDeploymentProvider implements DeploymentProvider {
     @Value("${aws.vpc.security-group-ids}")
     private List<String> securityGroupIds;
 
-    @Value("${aws.ecs.postgres-host}")
-    private String postgresHost;
+    @Value("${aws.efs.file-system-id}")
+    private String efsFileSystemId;
 
-    @Value("${aws.ecs.redis-host}")
-    private String redisHost;
+    @Value("${aws.efs.access-point-id:}")
+    private String efsAccessPointId;
 
     @Override
     public void deploy(AirflowDeployment deployment) {
-        log.info("Deploying Airflow to ECS: {}", deployment.getDeploymentId());
+        log.info("Deploying Airflow to ECS with containerized PostgreSQL and Redis: {}", deployment.getDeploymentId());
 
         try {
             String clusterName = getClusterName(deployment);
 
-            // Register task definitions for each component
+            // Register task definitions for database and message broker
+            String postgresTaskDef = registerPostgresTaskDefinition(deployment);
+            String redisTaskDef = null;
+
+            if (deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY ||
+                deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY_KUBERNETES) {
+                redisTaskDef = registerRedisTaskDefinition(deployment);
+            }
+
+            // Create database and message broker services first
+            createPostgresService(deployment, clusterName, postgresTaskDef);
+            if (redisTaskDef != null) {
+                createRedisService(deployment, clusterName, redisTaskDef);
+            }
+
+            // Wait for database to be ready
+            waitForServiceStable(clusterName, getServiceName(deployment, "postgres"));
+
+            // Register task definitions for Airflow components
             String schedulerTaskDef = registerSchedulerTaskDefinition(deployment);
             String webserverTaskDef = registerWebserverTaskDefinition(deployment);
             String workerTaskDef = null;
@@ -66,7 +84,7 @@ public class ECSDeploymentProvider implements DeploymentProvider {
                 workerTaskDef = registerWorkerTaskDefinition(deployment);
             }
 
-            // Create ECS services
+            // Create Airflow services
             createSchedulerService(deployment, clusterName, schedulerTaskDef);
             createWebserverService(deployment, clusterName, webserverTaskDef);
 
@@ -116,22 +134,28 @@ public class ECSDeploymentProvider implements DeploymentProvider {
         try {
             String clusterName = getClusterName(deployment);
 
-            // Delete services
+            // Delete Airflow services
             deleteService(clusterName, getServiceName(deployment, "scheduler"));
             deleteService(clusterName, getServiceName(deployment, "webserver"));
 
             if (deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY ||
                 deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY_KUBERNETES) {
                 deleteService(clusterName, getServiceName(deployment, "worker"));
+                deleteService(clusterName, getServiceName(deployment, "redis"));
             }
+
+            // Delete database service
+            deleteService(clusterName, getServiceName(deployment, "postgres"));
 
             // Deregister task definitions
             deregisterTaskDefinition(getTaskDefinitionFamily(deployment, "scheduler"));
             deregisterTaskDefinition(getTaskDefinitionFamily(deployment, "webserver"));
+            deregisterTaskDefinition(getTaskDefinitionFamily(deployment, "postgres"));
 
             if (deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY ||
                 deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY_KUBERNETES) {
                 deregisterTaskDefinition(getTaskDefinitionFamily(deployment, "worker"));
+                deregisterTaskDefinition(getTaskDefinitionFamily(deployment, "redis"));
             }
 
             log.info("Airflow uninstalled successfully from ECS: {}", deployment.getDeploymentId());
@@ -203,6 +227,94 @@ public class ECSDeploymentProvider implements DeploymentProvider {
     }
 
     // Helper methods for task definition registration
+
+    private String registerPostgresTaskDefinition(AirflowDeployment deployment) {
+        String family = getTaskDefinitionFamily(deployment, "postgres");
+
+        MountPoint mountPoint = MountPoint.builder()
+                .sourceVolume("postgres-data")
+                .containerPath("/var/lib/postgresql/data")
+                .build();
+
+        RegisterTaskDefinitionRequest request = RegisterTaskDefinitionRequest.builder()
+                .family(family)
+                .networkMode(NetworkMode.AWSVPC)
+                .requiresCompatibilities(Compatibility.FARGATE)
+                .cpu("512")
+                .memory("1024")
+                .executionRoleArn(taskExecutionRoleArn)
+                .taskRoleArn(taskRoleArn)
+                .containerDefinitions(
+                        ContainerDefinition.builder()
+                                .name("postgres")
+                                .image("postgres:13")
+                                .environment(
+                                        KeyValuePair.builder().name("POSTGRES_USER").value("airflow").build(),
+                                        KeyValuePair.builder().name("POSTGRES_PASSWORD").value("airflow").build(),
+                                        KeyValuePair.builder().name("POSTGRES_DB").value("airflow").build()
+                                )
+                                .mountPoints(mountPoint)
+                                .portMappings(PortMapping.builder()
+                                        .containerPort(5432)
+                                        .protocol(TransportProtocol.TCP)
+                                        .build())
+                                .logConfiguration(getLogConfiguration(deployment, "postgres"))
+                                .healthCheck(HealthCheck.builder()
+                                        .command("CMD-SHELL", "pg_isready -U airflow")
+                                        .interval(10)
+                                        .timeout(5)
+                                        .retries(5)
+                                        .build())
+                                .build()
+                )
+                .volumes(Volume.builder()
+                        .name("postgres-data")
+                        .efsVolumeConfiguration(EFSVolumeConfiguration.builder()
+                                .fileSystemId(efsFileSystemId)
+                                .transitEncryption(EFSTransitEncryption.ENABLED)
+                                .rootDirectory("/postgres/" + deployment.getDeploymentId())
+                                .build())
+                        .build())
+                .build();
+
+        RegisterTaskDefinitionResponse response = ecsClient.registerTaskDefinition(request);
+        return response.taskDefinition().taskDefinitionArn();
+    }
+
+    private String registerRedisTaskDefinition(AirflowDeployment deployment) {
+        String family = getTaskDefinitionFamily(deployment, "redis");
+
+        RegisterTaskDefinitionRequest request = RegisterTaskDefinitionRequest.builder()
+                .family(family)
+                .networkMode(NetworkMode.AWSVPC)
+                .requiresCompatibilities(Compatibility.FARGATE)
+                .cpu("256")
+                .memory("512")
+                .executionRoleArn(taskExecutionRoleArn)
+                .taskRoleArn(taskRoleArn)
+                .containerDefinitions(
+                        ContainerDefinition.builder()
+                                .name("redis")
+                                .image("redis:7-alpine")
+                                .command("redis-server", "--appendonly", "yes")
+                                .portMappings(PortMapping.builder()
+                                        .containerPort(6379)
+                                        .protocol(TransportProtocol.TCP)
+                                        .build())
+                                .logConfiguration(getLogConfiguration(deployment, "redis"))
+                                .healthCheck(HealthCheck.builder()
+                                        .command("CMD", "redis-cli", "ping")
+                                        .interval(10)
+                                        .timeout(5)
+                                        .retries(5)
+                                        .build())
+                                .build()
+                )
+                .build();
+
+        RegisterTaskDefinitionResponse response = ecsClient.registerTaskDefinition(request);
+        return response.taskDefinition().taskDefinitionArn();
+    }
 
     private String registerSchedulerTaskDefinition(AirflowDeployment deployment) {
         String family = getTaskDefinitionFamily(deployment, "scheduler");
@@ -289,7 +401,8 @@ public class ECSDeploymentProvider implements DeploymentProvider {
     private List<KeyValuePair> getAirflowEnvironment(AirflowDeployment deployment) {
         List<KeyValuePair> env = new ArrayList<>();
 
-        // Database configuration
+        // Database configuration - using containerized postgres with Service Connect
+        String postgresHost = getServiceName(deployment, "postgres") + "." + deployment.getDeploymentId();
         env.add(KeyValuePair.builder().name("AIRFLOW__DATABASE__SQL_ALCHEMY_CONN")
                 .value("postgresql://airflow:airflow@" + postgresHost + ":5432/airflow").build());
 
@@ -297,9 +410,10 @@ public class ECSDeploymentProvider implements DeploymentProvider {
         String executor = getExecutorConfig(deployment.getExecutorType());
         env.add(KeyValuePair.builder().name("AIRFLOW__CORE__EXECUTOR").value(executor).build());
 
-        // Redis configuration (for Celery)
+        // Redis configuration (for Celery) - using containerized redis
         if (deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY ||
             deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY_KUBERNETES) {
+            String redisHost = getServiceName(deployment, "redis") + "." + deployment.getDeploymentId();
             env.add(KeyValuePair.builder().name("AIRFLOW__CELERY__BROKER_URL")
                     .value("redis://" + redisHost + ":6379/0").build());
             env.add(KeyValuePair.builder().name("AIRFLOW__CELERY__RESULT_BACKEND")
@@ -406,6 +520,87 @@ public class ECSDeploymentProvider implements DeploymentProvider {
 
         ecsClient.createService(request);
         log.info("Created worker service: {}", serviceName);
+    }
+
+    private void createPostgresService(AirflowDeployment deployment, String clusterName, String taskDefinition) {
+        String serviceName = getServiceName(deployment, "postgres");
+
+        CreateServiceRequest request = CreateServiceRequest.builder()
+                .cluster(clusterName)
+                .serviceName(serviceName)
+                .taskDefinition(taskDefinition)
+                .desiredCount(1)
+                .launchType(LaunchType.FARGATE)
+                .networkConfiguration(NetworkConfiguration.builder()
+                        .awsvpcConfiguration(AwsVpcConfiguration.builder()
+                                .subnets(subnetIds)
+                                .securityGroups(securityGroupIds)
+                                .assignPublicIp(AssignPublicIp.ENABLED)
+                                .build())
+                        .build())
+                .serviceRegistries(ServiceRegistry.builder()
+                        .registryArn("") // TODO: Configure service discovery
+                        .build())
+                .build();
+
+        ecsClient.createService(request);
+        log.info("Created postgres service: {}", serviceName);
+    }
+
+    private void createRedisService(AirflowDeployment deployment, String clusterName, String taskDefinition) {
+        String serviceName = getServiceName(deployment, "redis");
+
+        CreateServiceRequest request = CreateServiceRequest.builder()
+                .cluster(clusterName)
+                .serviceName(serviceName)
+                .taskDefinition(taskDefinition)
+                .desiredCount(1)
+                .launchType(LaunchType.FARGATE)
+                .networkConfiguration(NetworkConfiguration.builder()
+                        .awsvpcConfiguration(AwsVpcConfiguration.builder()
+                                .subnets(subnetIds)
+                                .securityGroups(securityGroupIds)
+                                .assignPublicIp(AssignPublicIp.ENABLED)
+                                .build())
+                        .build())
+                .build();
+
+        ecsClient.createService(request);
+        log.info("Created redis service: {}", serviceName);
+    }
+
+    private void waitForServiceStable(String clusterName, String serviceName) {
+        log.info("Waiting for service {} to be stable...", serviceName);
+
+        try {
+            int maxAttempts = 60; // 5 minutes max (5 second intervals)
+            int attempt = 0;
+
+            while (attempt < maxAttempts) {
+                DescribeServicesRequest request = DescribeServicesRequest.builder()
+                        .cluster(clusterName)
+                        .services(serviceName)
+                        .build();
+
+                DescribeServicesResponse response = ecsClient.describeServices(request);
+
+                if (!response.services().isEmpty()) {
+                    Service service = response.services().get(0);
+                    if (service.runningCount() > 0 && service.runningCount().equals(service.desiredCount())) {
+                        log.info("Service {} is stable", serviceName);
+                        return;
+                    }
+                }
+
+                Thread.sleep(5000);
+                attempt++;
+            }
+
+            log.warn("Service {} did not become stable within timeout", serviceName);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Interrupted while waiting for service: {}", serviceName, e);
+        }
     }
 
     private void updateService(String clusterName, String serviceName, String taskDefinition) {

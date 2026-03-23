@@ -99,14 +99,14 @@ resource "aws_security_group" "ecs" {
   }
 }
 
-resource "aws_security_group" "database" {
-  name        = "${var.environment_name}-db-sg"
-  description = "Security group for RDS PostgreSQL"
+resource "aws_security_group" "efs" {
+  name        = "${var.environment_name}-efs-sg"
+  description = "Security group for EFS"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 5432
-    to_port         = 5432
+    from_port       = 2049
+    to_port         = 2049
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs.id]
   }
@@ -119,83 +119,50 @@ resource "aws_security_group" "database" {
   }
 
   tags = {
-    Name = "${var.environment_name}-db-sg"
+    Name = "${var.environment_name}-efs-sg"
   }
 }
 
-resource "aws_security_group" "redis" {
-  name        = "${var.environment_name}-redis-sg"
-  description = "Security group for Redis ElastiCache"
-  vpc_id      = aws_vpc.main.id
+# EFS for Persistent Storage (PostgreSQL data)
+resource "aws_efs_file_system" "airflow" {
+  creation_token = "${var.environment_name}-efs"
+  encrypted      = true
 
-  ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  lifecycle_policy {
+    transition_to_ia = "AFTER_30_DAYS"
   }
 
   tags = {
-    Name = "${var.environment_name}-redis-sg"
+    Name = "${var.environment_name}-efs"
   }
 }
 
-# RDS PostgreSQL for Airflow Metadata
-resource "aws_db_subnet_group" "main" {
-  name       = "${var.environment_name}-db-subnet-group"
-  subnet_ids = aws_subnet.public[*].id
+resource "aws_efs_mount_target" "airflow" {
+  count           = 2
+  file_system_id  = aws_efs_file_system.airflow.id
+  subnet_id       = aws_subnet.public[count.index].id
+  security_groups = [aws_security_group.efs.id]
+}
 
-  tags = {
-    Name = "${var.environment_name}-db-subnet-group"
+resource "aws_efs_access_point" "postgres" {
+  file_system_id = aws_efs_file_system.airflow.id
+
+  posix_user {
+    gid = 999
+    uid = 999
   }
-}
 
-resource "aws_db_instance" "airflow" {
-  identifier             = "${var.environment_name}-postgres"
-  engine                 = "postgres"
-  engine_version         = "14.7"
-  instance_class         = var.db_instance_class
-  allocated_storage      = 20
-  storage_type           = "gp2"
-  username               = var.db_username
-  password               = var.db_password
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = [aws_security_group.database.id]
-  publicly_accessible    = false
-  skip_final_snapshot    = true
-  backup_retention_period = 7
-
-  tags = {
-    Name = "${var.environment_name}-postgres"
+  root_directory {
+    path = "/postgres"
+    creation_info {
+      owner_gid   = 999
+      owner_uid   = 999
+      permissions = "755"
+    }
   }
-}
-
-# ElastiCache Redis for Celery Broker
-resource "aws_elasticache_subnet_group" "main" {
-  name       = "${var.environment_name}-redis-subnet-group"
-  subnet_ids = aws_subnet.public[*].id
-}
-
-resource "aws_elasticache_cluster" "redis" {
-  cluster_id           = "${var.environment_name}-redis"
-  engine               = "redis"
-  node_type            = var.redis_node_type
-  num_cache_nodes      = 1
-  parameter_group_name = "default.redis7"
-  engine_version       = "7.0"
-  port                 = 6379
-  security_group_ids   = [aws_security_group.redis.id]
-  subnet_group_name    = aws_elasticache_subnet_group.main.name
 
   tags = {
-    Name = "${var.environment_name}-redis"
+    Name = "${var.environment_name}-postgres-ap"
   }
 }
 

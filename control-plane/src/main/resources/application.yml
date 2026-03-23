@@ -118,8 +118,9 @@ aws:
     cluster-prefix: managed-airflow
     task-execution-role-arn: arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole
     task-role-arn: arn:aws:iam::YOUR_ACCOUNT_ID:role/airflowTaskRole
-    postgres-host: airflow-postgres.YOUR_REGION.rds.amazonaws.com
-    redis-host: airflow-redis.YOUR_REGION.cache.amazonaws.com
+  efs:
+    file-system-id: fs-xxxxxxxxx  # EFS for persistent PostgreSQL data
+    access-point-id: fsap-xxxxxxxxx  # Optional: EFS access point
   vpc:
     subnet-ids:
       - subnet-xxxxxxxx
