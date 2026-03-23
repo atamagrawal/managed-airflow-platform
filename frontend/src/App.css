@@ -1,0 +1,50 @@
+.App {
+  text-align: center;
+}
+
+.site-layout .site-layout-background {
+  background: #fff;
+}
+
+.logo {
+  height: 32px;
+  margin: 16px;
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.ant-layout-sider {
+  background: #001529 !important;
+}
+
+.ant-menu-dark {
+  background: #001529 !important;
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.stats-card {
+  text-align: center;
+}
+
+.stats-card .ant-statistic-title {
+  font-size: 16px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.stats-card .ant-statistic-content {
+  font-size: 32px;
+  font-weight: 600;
+}
+
+.deployment-card {
+  margin-bottom: 16px;
+}
+
+.status-badge {
+  margin-left: 8px;
+}

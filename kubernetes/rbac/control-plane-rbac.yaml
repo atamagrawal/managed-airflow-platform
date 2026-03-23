@@ -1,0 +1,70 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: airflow-control-plane
+  namespace: airflow-control-plane
+  labels:
+    app: managed-airflow-platform
+    component: control-plane
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: airflow-control-plane-role
+  labels:
+    app: managed-airflow-platform
+    component: control-plane
+rules:
+  # Namespace management
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "create", "delete", "watch"]
+
+  # Pod and service management
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "update", "delete", "watch"]
+
+  # Deployment and StatefulSet management
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "create", "update", "delete", "watch"]
+
+  # Ingress management
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "create", "update", "delete", "watch"]
+
+  # RBAC management for tenant namespaces
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "create", "update", "delete"]
+
+  # Service Account management
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "create", "delete"]
+
+  # KEDA ScaledObject management
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects", "triggerauthentications"]
+    verbs: ["get", "list", "create", "update", "delete", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: airflow-control-plane-binding
+  labels:
+    app: managed-airflow-platform
+    component: control-plane
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: airflow-control-plane-role
+subjects:
+  - kind: ServiceAccount
+    name: airflow-control-plane
+    namespace: airflow-control-plane

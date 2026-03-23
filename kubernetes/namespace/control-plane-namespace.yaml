@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airflow-control-plane
+  labels:
+    app: managed-airflow-platform
+    component: control-plane

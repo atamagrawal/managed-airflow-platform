@@ -1,0 +1,132 @@
+# Default values for Airflow deployment
+# This file contains default configuration values that can be overridden
+
+airflow:
+  # Airflow version
+  airflowVersion: "2.8.0"
+
+  # Executor type: LocalExecutor, CeleryExecutor, KubernetesExecutor, CeleryKubernetesExecutor
+  executor: "CeleryExecutor"
+
+  # Airflow configuration
+  config:
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "True"
+    AIRFLOW__WEBSERVER__RBAC: "True"
+
+  # Database configuration
+  data:
+    metadataConnection:
+      user: airflow
+      pass: airflow
+      protocol: postgresql
+      host: ~
+      port: 5432
+      db: airflow
+
+  # Redis configuration (for CeleryExecutor)
+  redis:
+    enabled: true
+    password: redis123
+
+  # Webserver configuration
+  webserver:
+    replicas: 1
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+    service:
+      type: ClusterIP
+      port: 8080
+
+  # Scheduler configuration
+  scheduler:
+    replicas: 1
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "2Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+
+  # Worker configuration
+  workers:
+    replicas: 1
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "2Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+
+    # KEDA autoscaling configuration
+    keda:
+      enabled: true
+      minReplicaCount: 1
+      maxReplicaCount: 5
+      pollingInterval: 5
+      cooldownPeriod: 30
+      # Scale based on Celery queue length
+      query: "SELECT COUNT(*) FROM task_instance WHERE state='queued'"
+
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClassName: ~
+
+  # Ingress configuration
+  ingress:
+    enabled: false
+    web:
+      host: ""
+      path: "/"
+      annotations:
+        kubernetes.io/ingress.class: "nginx"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      tls:
+        enabled: true
+        secretName: airflow-tls
+
+  # PostgreSQL configuration
+  postgresql:
+    enabled: true
+    auth:
+      username: airflow
+      password: airflow
+      database: airflow
+    primary:
+      persistence:
+        enabled: true
+        size: 10Gi
+
+  # Service Account
+  serviceAccount:
+    create: true
+    name: ~
+
+  # Security
+  securityContext:
+    runAsUser: 50000
+    fsGroup: 0
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  scaledObject:
+    name: airflow-worker-scaler
+    minReplicaCount: 1
+    maxReplicaCount: 5
+    pollingInterval: 5
+    cooldownPeriod: 30
+    triggers:
+      - type: postgresql
+        metadata:
+          targetQueryValue: "1"
+          query: "SELECT COUNT(*) FROM task_instance WHERE state='queued'"
+          connectionFromEnv: AIRFLOW_CONN_METADATA_DB

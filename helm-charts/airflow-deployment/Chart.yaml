@@ -1,0 +1,21 @@
+apiVersion: v2
+name: airflow-deployment
+description: Helm chart for deploying Apache Airflow with KEDA autoscaling
+type: application
+version: 1.0.0
+appVersion: "2.8.0"
+keywords:
+  - airflow
+  - workflow
+  - orchestration
+  - data-pipeline
+home: https://airflow.apache.org/
+sources:
+  - https://github.com/apache/airflow
+maintainers:
+  - name: Platform Team
+    email: support@example.com
+dependencies:
+  - name: airflow
+    version: "1.13.0"
+    repository: "https://airflow.apache.org"

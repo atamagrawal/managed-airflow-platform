@@ -1,0 +1,91 @@
+spring:
+  application:
+    name: managed-airflow-control-plane
+
+  datasource:
+    url: jdbc:h2:mem:controlplane
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+# Helm configuration
+helm:
+  chart:
+    path: ../helm-charts/airflow-deployment
+  repo:
+    name: apache-airflow
+    url: https://airflow.apache.org
+
+# Logging configuration
+logging:
+  level:
+    com.airflow.platform: INFO
+    org.springframework: INFO
+    io.kubernetes: WARN
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# OpenAPI documentation
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
+---
+# Production profile configuration
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/airflow_control_plane
+    driver-class-name: org.postgresql.Driver
+    username: postgres
+    password: ${DB_PASSWORD:postgres}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  h2:
+    console:
+      enabled: false
+
+logging:
+  level:
+    com.airflow.platform: INFO
+    org.springframework: WARN

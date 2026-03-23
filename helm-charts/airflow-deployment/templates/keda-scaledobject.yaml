@@ -1,0 +1,27 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.keda.scaledObject.name | default "airflow-worker-scaler" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: airflow
+    component: worker
+    release: {{ .Release.Name }}
+spec:
+  scaleTargetRef:
+    name: {{ .Release.Name }}-worker
+    kind: StatefulSet
+  minReplicaCount: {{ .Values.keda.scaledObject.minReplicaCount | default 1 }}
+  maxReplicaCount: {{ .Values.keda.scaledObject.maxReplicaCount | default 5 }}
+  pollingInterval: {{ .Values.keda.scaledObject.pollingInterval | default 5 }}
+  cooldownPeriod: {{ .Values.keda.scaledObject.cooldownPeriod | default 30 }}
+  triggers:
+  {{- range .Values.keda.scaledObject.triggers }}
+  - type: {{ .type }}
+    metadata:
+      {{- range $key, $value := .metadata }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+  {{- end }}
+{{- end }}

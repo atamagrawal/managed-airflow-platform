@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database for control plane
+  postgres:
+    image: postgres:15-alpine
+    container_name: control-plane-db
+    environment:
+      POSTGRES_DB: airflow_control_plane
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Control Plane API
+  control-plane:
+    build:
+      context: ./control-plane
+      dockerfile: Dockerfile
+    container_name: airflow-control-plane
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/airflow_control_plane
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres123
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend UI
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: airflow-ui
+    ports:
+      - "3000:80"
+    depends_on:
+      - control-plane
+    environment:
+      REACT_APP_API_URL: http://localhost:8080/api/v1
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: airflow-platform-network
