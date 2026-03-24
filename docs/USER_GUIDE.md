@@ -30,17 +30,42 @@ The dashboard displays:
 
 ## Understanding Deployment Options
 
-The platform supports **three deployment options**. Choose the one that best fits your needs:
+The platform supports **four deployment options**. Choose the one that best fits your needs:
 
 ### Quick Comparison
 
-| Feature | Kubernetes | AWS ECS | AWS EC2 |
-|---------|------------|---------|---------|
-| **Cost** | ~$150/month | ~$137/month | ~$35/month |
-| **Complexity** | Complex | Easy | Easiest |
-| **Auto-Scaling** | Yes | Yes | Manual |
-| **High Availability** | High | Medium | Low |
-| **Best For** | Production | Test/Staging | Dev/Test |
+| Feature | Local | Kubernetes | AWS ECS | AWS EC2 |
+|---------|-------|------------|---------|---------|
+| **Cost** | Free | ~$150/month | ~$137/month | ~$35/month |
+| **Complexity** | Simplest | Complex | Easy | Easier |
+| **Auto-Scaling** | No | Yes | Yes | Manual |
+| **High Availability** | No | High | Medium | Low |
+| **Best For** | Learning/Dev | Production | Test/Staging | Dev/Test |
+
+### Local
+
+**Best for learning and local development**
+
+- Runs entirely on your local machine
+- Zero cost, no cloud resources needed
+- Docker Compose-based deployment
+- Perfect for testing and learning
+- Fast setup and tear-down
+
+**How it works:**
+- Each tenant gets a dedicated directory under `~/airflow-deployments/`
+- Airflow components run via docker-compose
+- PostgreSQL and Redis run as Docker containers
+- Webserver ports dynamically allocated (8080-8180 range)
+- Directory-based isolation between tenants
+
+**Use cases:**
+- Learning the platform
+- Developing and testing DAGs
+- Feature development
+- Demos without cloud resources
+
+📖 **See [LOCAL_TESTING.md](LOCAL_TESTING.md) for detailed local deployment guide**
 
 ### Kubernetes
 
@@ -180,6 +205,12 @@ Deployments are Apache Airflow instances. The deployment process differs slightl
 
 ##### Resource Configuration
 
+**For Local:**
+- Resources are determined by Docker's allocated resources
+- Docker Compose stack includes all components
+- Ports dynamically allocated (8080-8180 for webserver, 5555-5655 for Flower)
+- All components share local machine resources
+
 **For Kubernetes and ECS:**
 - **Scheduler CPU** - CPU allocation (e.g., "1024" = 1 vCPU)
 - **Scheduler Memory** - Memory allocation (e.g., "2048" = 2 GB)
@@ -196,6 +227,39 @@ Deployments are Apache Airflow instances. The deployment process differs slightl
 - Workers scale based on available instance resources
 
 #### Via API
+
+**Local Example:**
+```bash
+curl -X POST http://localhost:8080/api/v1/deployments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantId": "my-company",
+    "deploymentId": "local-dev",
+    "name": "Local Development",
+    "description": "Local development environment",
+    "airflowVersion": "2.8.1",
+    "executorType": "LOCAL",
+    "schedulerCpu": "500",
+    "schedulerMemory": "1024",
+    "webserverCpu": "500",
+    "webserverMemory": "1024",
+    "workerCpu": "500",
+    "workerMemory": "1024",
+    "minWorkers": 1,
+    "maxWorkers": 3
+  }'
+```
+
+**Response:**
+```json
+{
+  "deploymentId": "local-dev",
+  "tenantId": "my-company",
+  "status": "DEPLOYING",
+  "airflowVersion": "2.8.1",
+  "webserverUrl": "http://localhost:8093"
+}
+```
 
 **Kubernetes Example:**
 ```bash
@@ -376,6 +440,37 @@ Look for the `webserverUrl` field in the response.
 
 ### Accessing Airflow by Deployment Option
 
+#### Local
+
+For local deployments, the webserver URL is returned when creating the deployment:
+
+```bash
+# Get webserver URL
+curl http://localhost:8080/api/v1/deployments/{deployment-id} | jq .webserverUrl
+
+# Example output: http://localhost:8093
+```
+
+**Access the UI:**
+- Open the URL in your browser (e.g., `http://localhost:8093`)
+- Each deployment gets a unique port (8080-8180 range)
+
+**Default credentials:**
+- Username: `admin`
+- Password: `admin`
+
+**Monitor logs:**
+```bash
+cd ~/airflow-deployments/{tenant-id}/{deployment-id}
+docker-compose logs -f
+```
+
+**Access container:**
+```bash
+cd ~/airflow-deployments/{tenant-id}/{deployment-id}
+docker-compose exec airflow-webserver bash
+```
+
 #### Kubernetes
 
 **If ingress is configured:**
@@ -460,6 +555,52 @@ http://{tenant-id}-alb.{region}.elb.amazonaws.com
 
 ### Uploading DAGs
 
+#### Local
+
+For local deployments, simply copy DAG files to the deployment directory:
+
+```bash
+# Navigate to DAGs directory
+cd ~/airflow-deployments/{tenant-id}/{deployment-id}/dags
+
+# Copy DAG file
+cp /path/to/your/my_dag.py .
+
+# Or create directly
+cat > my_dag.py << 'EOF'
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 1, 1),
+}
+
+dag = DAG(
+    'my_local_dag',
+    default_args=default_args,
+    description='Example DAG for local testing',
+    schedule_interval=timedelta(days=1),
+)
+
+t1 = BashOperator(
+    task_id='hello_world',
+    bash_command='echo "Hello from local Airflow!"',
+    dag=dag,
+)
+EOF
+```
+
+Airflow automatically detects new DAGs within 30 seconds (default DAG scan interval).
+
+**Verify DAG loaded:**
+```bash
+cd ~/airflow-deployments/{tenant-id}/{deployment-id}
+docker-compose exec airflow-scheduler airflow dags list
+```
+
 #### Kubernetes
 
 **Option 1: Using kubectl cp**
@@ -533,6 +674,36 @@ curl http://localhost:8080/api/v1/deployments/{deploymentId}
 ```
 
 ### Viewing Logs
+
+#### Local
+
+```bash
+cd ~/airflow-deployments/{tenant-id}/{deployment-id}
+
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f airflow-scheduler
+docker-compose logs -f airflow-webserver
+docker-compose logs -f airflow-worker
+
+# Last 100 lines
+docker-compose logs --tail=100 airflow-scheduler
+
+# Follow specific service
+docker-compose logs -f --tail=100 airflow-scheduler
+```
+
+**Check container status:**
+```bash
+docker-compose ps
+```
+
+**Check resource usage:**
+```bash
+docker stats
+```
 
 #### Kubernetes
 

@@ -1,6 +1,6 @@
 # Managed Airflow Platform
 
-A production-ready, multi-cloud, multi-tenant platform for deploying and managing Apache Airflow instances across **Kubernetes, AWS ECS, and AWS EC2**, similar to Astronomer.
+A production-ready, multi-cloud, multi-tenant platform for deploying and managing Apache Airflow instances across **Local, AWS EC2, AWS ECS, and Kubernetes**, similar to Astronomer.
 
 ## Overview
 
@@ -12,8 +12,9 @@ Choose the deployment option that fits your needs:
 
 | Option | Best For | Monthly Cost | Complexity | Auto-Scaling | HA |
 |--------|----------|--------------|------------|--------------|-----|
-| **AWS EC2** | Dev/Test, PoC | ~$35/tenant | Easiest | Manual | Low |
-| **AWS ECS** | Test/Staging, Small Prod | ~$137/tenant | Easy | Yes | Medium |
+| **Local** | Learning, Dev, Testing | Free | Simplest | No | No |
+| **AWS EC2** | Dev/Test, PoC | ~$35/tenant | Easy | Manual | Low |
+| **AWS ECS** | Test/Staging, Small Prod | ~$137/tenant | Medium | Yes | Medium |
 | **Kubernetes** | Production, Enterprise | ~$150/tenant | Complex | Yes | High |
 
 📖 **[Complete Deployment Options Comparison](docs/DEPLOYMENT_OPTIONS.md)**
@@ -21,12 +22,13 @@ Choose the deployment option that fits your needs:
 ## Key Features
 
 ### Deployment Flexibility
-- **Multiple Deployment Options** - Choose from EC2+Docker, AWS ECS Fargate, or Kubernetes based on your needs
-- **Multi-Cloud Support** - Deploy on AWS (EKS/ECS/EC2), Google GKE, Azure AKS, or on-premises
+- **Multiple Deployment Options** - Choose from Local, EC2+Docker, AWS ECS Fargate, or Kubernetes based on your needs
+- **Multi-Cloud Support** - Deploy on AWS (EKS/ECS/EC2), Google GKE, Azure AKS, on-premises, or locally
 - **Provider Abstraction** - Switch between deployment providers with configuration change
 
 ### Multi-Tenancy & Isolation
 - **Tenant Isolation** - Dedicated environments for each tenant
+  - Local: Directory per tenant
   - Kubernetes: Namespace per tenant
   - ECS: Cluster per tenant
   - EC2: Instance per tenant
@@ -36,7 +38,7 @@ Choose the deployment option that fits your needs:
 ### Auto-Scaling
 - **Kubernetes**: KEDA-based auto-scaling on queue depth
 - **ECS**: AWS Application Auto Scaling on CPU/memory metrics
-- **EC2**: Manual scaling via Docker Compose
+- **EC2/Local**: Manual scaling via Docker Compose
 
 ### Management & Monitoring
 - **Control Plane UI** - React-based web interface for managing tenants and deployments
@@ -54,45 +56,42 @@ Choose the deployment option that fits your needs:
 ### High-Level Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Users / Operators                          │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │
-┌───────────────────────────▼──────────────────────────────────────┐
-│                    Control Plane UI (React)                       │
-│  • Tenant Management  • Deployment Management  • Monitoring       │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │
-┌───────────────────────────▼──────────────────────────────────────┐
-│              Control Plane API (Spring Boot)                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │   Provider   │  │   Provider   │  │   Provider   │          │
-│  │  Abstraction │  │  Abstraction │  │  Abstraction │          │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
-└─────────┼──────────────────┼──────────────────┼──────────────────┘
-          │                  │                  │
-          │                  │                  │
-┌─────────▼─────────┐ ┌──────▼────────┐ ┌──────▼─────────┐
-│   Kubernetes      │ │   AWS ECS     │ │   AWS EC2      │
-│                   │ │               │ │                │
-│ ┌───────────────┐ │ │ ┌───────────┐ │ │ ┌────────────┐ │
-│ │Tenant Namespace│ │ │ECS Cluster │ │ │EC2 Instance │ │
-│ │               │ │ │            │ │ │            │ │
-│ │ • Scheduler   │ │ │ • Postgres │ │ │ • Postgres │ │
-│ │ • Webserver   │ │ │ • Redis    │ │ │ • Redis    │ │
-│ │ • Workers (N) │ │ │ • Scheduler│ │ │ • Scheduler│ │
-│ │ • PostgreSQL  │ │ │ • Webserver│ │ │ • Webserver│ │
-│ │ • Redis       │ │ │ • Workers  │ │ │ • Workers  │ │
-│ │               │ │ │            │ │ │            │ │
-│ └───────────────┘ │ └───────────┘ │ └────────────┘ │
-│                   │ │               │ │                │
-│ • KEDA Autoscale  │ │ • EFS Storage │ │ • SSM Managed  │
-│ • Helm Charts     │ │ • Auto-Scale  │ │ • Docker Comp. │
-└───────────────────┘ └───────────────┘ └────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           Users / Operators                                   │
+└──────────────────────────────┬───────────────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼───────────────────────────────────────────────┐
+│                       Control Plane UI (React)                                │
+│     • Tenant Management  • Deployment Management  • Monitoring                │
+└──────────────────────────────┬───────────────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼───────────────────────────────────────────────┐
+│                 Control Plane API (Spring Boot)                               │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐                    │
+│  │ Provider │  │ Provider │  │ Provider │  │ Provider │                    │
+│  │  Local   │  │  K8s     │  │  ECS     │  │  EC2     │                    │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘                    │
+└───────┼─────────────┼─────────────┼─────────────┼────────────────────────────┘
+        │             │             │             │
+┌───────▼───────┐ ┌──▼─────────┐ ┌─▼──────────┐ ┌▼────────────┐
+│   Local       │ │ Kubernetes │ │  AWS ECS   │ │  AWS EC2    │
+│ ┌───────────┐ │ │ ┌────────┐ │ │ ┌────────┐ │ │ ┌─────────┐ │
+│ │ Directory │ │ │ │Namespace│ │ │ │Cluster │ │ │ │Instance │ │
+│ │           │ │ │ │        │ │ │ │        │ │ │ │         │ │
+│ │• Postgres │ │ │ │• Sched.│ │ │ │• Post. │ │ │ │• Post.  │ │
+│ │• Redis    │ │ │ │• Web   │ │ │ │• Redis │ │ │ │• Redis  │ │
+│ │• Sched.   │ │ │ │• Work. │ │ │ │• Sched.│ │ │ │• Sched. │ │
+│ │• Web      │ │ │ │• Post. │ │ │ │• Web   │ │ │ │• Web    │ │
+│ │• Workers  │ │ │ │• Redis │ │ │ │• Work. │ │ │ │• Work.  │ │
+│ └───────────┘ │ └────────┘ │ └────────┘ │ └─────────┘ │
+│ • Docker      │ │ • KEDA     │ │ • EFS      │ │ • SSM       │
+│ • Ports 8080+ │ │ • Helm     │ │ • AutoScale│ │ • Docker    │
+└───────────────┘ └────────────┘ └────────────┘ └─────────────┘
 ```
 
 ### Architecture Documentation
 
+- 📓 **[Local Testing Guide](docs/LOCAL_TESTING.md)** - Complete guide for local deployment and testing
 - 📘 **[Kubernetes Architecture](docs/ARCHITECTURE.md)** - Detailed Kubernetes deployment architecture
 - 📗 **[ECS Architecture](docs/ARCHITECTURE_ECS.md)** - AWS ECS Fargate deployment architecture
 - 📙 **[EC2 Architecture](docs/ARCHITECTURE_EC2.md)** - AWS EC2 Docker Compose deployment architecture
@@ -103,7 +102,26 @@ Choose the deployment option that fits your needs:
 
 Pick the deployment option that matches your needs:
 
-#### 🚀 Option 1: EC2 (Simplest, Lowest Cost)
+#### 💻 Option 0: Local (Fastest, Free)
+
+**Best for**: Learning, development, feature testing, demos
+
+```bash
+# 1. Run setup script
+cd infrastructure/local
+./setup-local.sh
+
+# 2. Start control plane
+cd ../../control-plane
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+
+# 3. Create tenant and deployment via API
+curl -X POST http://localhost:8080/api/v1/tenants ...
+```
+
+📖 **[Complete Local Testing Guide](docs/LOCAL_TESTING.md)**
+
+#### 🚀 Option 1: EC2 (Simple, Low Cost)
 
 **Best for**: Development, testing, proof of concepts
 
@@ -173,6 +191,11 @@ mvn spring-boot:run -Dspring-boot.run.profiles=kubernetes
 - Java 17+
 - Maven 3.8+
 - Git
+
+**Local-Specific:**
+- Docker 20.10+
+- Docker Compose 2.0+
+- 8GB+ RAM (4GB allocated to Docker recommended)
 
 **Kubernetes-Specific:**
 - kubectl
@@ -274,6 +297,8 @@ managed-airflow-platform/
 │   │   │   │       │   ├── CloudProvider.java
 │   │   │   │       │   ├── DeploymentProvider.java
 │   │   │   │       │   └── impl/
+│   │   │   │       │       ├── LocalCloudProvider.java
+│   │   │   │       │       ├── LocalDeploymentProvider.java
 │   │   │   │       │       ├── KubernetesCloudProvider.java
 │   │   │   │       │       ├── HelmDeploymentProvider.java
 │   │   │   │       │       ├── ECSCloudProvider.java
@@ -296,6 +321,10 @@ managed-airflow-platform/
 │   └── package.json
 │
 ├── infrastructure/                    # Infrastructure as Code
+│   ├── local/                        # Local deployment
+│   │   ├── setup-local.sh            # Prerequisites check script
+│   │   └── README.md                 # Local setup guide
+│   │
 │   ├── ecs/                          # ECS deployment
 │   │   ├── terraform/                # Terraform configs
 │   │   │   ├── main.tf
@@ -328,6 +357,7 @@ managed-airflow-platform/
 │   └── monitoring/                  # Monitoring setup
 │
 ├── docs/                            # Documentation
+│   ├── LOCAL_TESTING.md            # Local testing guide
 │   ├── ARCHITECTURE.md             # Kubernetes architecture
 │   ├── ARCHITECTURE_ECS.md         # ECS architecture
 │   ├── ARCHITECTURE_EC2.md         # EC2 architecture
@@ -359,6 +389,11 @@ managed-airflow-platform/
 - **Recharts** - Data visualization
 
 ### Infrastructure & Deployment
+
+**Local:**
+- **Docker 20.10+** - Containerization
+- **Docker Compose 2.0+** - Multi-container orchestration
+- **Local filesystem** - Directory-based tenant isolation
 
 **Kubernetes:**
 - **Kubernetes 1.24+** - Container orchestration
@@ -739,6 +774,7 @@ terraform apply
 
 ### 🔧 Infrastructure Guides
 
+- **[Local Infrastructure Setup](infrastructure/local/README.md)** - Local development setup guide
 - **[ECS Infrastructure Setup](infrastructure/ecs/README.md)** - ECS Terraform guide
 - **[EC2 Infrastructure Setup](infrastructure/ec2/README.md)** - EC2 Terraform guide
 - **[ECS Docker Update](infrastructure/ecs/ECS_DOCKER_UPDATE.md)** - ECS containerization guide

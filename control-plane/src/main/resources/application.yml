@@ -172,3 +172,34 @@ logging:
     com.airflow.platform: INFO
     org.springframework: INFO
     software.amazon.awssdk: WARN
+
+---
+# Local deployment profile configuration (for local testing)
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  datasource:
+    url: jdbc:h2:mem:controlplane
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+# Deployment provider configuration
+deployment:
+  provider: local
+
+# Local deployment configuration
+local:
+  base-directory: ${user.home}/airflow-deployments
+  docker-compose-timeout: 300
+
+logging:
+  level:
+    com.airflow.platform: DEBUG
+    org.springframework: INFO

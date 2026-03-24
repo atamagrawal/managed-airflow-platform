@@ -18,8 +18,9 @@ This guide provides step-by-step instructions for setting up and deploying the M
 
 ## Overview
 
-The Managed Airflow Platform supports **three deployment options**:
+The Managed Airflow Platform supports **four deployment options**:
 
+0. **Local** - Local machine, Docker Compose, ideal for learning and testing
 1. **Kubernetes** - Enterprise-grade, multi-tenant, highly scalable
 2. **AWS ECS (Fargate)** - Serverless containers, cost-effective, auto-scaling
 3. **AWS EC2 (Docker Compose)** - Simple, cost-effective, ideal for dev/test
@@ -30,16 +31,24 @@ Each option has different characteristics in terms of cost, complexity, and scal
 
 ### Quick Comparison
 
-| Feature | Kubernetes | ECS (Fargate) | EC2 (Docker) |
-|---------|------------|---------------|--------------|
-| **Monthly Cost** | ~$150/tenant | ~$137/tenant | ~$35/tenant |
-| **Setup Complexity** | Complex | Easy | Easiest |
-| **Auto-Scaling** | Yes (KEDA) | Yes (AWS) | Manual |
-| **High Availability** | High | Medium | Low |
-| **Best For** | Production | Test/Staging | Dev/Test |
-| **Management** | Helm/kubectl | AWS ECS API | Docker Compose |
+| Feature | Local | Kubernetes | ECS (Fargate) | EC2 (Docker) |
+|---------|-------|------------|---------------|--------------|
+| **Monthly Cost** | Free | ~$150/tenant | ~$137/tenant | ~$35/tenant |
+| **Setup Complexity** | Simplest | Complex | Easy | Easier |
+| **Auto-Scaling** | No | Yes (KEDA) | Yes (AWS) | Manual |
+| **High Availability** | No | High | Medium | Low |
+| **Best For** | Learning/Dev | Production | Test/Staging | Dev/Test |
+| **Management** | Docker Compose | Helm/kubectl | AWS ECS API | Docker Compose |
 
 ### Decision Guide
+
+**Choose Local if:**
+- You're learning the platform
+- You want to test features quickly
+- You don't have cloud resources/credentials
+- You're developing DAGs or testing configurations
+- You need a zero-cost option
+- You want the fastest setup possible
 
 **Choose Kubernetes if:**
 - You need enterprise-grade multi-tenancy
@@ -73,6 +82,30 @@ Each option has different characteristics in terms of cost, complexity, and scal
 - **Node.js 18+** - For building the frontend (optional)
 - **npm or yarn** - For frontend dependencies (optional)
 - **Git** - Version control
+
+#### Local-Specific Prerequisites
+
+For local deployment testing:
+
+- **Docker 20.10+** - Container runtime
+  ```bash
+  # Verify Docker installation
+  docker --version
+  docker info
+  ```
+- **Docker Compose 2.0+** - Multi-container orchestration
+  ```bash
+  # Verify Docker Compose installation
+  docker-compose --version
+  # or
+  docker compose version
+  ```
+- **System Resources**:
+  - 8GB+ RAM (with 4GB+ allocated to Docker)
+  - 10GB+ free disk space
+  - Ports 8080-8180 and 5555-5655 available
+
+📖 **For detailed local setup instructions, see [LOCAL_TESTING.md](LOCAL_TESTING.md)**
 
 #### AWS Prerequisites (for ECS and EC2)
 
@@ -187,6 +220,260 @@ npm start
 ```
 
 The UI will be available at `http://localhost:3000`
+
+## Option 0: Local Setup
+
+The local deployment option allows you to run the entire Managed Airflow Platform on your local machine using Docker Compose. This is the fastest way to get started and requires no cloud resources.
+
+### Prerequisites
+
+Before starting, ensure you have:
+- ✅ Docker 20.10+ installed and running
+- ✅ Docker Compose 2.0+ installed
+- ✅ Java 17+ installed
+- ✅ Maven 3.8+ installed (or use the Maven wrapper)
+- ✅ At least 8GB RAM with 4GB allocated to Docker
+- ✅ Ports 8080-8180 and 5555-5655 available
+
+### Quick Start
+
+```bash
+# 1. Run the setup script to verify prerequisites
+cd infrastructure/local
+./setup-local.sh
+
+# 2. Start the control plane
+cd ../../control-plane
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+### Step-by-Step Setup
+
+#### Step 1: Verify Prerequisites
+
+Run the setup script to check your environment:
+
+```bash
+cd infrastructure/local
+./setup-local.sh
+```
+
+This script will:
+- Verify Docker and Docker Compose are installed
+- Check that Docker daemon is running
+- Confirm Java version is 17+
+- Display available system resources
+- Create the base deployment directory (`~/airflow-deployments`)
+
+#### Step 2: Configure Docker Resources
+
+Ensure Docker has sufficient resources:
+
+**For Docker Desktop (Mac/Windows):**
+1. Open Docker Desktop
+2. Go to Settings > Resources
+3. Allocate at least:
+   - CPUs: 4
+   - Memory: 8 GB
+   - Disk: 20 GB
+4. Apply & Restart
+
+**For Docker Engine (Linux):**
+Docker uses all available resources by default.
+
+#### Step 3: Build and Start Control Plane
+
+```bash
+cd control-plane
+
+# Build the project
+mvn clean install
+
+# Start with local profile
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+The control plane will start on port 8080.
+
+#### Step 4: Access the Control Plane
+
+Open your browser and navigate to:
+- **Swagger UI**: http://localhost:8080/swagger-ui.html
+- **H2 Console**: http://localhost:8080/h2-console
+  - JDBC URL: `jdbc:h2:mem:controlplane`
+  - Username: `sa`
+  - Password: (leave empty)
+
+#### Step 5: Create Your First Tenant and Deployment
+
+Using the Swagger UI or curl:
+
+```bash
+# Create a tenant
+curl -X POST http://localhost:8080/api/v1/tenants \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantId": "test-company",
+    "name": "Test Company",
+    "email": "admin@test.com"
+  }'
+
+# Create a deployment
+curl -X POST http://localhost:8080/api/v1/deployments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deploymentId": "test-airflow",
+    "tenantId": "test-company",
+    "airflowVersion": "2.8.1",
+    "executorType": "LOCAL",
+    "webserverCpu": "500",
+    "webserverMemory": "1024",
+    "schedulerCpu": "500",
+    "schedulerMemory": "1024",
+    "workerCpu": "500",
+    "workerMemory": "1024",
+    "minWorkers": 1,
+    "maxWorkers": 3
+  }'
+```
+
+#### Step 6: Monitor Deployment
+
+Check the deployment status:
+
+```bash
+curl http://localhost:8080/api/v1/deployments/test-airflow
+```
+
+Or watch the logs:
+
+```bash
+cd ~/airflow-deployments/test-company/test-airflow
+docker-compose logs -f
+```
+
+Wait for all services to be healthy (typically 2-5 minutes).
+
+#### Step 7: Access Airflow UI
+
+Once the deployment is running:
+
+```bash
+# Get the webserver URL
+curl http://localhost:8080/api/v1/deployments/test-airflow | jq .webserverUrl
+
+# Example output: http://localhost:8093
+```
+
+Open the URL in your browser and log in with:
+- Username: `admin`
+- Password: `admin`
+
+### Configuration
+
+The local profile is configured in `control-plane/src/main/resources/application.yml`:
+
+```yaml
+spring:
+  config:
+    activate:
+      on-profile: local
+
+deployment:
+  provider: local
+
+local:
+  base-directory: ${user.home}/airflow-deployments
+  docker-compose-timeout: 300
+```
+
+You can override settings with environment variables:
+
+```bash
+export LOCAL_BASE_DIRECTORY=/custom/path
+export LOCAL_DOCKER_COMPOSE_TIMEOUT=600
+
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+### Directory Structure
+
+Deployments are created under `~/airflow-deployments/`:
+
+```
+~/airflow-deployments/
+├── {tenant-id}/
+│   ├── dags/                    # Shared DAGs directory
+│   ├── logs/                    # Shared logs
+│   ├── plugins/                 # Shared plugins
+│   ├── data/                    # Data directory
+│   ├── secrets/                 # Secrets (.properties files)
+│   └── {deployment-id}/         # Deployment-specific
+│       ├── docker-compose.yml   # Generated compose file
+│       ├── dags/                # Deployment DAGs
+│       ├── logs/                # Deployment logs
+│       └── plugins/             # Deployment plugins
+```
+
+### Working with DAGs
+
+Upload DAGs to the deployment directory:
+
+```bash
+# Navigate to DAGs directory
+cd ~/airflow-deployments/{tenant-id}/{deployment-id}/dags
+
+# Copy your DAG files
+cp /path/to/your/dag.py .
+```
+
+Airflow automatically detects new DAGs within 30 seconds.
+
+### Managing Deployments
+
+```bash
+# List all deployments
+curl http://localhost:8080/api/v1/deployments
+
+# Get deployment details
+curl http://localhost:8080/api/v1/deployments/{deployment-id}
+
+# Delete deployment
+curl -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id}
+```
+
+### Troubleshooting
+
+**Port Conflicts:**
+Each deployment uses a unique port (8080-8180 range) based on its deployment ID hash.
+
+**View Logs:**
+```bash
+cd ~/airflow-deployments/{tenant-id}/{deployment-id}
+docker-compose logs -f
+```
+
+**Reset Everything:**
+```bash
+# Stop all deployments
+cd ~/airflow-deployments
+find . -name "docker-compose.yml" -execdir docker-compose down -v \;
+
+# Remove all data
+rm -rf ~/airflow-deployments/*
+
+# Restart control plane
+cd control-plane
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+### Next Steps
+
+- 📖 Read the complete **[Local Testing Guide](LOCAL_TESTING.md)** for detailed instructions
+- 🔧 Explore **[User Guide](USER_GUIDE.md)** for API operations
+- 🚀 When ready, move to cloud deployments (ECS or Kubernetes)
+
+---
 
 ## Option 1: Kubernetes Setup
 

@@ -2,16 +2,21 @@ package com.airflow.platform.service;
 
 import com.airflow.platform.model.AirflowDeployment;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
 /**
  * Generates Docker Compose files for Airflow deployments
+ * Supports both EC2 and local deployments
  */
 @Service
-@ConditionalOnProperty(name = "deployment.provider", havingValue = "ec2")
+@ConditionalOnExpression("'${deployment.provider}' == 'ec2' or '${deployment.provider}' == 'local'")
 @Slf4j
 public class DockerComposeGenerator {
+
+    @Value("${deployment.provider}")
+    private String deploymentProvider;
 
     /**
      * Generate a docker-compose.yml file for an Airflow deployment
@@ -102,11 +107,12 @@ public class DockerComposeGenerator {
         }
 
         // Webserver
+        int webserverPort = getWebserverPort(deployment);
         compose.append("  airflow-webserver:\n");
         compose.append("    <<: *airflow-common\n");
         compose.append("    command: webserver\n");
         compose.append("    ports:\n");
-        compose.append("      - 8080:8080\n");
+        compose.append("      - ").append(webserverPort).append(":8080\n");
         compose.append("    healthcheck:\n");
         compose.append("      test: [\"CMD\", \"curl\", \"--fail\", \"http://localhost:8080/health\"]\n");
         compose.append("      interval: 10s\n");
@@ -156,11 +162,12 @@ public class DockerComposeGenerator {
             compose.append("          memory: ").append(deployment.getWorkerMemory()).append("M\n\n");
 
             // Flower (Celery monitoring)
+            int flowerPort = getFlowerPort(deployment);
             compose.append("  airflow-flower:\n");
             compose.append("    <<: *airflow-common\n");
             compose.append("    command: celery flower\n");
             compose.append("    ports:\n");
-            compose.append("      - 5555:5555\n");
+            compose.append("      - ").append(flowerPort).append(":5555\n");
             compose.append("    healthcheck:\n");
             compose.append("      test: [\"CMD\", \"curl\", \"--fail\", \"http://localhost:5555/\"]\n");
             compose.append("      interval: 10s\n");
@@ -237,6 +244,38 @@ public class DockerComposeGenerator {
             return String.format("%.2f", millicores / 1000.0);
         } catch (NumberFormatException e) {
             return "1.0";
+        }
+    }
+
+    /**
+     * Calculate webserver port for deployment
+     * For local deployments, use dynamic port allocation to avoid conflicts
+     * For EC2, use standard port 8080
+     */
+    private int getWebserverPort(AirflowDeployment deployment) {
+        if ("local".equals(deploymentProvider)) {
+            // Dynamic port allocation for local: 8080-8180 range
+            int hash = Math.abs(deployment.getDeploymentId().hashCode());
+            return 8080 + (hash % 100);
+        } else {
+            // EC2 uses standard port
+            return 8080;
+        }
+    }
+
+    /**
+     * Calculate Flower port for deployment
+     * For local deployments, use dynamic port allocation to avoid conflicts
+     * For EC2, use standard port 5555
+     */
+    private int getFlowerPort(AirflowDeployment deployment) {
+        if ("local".equals(deploymentProvider)) {
+            // Dynamic port allocation for local: 5555-5655 range
+            int hash = Math.abs(deployment.getDeploymentId().hashCode());
+            return 5555 + (hash % 100);
+        } else {
+            // EC2 uses standard port
+            return 5555;
         }
     }
 }
