@@ -10,229 +10,332 @@ The Managed Airflow Platform provides a complete solution for organizations to d
 
 Choose the deployment option that fits your needs:
 
-- **EC2 + Docker** - Simplest option for dev/test (~$35/month per tenant)
-- **AWS ECS** - Managed containers for staging/production (~$70/month per tenant)
-- **Kubernetes** - Enterprise-scale with multi-cloud support (~$200/month cluster)
+| Option | Best For | Monthly Cost | Complexity | Auto-Scaling | HA |
+|--------|----------|--------------|------------|--------------|-----|
+| **AWS EC2** | Dev/Test, PoC | ~$35/tenant | Easiest | Manual | Low |
+| **AWS ECS** | Test/Staging, Small Prod | ~$137/tenant | Easy | Yes | Medium |
+| **Kubernetes** | Production, Enterprise | ~$150/tenant | Complex | Yes | High |
 
-See [DEPLOYMENT_OPTIONS.md](./DEPLOYMENT_OPTIONS.md) for detailed comparison.
+📖 **[Complete Deployment Options Comparison](docs/DEPLOYMENT_OPTIONS.md)**
 
 ## Key Features
 
-- **Multiple Deployment Options** - Choose from EC2+Docker, AWS ECS, or Kubernetes based on your needs
-- **Multi-Tenant Architecture** - Isolated environments for each tenant with dedicated Airflow deployments
+### Deployment Flexibility
+- **Multiple Deployment Options** - Choose from EC2+Docker, AWS ECS Fargate, or Kubernetes based on your needs
 - **Multi-Cloud Support** - Deploy on AWS (EKS/ECS/EC2), Google GKE, Azure AKS, or on-premises
-- **Auto-Scaling** - KEDA (K8s), Application Auto Scaling (ECS), or manual (EC2)
+- **Provider Abstraction** - Switch between deployment providers with configuration change
+
+### Multi-Tenancy & Isolation
+- **Tenant Isolation** - Dedicated environments for each tenant
+  - Kubernetes: Namespace per tenant
+  - ECS: Cluster per tenant
+  - EC2: Instance per tenant
+- **Resource Management** - Configurable CPU and memory allocations per component
+- **Independent Scaling** - Each tenant scales independently
+
+### Auto-Scaling
+- **Kubernetes**: KEDA-based auto-scaling on queue depth
+- **ECS**: AWS Application Auto Scaling on CPU/memory metrics
+- **EC2**: Manual scaling via Docker Compose
+
+### Management & Monitoring
 - **Control Plane UI** - React-based web interface for managing tenants and deployments
 - **REST API** - Complete API for programmatic management
-- **Flexible Deployment** - Docker Compose, ECS Task Definitions, or Helm Charts
 - **Multiple Executor Support** - Local, Celery, Kubernetes, and hybrid executors
-- **Resource Management** - Configurable CPU and memory allocations per component
 - **Monitoring Ready** - Built-in health checks and metrics endpoints
-- **Provider Abstraction** - Switch between deployment providers with configuration change
+
+### Cost Optimization
+- **Containerized Databases** - PostgreSQL and Redis run as containers (ECS/EC2)
+- **Flexible Sizing** - Right-size resources per workload
+- **Spot Instances** - Support for cost-effective compute (where applicable)
 
 ## Architecture
 
+### High-Level Architecture
+
 ```
-┌──────────────┐
-│   Users      │
-└──────┬───────┘
-       │
-┌──────▼────────────────────────┐
-│   Control Plane UI (React)    │
-└──────┬────────────────────────┘
-       │
-┌──────▼────────────────────────┐
-│  Control Plane API (Java)     │
-│  - Tenant Management          │
-│  - Deployment Management      │
-│  - K8s Integration            │
-└──────┬────────────────────────┘
-       │
-┌──────▼────────────────────────┐
-│    Kubernetes Cluster         │
-│  ┌──────────────────────────┐ │
-│  │  Tenant Namespaces       │ │
-│  │  - Airflow Webserver     │ │
-│  │  - Airflow Scheduler     │ │
-│  │  - Airflow Workers       │ │
-│  │  - PostgreSQL            │ │
-│  │  - Redis                 │ │
-│  └──────────────────────────┘ │
-│  ┌──────────────────────────┐ │
-│  │  KEDA (Autoscaling)      │ │
-│  │  Ingress Controller      │ │
-│  └──────────────────────────┘ │
-└───────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        Users / Operators                          │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+┌───────────────────────────▼──────────────────────────────────────┐
+│                    Control Plane UI (React)                       │
+│  • Tenant Management  • Deployment Management  • Monitoring       │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │
+┌───────────────────────────▼──────────────────────────────────────┐
+│              Control Plane API (Spring Boot)                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │   Provider   │  │   Provider   │  │   Provider   │          │
+│  │  Abstraction │  │  Abstraction │  │  Abstraction │          │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
+└─────────┼──────────────────┼──────────────────┼──────────────────┘
+          │                  │                  │
+          │                  │                  │
+┌─────────▼─────────┐ ┌──────▼────────┐ ┌──────▼─────────┐
+│   Kubernetes      │ │   AWS ECS     │ │   AWS EC2      │
+│                   │ │               │ │                │
+│ ┌───────────────┐ │ │ ┌───────────┐ │ │ ┌────────────┐ │
+│ │Tenant Namespace│ │ │ECS Cluster │ │ │EC2 Instance │ │
+│ │               │ │ │            │ │ │            │ │
+│ │ • Scheduler   │ │ │ • Postgres │ │ │ • Postgres │ │
+│ │ • Webserver   │ │ │ • Redis    │ │ │ • Redis    │ │
+│ │ • Workers (N) │ │ │ • Scheduler│ │ │ • Scheduler│ │
+│ │ • PostgreSQL  │ │ │ • Webserver│ │ │ • Webserver│ │
+│ │ • Redis       │ │ │ • Workers  │ │ │ • Workers  │ │
+│ │               │ │ │            │ │ │            │ │
+│ └───────────────┘ │ └───────────┘ │ └────────────┘ │
+│                   │ │               │ │                │
+│ • KEDA Autoscale  │ │ • EFS Storage │ │ • SSM Managed  │
+│ • Helm Charts     │ │ • Auto-Scale  │ │ • Docker Comp. │
+└───────────────────┘ └───────────────┘ └────────────────┘
 ```
 
-For detailed architecture, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+### Architecture Documentation
+
+- 📘 **[Kubernetes Architecture](docs/ARCHITECTURE.md)** - Detailed Kubernetes deployment architecture
+- 📗 **[ECS Architecture](docs/ARCHITECTURE_ECS.md)** - AWS ECS Fargate deployment architecture
+- 📙 **[EC2 Architecture](docs/ARCHITECTURE_EC2.md)** - AWS EC2 Docker Compose deployment architecture
 
 ## Quick Start
 
-### Prerequisites
+### Choose Your Path
 
-**Common:**
-- Java 17+
-- Maven 3.8+
-- Node.js 18+ (optional, for frontend)
-- AWS CLI (for ECS/EC2 deployments)
+Pick the deployment option that matches your needs:
 
-**Deployment-specific:**
-- **Kubernetes**: kubectl, Helm 3.x, K8s cluster (Minikube, EKS, GKE, AKS)
-- **ECS**: AWS account, ECS Fargate, RDS, ElastiCache
-- **EC2**: AWS account, EC2, SSH key pair
+#### 🚀 Option 1: EC2 (Simplest, Lowest Cost)
 
-Choose your deployment option:
-- 📖 [EC2 Setup Guide](./infrastructure/ec2/README.md) - Simplest, lowest cost
-- 📖 [ECS Setup Guide](./infrastructure/ecs/README.md) - Managed containers
-- 📖 [Kubernetes Setup](#local-development) - See below for K8s setup
-
-### Kubernetes Local Development
-
-1. **Clone the repository**
+**Best for**: Development, testing, proof of concepts
 
 ```bash
-git clone <your-repo-url>
-cd managed-airflow-platform
-```
+# 1. Setup infrastructure
+cd infrastructure/ec2/terraform
+terraform init
+terraform apply
 
-2. **Start the Control Plane API**
-
-```bash
+# 2. Start control plane
 cd control-plane
-mvn clean package
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=ec2
+
+# 3. Create tenant and deployment via API
+curl -X POST http://localhost:8080/api/v1/tenants ...
 ```
 
-The API will be available at `http://localhost:8080`
+📖 **[Complete EC2 Setup Guide](docs/SETUP.md#option-3-aws-ec2-setup)**
 
-3. **Start the Frontend**
+#### ☁️ Option 2: ECS (Managed Containers)
+
+**Best for**: Staging, small-medium production, cost-conscious deployments
 
 ```bash
-cd frontend
-npm install
-npm start
+# 1. Setup infrastructure
+cd infrastructure/ecs/terraform
+terraform init
+terraform apply
+
+# 2. Start control plane
+cd control-plane
+mvn spring-boot:run -Dspring-boot.run.profiles=ecs
+
+# 3. Create tenant and deployment via API
+curl -X POST http://localhost:8080/api/v1/tenants ...
 ```
 
-The UI will be available at `http://localhost:3000`
+📖 **[Complete ECS Setup Guide](docs/SETUP.md#option-2-aws-ecs-setup)**
 
-4. **Install KEDA**
+#### ⎈ Option 3: Kubernetes (Enterprise Production)
+
+**Best for**: Large-scale production, multi-cloud, enterprise deployments
 
 ```bash
+# 1. Setup Kubernetes cluster (Minikube, EKS, GKE, AKS)
+minikube start --cpus=4 --memory=8192
+
+# 2. Install KEDA
 helm repo add kedacore https://kedacore.github.io/charts
 helm install keda kedacore/keda --namespace keda --create-namespace
-```
 
-5. **Add Airflow Helm Repository**
-
-```bash
+# 3. Add Airflow Helm repo
 helm repo add apache-airflow https://airflow.apache.org
-helm repo update
+
+# 4. Start control plane
+cd control-plane
+mvn spring-boot:run -Dspring-boot.run.profiles=kubernetes
+
+# 5. Create tenant and deployment via UI or API
 ```
 
-For detailed setup instructions, see [SETUP.md](docs/SETUP.md).
+📖 **[Complete Kubernetes Setup Guide](docs/SETUP.md#option-1-kubernetes-setup)**
+
+### Prerequisites
+
+**Common Requirements:**
+- Java 17+
+- Maven 3.8+
+- Git
+
+**Kubernetes-Specific:**
+- kubectl
+- Helm 3.x
+- Kubernetes cluster access
+
+**AWS-Specific (ECS & EC2):**
+- AWS CLI v2
+- AWS account with appropriate permissions
+- Terraform 1.0+
+
+📋 **[Complete Prerequisites List](docs/SETUP.md#prerequisites)**
 
 ## Usage
 
 ### Creating a Tenant
 
-Via UI:
-1. Navigate to the Tenants page
-2. Click "Create Tenant"
-3. Fill in the details and submit
+Each tenant gets isolated resources (namespace/cluster/instance depending on deployment option).
 
-Via API:
+**Via UI:**
+1. Navigate to Tenants page
+2. Click "Create Tenant"
+3. Fill in details and submit
+
+**Via API:**
 ```bash
 curl -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Data Engineering Team",
-    "email": "data-eng@example.com",
-    "organization": "Acme Corp",
-    "cloudProvider": "AWS",
-    "region": "us-east-1"
+    "tenantId": "data-team",
+    "organizationName": "Data Engineering Team"
   }'
 ```
 
 ### Creating an Airflow Deployment
 
-Via UI:
-1. Navigate to the Deployments page
+**Via UI:**
+1. Navigate to Deployments page
 2. Click "Create Deployment"
 3. Select tenant and configure Airflow settings
 4. Submit to deploy
 
-Via API:
+**Via API:**
 ```bash
 curl -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
   -d '{
-    "tenantId": "data-engineering-team",
+    "tenantId": "data-team",
+    "deploymentId": "prod-etl",
     "name": "Production ETL",
-    "airflowVersion": "1.13.0",
+    "airflowVersion": "2.7.0",
     "executorType": "CELERY",
     "minWorkers": 1,
     "maxWorkers": 5,
-    "schedulerCpu": "1000m",
-    "schedulerMemory": "2Gi",
-    "workerCpu": "1000m",
-    "workerMemory": "2Gi"
+    "schedulerCpu": "1024",
+    "schedulerMemory": "2048",
+    "webserverCpu": "512",
+    "webserverMemory": "1024",
+    "workerCpu": "1024",
+    "workerMemory": "2048"
   }'
 ```
 
-For complete usage guide, see [USER_GUIDE.md](docs/USER_GUIDE.md).
+**Deployment Time:**
+- EC2: ~3-5 minutes
+- ECS: ~5-7 minutes
+- Kubernetes: ~5-10 minutes
+
+### Accessing Airflow
+
+**After deployment completes:**
+
+1. Via UI: Click "Open" button on the deployment
+2. Via API: Get the `webserverUrl` from deployment details
+
+**Default Credentials:**
+- Username: `admin`
+- Password: Varies by deployment (see [User Guide](docs/USER_GUIDE.md#accessing-airflow))
+
+📖 **[Complete User Guide](docs/USER_GUIDE.md)**
 
 ## Project Structure
 
 ```
 managed-airflow-platform/
-├── control-plane/              # Spring Boot backend
+├── control-plane/                     # Spring Boot backend
 │   ├── src/
 │   │   ├── main/
 │   │   │   ├── java/
 │   │   │   │   └── com/airflow/platform/
-│   │   │   │       ├── config/        # Configuration classes
-│   │   │   │       ├── controller/    # REST controllers
-│   │   │   │       ├── service/       # Business logic
-│   │   │   │       ├── model/         # JPA entities
-│   │   │   │       ├── repository/    # Data access
-│   │   │   │       ├── dto/           # Request/Response DTOs
-│   │   │   │       ├── exception/     # Exception handling
-│   │   │   │       └── util/          # Utilities
+│   │   │   │       ├── config/             # Configuration classes
+│   │   │   │       ├── controller/         # REST controllers
+│   │   │   │       ├── service/            # Business logic
+│   │   │   │       ├── model/              # JPA entities
+│   │   │   │       ├── repository/         # Data access
+│   │   │   │       ├── dto/                # Request/Response DTOs
+│   │   │   │       ├── exception/          # Exception handling
+│   │   │   │       ├── provider/           # Deployment providers
+│   │   │   │       │   ├── CloudProvider.java
+│   │   │   │       │   ├── DeploymentProvider.java
+│   │   │   │       │   └── impl/
+│   │   │   │       │       ├── KubernetesCloudProvider.java
+│   │   │   │       │       ├── HelmDeploymentProvider.java
+│   │   │   │       │       ├── ECSCloudProvider.java
+│   │   │   │       │       ├── ECSDeploymentProvider.java
+│   │   │   │       │       ├── EC2CloudProvider.java
+│   │   │   │       │       └── EC2DeploymentProvider.java
+│   │   │   │       └── util/               # Utilities
 │   │   │   └── resources/
-│   │   │       └── application.yml
+│   │   │       └── application.yml         # Configuration
 │   │   └── test/
 │   └── pom.xml
 │
-├── frontend/                   # React frontend
+├── frontend/                          # React frontend
 │   ├── src/
-│   │   ├── components/        # Reusable components
-│   │   ├── pages/             # Page components
-│   │   ├── services/          # API client
-│   │   └── utils/             # Utilities
+│   │   ├── components/               # Reusable components
+│   │   ├── pages/                    # Page components
+│   │   ├── services/                 # API client
+│   │   └── utils/                    # Utilities
 │   ├── public/
 │   └── package.json
 │
-├── helm-charts/               # Helm charts
-│   ├── airflow-deployment/   # Airflow deployment chart
+├── infrastructure/                    # Infrastructure as Code
+│   ├── ecs/                          # ECS deployment
+│   │   ├── terraform/                # Terraform configs
+│   │   │   ├── main.tf
+│   │   │   ├── variables.tf
+│   │   │   └── outputs.tf
+│   │   ├── ECS_DOCKER_UPDATE.md     # ECS Docker guide
+│   │   └── README.md
+│   │
+│   ├── ec2/                          # EC2 deployment
+│   │   ├── terraform/                # Terraform configs
+│   │   │   ├── main.tf
+│   │   │   ├── variables.tf
+│   │   │   └── outputs.tf
+│   │   └── README.md
+│   │
+│   └── kubernetes/                   # K8s-specific infrastructure
+│       └── terraform/                # Terraform for EKS/GKE/AKS
+│
+├── helm-charts/                      # Helm charts (for K8s)
+│   ├── airflow-deployment/          # Airflow deployment chart
 │   │   ├── Chart.yaml
 │   │   ├── values.yaml
 │   │   └── templates/
-│   └── platform-infrastructure/
+│   └── platform-infrastructure/     # Platform infrastructure
 │
-├── kubernetes/                # K8s manifests
-│   ├── namespace/            # Namespace definitions
-│   ├── rbac/                 # RBAC configurations
-│   ├── ingress/              # Ingress configurations
-│   └── monitoring/           # Monitoring setup
+├── kubernetes/                       # K8s manifests
+│   ├── namespace/                   # Namespace definitions
+│   ├── rbac/                        # RBAC configurations
+│   ├── ingress/                     # Ingress configurations
+│   └── monitoring/                  # Monitoring setup
 │
-├── docs/                     # Documentation
-│   ├── ARCHITECTURE.md      # Architecture details
-│   ├── SETUP.md             # Setup guide
-│   └── USER_GUIDE.md        # User documentation
+├── docs/                            # Documentation
+│   ├── ARCHITECTURE.md             # Kubernetes architecture
+│   ├── ARCHITECTURE_ECS.md         # ECS architecture
+│   ├── ARCHITECTURE_EC2.md         # EC2 architecture
+│   ├── SETUP.md                    # Setup guide (all options)
+│   └── USER_GUIDE.md               # User guide (all options)
 │
-├── scripts/                  # Utility scripts
-└── README.md                # This file
+├── scripts/                         # Utility scripts
+└── README.md                        # This file
 ```
 
 ## Technology Stack
@@ -255,17 +358,31 @@ managed-airflow-platform/
 - **Axios** - HTTP client
 - **Recharts** - Data visualization
 
-### Infrastructure
-- **Kubernetes** - Container orchestration (K8s deployments)
-- **AWS ECS** - Managed container service (ECS deployments)
-- **AWS EC2** - Virtual machines with Docker (EC2 deployments)
-- **Helm** - Kubernetes package manager
-- **Docker Compose** - Multi-container application deployment (EC2)
-- **KEDA** - Event-driven autoscaling (Kubernetes)
-- **AWS Systems Manager** - Remote EC2 management
-- **Apache Airflow** - Workflow orchestration
-- **PostgreSQL** - Airflow metadata database
-- **Redis** - Celery message broker
+### Infrastructure & Deployment
+
+**Kubernetes:**
+- **Kubernetes 1.24+** - Container orchestration
+- **Helm 3.x** - Package manager
+- **KEDA** - Event-driven autoscaling
+- **Apache Airflow Helm Chart** - Official Airflow deployment
+
+**AWS ECS:**
+- **AWS ECS Fargate** - Serverless containers
+- **AWS EFS** - Persistent storage for PostgreSQL
+- **AWS Application Auto Scaling** - Auto-scaling
+- **AWS Systems Manager** - Secrets management
+
+**AWS EC2:**
+- **AWS EC2** - Virtual machines
+- **Docker** - Containerization
+- **Docker Compose** - Multi-container orchestration
+- **AWS Systems Manager** - Remote management (SSH-free)
+
+**Common:**
+- **Apache Airflow 2.7+** - Workflow orchestration
+- **PostgreSQL 13** - Metadata database
+- **Redis 7** - Celery message broker
+- **Terraform** - Infrastructure as Code
 
 ## API Documentation
 
@@ -274,18 +391,42 @@ Once the control plane is running, access the interactive API documentation:
 - **Swagger UI**: `http://localhost:8080/swagger-ui.html`
 - **OpenAPI Spec**: `http://localhost:8080/v3/api-docs`
 
+### Key Endpoints
+
+- `POST /api/v1/tenants` - Create tenant
+- `GET /api/v1/tenants` - List tenants
+- `POST /api/v1/deployments` - Create Airflow deployment
+- `GET /api/v1/deployments` - List deployments
+- `PUT /api/v1/deployments/{id}` - Update deployment
+- `DELETE /api/v1/deployments/{id}` - Delete deployment
+- `POST /api/v1/deployments/{id}/scale` - Scale workers
+
 ## Configuration
 
-### Control Plane Configuration
+### Application Profiles
 
-Edit `control-plane/src/main/resources/application.yml`:
+The control plane supports three profiles for different deployment targets:
+
+```yaml
+# For Kubernetes deployments
+spring.profiles.active=kubernetes
+
+# For ECS deployments
+spring.profiles.active=ecs
+
+# For EC2 deployments
+spring.profiles.active=ec2
+```
+
+### Kubernetes Configuration
 
 ```yaml
 spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/airflow_control_plane
-    username: postgres
-    password: ${DB_PASSWORD}
+  profiles:
+    active: kubernetes
+
+deployment:
+  provider: kubernetes
 
 helm:
   chart:
@@ -295,48 +436,102 @@ helm:
     url: https://airflow.apache.org
 ```
 
-### Frontend Configuration
+### ECS Configuration
 
-Create `frontend/.env.production`:
+```yaml
+spring:
+  profiles:
+    active: ecs
 
-```bash
-REACT_APP_API_URL=https://airflow-platform.example.com/api/v1
+deployment:
+  provider: ecs
+
+aws:
+  region: us-east-1
+  ecs:
+    cluster-prefix: managed-airflow
+    task-execution-role-arn: arn:aws:iam::ACCOUNT:role/...
+    task-role-arn: arn:aws:iam::ACCOUNT:role/...
+  efs:
+    file-system-id: fs-xxxxxxxxx
+    access-point-id: fsap-xxxxxxxxx
+  vpc:
+    subnet-ids:
+      - subnet-xxxxxxxx
+      - subnet-yyyyyyyy
+    security-group-ids:
+      - sg-xxxxxxxxx
 ```
 
-## Deployment
+### EC2 Configuration
 
-### Production Deployment
+```yaml
+spring:
+  profiles:
+    active: ec2
 
-1. **Build Docker Images**
+deployment:
+  provider: ec2
+
+aws:
+  region: us-east-1
+  ec2:
+    ami-id: ami-xxxxxxxxx
+    instance-type: t3.medium
+    key-name: your-key-pair-name
+    iam-instance-profile-name: managed-airflow-ec2-instance-profile
+  vpc:
+    subnet-ids:
+      - subnet-xxxxxxxx
+      - subnet-yyyyyyyy
+    security-group-ids:
+      - sg-xxxxxxxxx
+```
+
+📖 **[Complete Configuration Guide](docs/SETUP.md#configuration)**
+
+## Deployment to Production
+
+### Option 1: Deploy Control Plane to Kubernetes
 
 ```bash
-# Control Plane
+# 1. Build Docker images
 cd control-plane
 mvn clean package -DskipTests
 docker build -t your-registry/managed-airflow-control-plane:latest .
 docker push your-registry/managed-airflow-control-plane:latest
 
-# Frontend
-cd frontend
-npm run build
-docker build -t your-registry/managed-airflow-ui:latest .
-docker push your-registry/managed-airflow-ui:latest
-```
-
-2. **Deploy to Kubernetes**
-
-```bash
-# Create namespace
+# 2. Deploy to Kubernetes
 kubectl apply -f kubernetes/namespace/control-plane-namespace.yaml
-
-# Set up RBAC
 kubectl apply -f kubernetes/rbac/control-plane-rbac.yaml
-
-# Deploy control plane
 kubectl apply -f kubernetes/control-plane-deployment.yaml
 ```
 
-For complete deployment guide, see [SETUP.md](docs/SETUP.md).
+### Option 2: Deploy Control Plane to EC2
+
+```bash
+# 1. Build JAR
+cd control-plane
+mvn clean package -DskipTests
+
+# 2. Copy to EC2 and run
+scp -i key.pem target/*.jar ec2-user@<IP>:/home/ec2-user/
+ssh -i key.pem ec2-user@<IP>
+nohup java -jar managed-airflow-control-plane-*.jar --spring.profiles.active=ecs > app.log 2>&1 &
+```
+
+### Option 3: Deploy Control Plane to ECS
+
+```bash
+# 1. Build and push Docker image
+docker build -t your-registry/managed-airflow-control-plane:latest .
+docker push your-registry/managed-airflow-control-plane:latest
+
+# 2. Create ECS task definition and service
+# (Use Terraform or AWS Console)
+```
+
+📖 **[Complete Deployment Guide](docs/SETUP.md#control-plane-deployment)**
 
 ## Monitoring
 
@@ -348,36 +543,48 @@ curl http://localhost:8080/actuator/health
 
 # Metrics
 curl http://localhost:8080/actuator/metrics
+
+# Prometheus metrics
+curl http://localhost:8080/actuator/prometheus
 ```
 
-### Prometheus Integration
+### Deployment-Specific Monitoring
 
-The control plane exposes metrics via Spring Boot Actuator at `/actuator/prometheus`.
+**Kubernetes:**
+```bash
+# Pod logs
+kubectl logs -n airflow-{tenant-id} -l component=scheduler
+
+# Resource usage
+kubectl top pods -n airflow-{tenant-id}
+```
+
+**ECS:**
+```bash
+# CloudWatch logs
+aws logs tail /ecs/managed-airflow/{deployment-id}/scheduler --follow
+
+# ECS metrics
+aws cloudwatch get-metric-statistics --namespace AWS/ECS ...
+```
+
+**EC2:**
+```bash
+# SSH to instance and check Docker logs
+ssh -i key.pem ec2-user@<IP>
+docker-compose logs -f
+
+# Or use SSM (SSH-free)
+aws ssm start-session --target <instance-id>
+```
 
 ### Grafana Dashboards
 
 Import pre-built dashboards for:
 - Platform overview
-- Kubernetes cluster metrics
+- Kubernetes/ECS/EC2 metrics
 - Airflow task metrics
-- KEDA autoscaling metrics
-
-## Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow Java code conventions
-- Write unit tests for new features
-- Update documentation as needed
-- Test deployment changes in a local cluster
+- Auto-scaling metrics
 
 ## Testing
 
@@ -399,79 +606,160 @@ npm test
 
 ```bash
 # Deploy to test cluster
-kubectl apply -f kubernetes/test/
+cd infrastructure/ecs/terraform  # or ec2, or kubernetes
+terraform apply
 
-# Run integration tests
+# Create test tenant and deployment
 ./scripts/run-integration-tests.sh
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Common Issues by Platform
 
-**Control Plane Won't Start:**
-- Check database connectivity
-- Verify Kubernetes access
-- Check RBAC permissions
+#### Kubernetes
+- **Pod won't start**: Check resource limits and node capacity
+- **KEDA not scaling**: Verify ScaledObject configuration
+- **RBAC errors**: Check service account permissions
 
-**Deployment Creation Fails:**
-- Verify cluster resources
-- Check Helm repository access
-- Review control plane logs
+#### ECS
+- **Task fails to start**: Check EFS mount and task execution role
+- **Auto-scaling not working**: Verify Application Auto Scaling policies
+- **Network issues**: Check security groups allow required ports
 
-**Workers Not Autoscaling:**
-- Verify KEDA installation
-- Check ScaledObject configuration
-- Review queue metrics
+#### EC2
+- **Docker Compose fails**: Check Docker installation and permissions
+- **SSM not working**: Verify IAM instance profile
+- **Out of resources**: Choose larger instance type
 
-For detailed troubleshooting, see [USER_GUIDE.md](docs/USER_GUIDE.md#monitoring-and-troubleshooting).
+📖 **[Complete Troubleshooting Guide](docs/USER_GUIDE.md#monitoring-and-troubleshooting)**
 
 ## Security Considerations
 
 ### Production Recommendations
 
-1. **Authentication**
-   - Implement JWT or OAuth2
+1. **Authentication & Authorization**
+   - Implement JWT or OAuth2 for control plane
+   - Enable Airflow RBAC
    - Integrate with enterprise SSO
 
 2. **Network Security**
-   - Enable NetworkPolicies
-   - Use TLS for all communications
-   - Implement Pod Security Standards
+   - Use private subnets where possible
+   - Enable VPC Flow Logs
+   - Implement Network Policies (Kubernetes)
+   - Restrict security group rules
 
 3. **Secret Management**
-   - Use external secret managers (Vault, AWS Secrets Manager)
+   - Use AWS Secrets Manager / Kubernetes Secrets
+   - Enable encryption at rest and in transit
    - Rotate credentials regularly
-   - Encrypt secrets at rest
+   - Never commit secrets to Git
 
-4. **RBAC**
-   - Implement fine-grained RBAC
-   - Follow principle of least privilege
-   - Regular access reviews
+4. **Compliance**
+   - Enable audit logging
+   - Implement pod security standards (Kubernetes)
+   - Use encrypted EBS/EFS volumes
+   - Regular security scans
+
+## Cost Optimization
+
+### Cost Breakdown (per tenant/month)
+
+**EC2 (t3.medium):**
+- Instance: ~$30
+- EBS storage: ~$5
+- **Total: ~$35/month**
+
+**ECS (Optimized):**
+- Fargate tasks: ~$130
+- EFS storage: ~$3
+- Data transfer: ~$1
+- CloudWatch logs: ~$3
+- **Total: ~$137/month**
+
+**Kubernetes (EKS):**
+- Control plane: ~$73/month
+- Worker nodes: ~$60/month (shared)
+- EBS storage: ~$10/month
+- Load balancer: ~$18/month (shared)
+- **Total: ~$150/month per tenant**
+  *(Cost decreases per tenant with more tenants on same cluster)*
+
+### Cost Optimization Tips
+
+1. **Use Spot Instances** (where applicable)
+2. **Right-size resources** based on actual usage
+3. **Enable EFS lifecycle policies** (transition to IA storage)
+4. **Use Fargate Spot** for non-critical workloads (70% savings)
+5. **Stop EC2 instances** when not in use
+6. **Share infrastructure** (ALB, EFS) across tenants where possible
 
 ## Roadmap
 
-### Completed Features
+### ✅ Completed Features
 
 - [x] Multiple deployment options (Kubernetes, ECS, EC2)
 - [x] Provider abstraction for multi-cloud support
 - [x] Docker Compose-based deployment
 - [x] AWS ECS with Fargate support
 - [x] Auto-scaling across all platforms
+- [x] Multi-tenant architecture
+- [x] REST API and Web UI
+- [x] Comprehensive documentation
 
-### Planned Features
+### 🚧 In Progress
 
-- [ ] DAG management (Git integration)
+- [ ] Enhanced monitoring dashboards
 - [ ] Cost tracking and billing
+- [ ] DAG management UI
+
+### 📋 Planned Features
+
+- [ ] Git integration for DAG management
 - [ ] Multi-cluster support
-- [ ] Advanced monitoring dashboards
 - [ ] Self-service tenant registration
 - [ ] Plugin marketplace
 - [ ] Compliance reporting (SOC 2, GDPR)
 - [ ] CI/CD integration for DAGs
 - [ ] Advanced authentication (SSO, MFA)
 - [ ] Resource quota management
-- [ ] Additional cloud providers (GCP, Azure)
+- [ ] Additional cloud providers (GCP Native, Azure Native)
+- [ ] Backup and restore automation
+- [ ] Migration tools (between deployment options)
+
+## Documentation
+
+### 📚 Complete Documentation
+
+- **[Setup Guide](docs/SETUP.md)** - Setup instructions for all deployment options
+- **[User Guide](docs/USER_GUIDE.md)** - Complete usage guide
+- **[Kubernetes Architecture](docs/ARCHITECTURE.md)** - Kubernetes deployment details
+- **[ECS Architecture](docs/ARCHITECTURE_ECS.md)** - ECS deployment details
+- **[EC2 Architecture](docs/ARCHITECTURE_EC2.md)** - EC2 deployment details
+
+### 🔧 Infrastructure Guides
+
+- **[ECS Infrastructure Setup](infrastructure/ecs/README.md)** - ECS Terraform guide
+- **[EC2 Infrastructure Setup](infrastructure/ec2/README.md)** - EC2 Terraform guide
+- **[ECS Docker Update](infrastructure/ecs/ECS_DOCKER_UPDATE.md)** - ECS containerization guide
+
+## Contributing
+
+Contributions are welcome! Please follow these guidelines:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Guidelines
+
+- Follow Java code conventions
+- Write unit tests for new features
+- Update documentation as needed
+- Test deployment changes in a test environment
+- Run `mvn test` before submitting PR
 
 ## License
 
@@ -491,14 +779,8 @@ This project is licensed under the Apache License 2.0 - see the LICENSE file for
 - [KEDA](https://keda.sh/) - Kubernetes event-driven autoscaling
 - [Spring Boot](https://spring.io/projects/spring-boot) - Application framework
 - [React](https://reactjs.org/) - UI framework
-
-## Documentation
-
-- **[Deployment Options Comparison](./DEPLOYMENT_OPTIONS.md)** - Choose the right deployment option
-- **[ECS Implementation Guide](./ECS_IMPLEMENTATION.md)** - Deep dive into ECS deployment
-- **[EC2 Implementation Guide](./EC2_IMPLEMENTATION.md)** - Deep dive into EC2 deployment
-- **[ECS Infrastructure Setup](./infrastructure/ecs/README.md)** - ECS deployment guide
-- **[EC2 Infrastructure Setup](./infrastructure/ec2/README.md)** - EC2 deployment guide
+- [Docker](https://www.docker.com/) - Containerization
+- [Terraform](https://www.terraform.io/) - Infrastructure as Code
 
 ## Related Projects
 
@@ -520,3 +802,5 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 ---
 
 **Built with ❤️ for the data engineering community**
+
+*Making Apache Airflow deployment simple, scalable, and cost-effective across any infrastructure.*
