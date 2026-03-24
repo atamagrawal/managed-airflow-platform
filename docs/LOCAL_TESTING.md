@@ -108,6 +108,10 @@ Each deployment runs as an isolated Docker Compose stack with:
 4. **Maven** (3.8+) *(Optional - can use wrapper)*
    - [Apache Maven](https://maven.apache.org/download.cgi)
 
+5. **Node.js** (16+) and **npm** *(Optional - for Web UI)*
+   - [Node.js Downloads](https://nodejs.org/)
+   - npm is included with Node.js
+
 ### System Requirements
 
 | Resource | Minimum | Recommended |
@@ -150,10 +154,16 @@ cd infrastructure/local
 cd ../../control-plane
 mvn spring-boot:run -Dspring-boot.run.profiles=local
 
-# 4. Open Swagger UI
-open http://localhost:8080/swagger-ui.html
+# 4. (Optional) Start the frontend UI
+cd ../frontend
+npm install
+npm start
 
-# 5. Create a tenant (see next section)
+# 5. Open Web UI or Swagger UI
+open http://localhost:3000          # Web UI (recommended)
+open http://localhost:8080/swagger-ui.html  # Swagger UI
+
+# 6. Create a tenant and deployment (see next section)
 ```
 
 ## Detailed Setup
@@ -213,17 +223,56 @@ Started ManagedAirflowControlPlaneApplication in X.XXX seconds
 
 Open your browser and navigate to:
 
+- **Web UI**: http://localhost:3000 (if frontend is running)
 - **Swagger UI**: http://localhost:8080/swagger-ui.html
 - **H2 Console**: http://localhost:8080/h2-console
   - JDBC URL: `jdbc:h2:mem:controlplane`
   - Username: `sa`
   - Password: *(leave empty)*
 
+### Step 5: Start the Frontend (Optional)
+
+For a user-friendly web interface, you can start the React frontend:
+
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies (first time only)
+npm install
+
+# Start the development server
+npm start
+```
+
+The frontend will open automatically at http://localhost:3000 and provides:
+- Visual dashboard for tenants and deployments
+- Easy deployment creation with forms
+- One-click access to Airflow UI
+- Deployment status monitoring
+- Resource management interface
+
 ## Creating Your First Deployment
+
+You can create deployments using three methods:
+1. **Web UI** (Recommended - easiest)
+2. **Swagger UI** (Interactive API documentation)
+3. **curl/API** (Command-line/programmatic)
 
 ### Step 1: Create a Tenant
 
-Using curl:
+#### Option A: Using Web UI (Recommended)
+
+1. Navigate to http://localhost:3000
+2. Click on **Tenants** in the navigation
+3. Click **Create Tenant** button
+4. Fill in the form:
+   - Tenant ID: `my-company`
+   - Name: `My Company`
+   - Email: `admin@mycompany.com`
+5. Click **Submit**
+
+#### Option B: Using curl
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/tenants \
@@ -235,7 +284,8 @@ curl -X POST http://localhost:8080/api/v1/tenants \
   }'
 ```
 
-Or use the Swagger UI:
+#### Option C: Using Swagger UI
+
 1. Navigate to http://localhost:8080/swagger-ui.html
 2. Find `POST /api/v1/tenants`
 3. Click **Try it out**
@@ -244,11 +294,32 @@ Or use the Swagger UI:
 
 ### Step 2: Create a Deployment
 
+#### Option A: Using Web UI (Recommended)
+
+1. Navigate to http://localhost:3000
+2. Click on **Deployments** in the navigation
+3. Click **Create Deployment** button
+4. Fill in the form:
+   - **Tenant**: Select `my-company` from dropdown
+   - **Deployment Name**: `my-airflow-dev`
+   - **Description**: (optional) `Development Airflow instance`
+   - **Airflow Version**: `3.1.8` (default)
+   - **Executor Type**: `LOCAL` (recommended for local testing)
+   - **Worker Autoscaling**: Min: `1`, Max: `3`
+   - **Resource allocations**: Use default values or customize
+5. Click **OK**
+
+The deployment will start creating, and you'll see the status change from `DEPLOYING` to `RUNNING`.
+
+6. Once running, click the **Open** button next to your deployment to access the Airflow UI directly
+
+#### Option B: Using curl
+
 ```bash
 curl -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
   -d '{
-    "deploymentId": "my-airflow-dev",
+    "name": "my-airflow-dev",
     "tenantId": "my-company",
     "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
@@ -307,6 +378,15 @@ Wait for all services to be healthy (2-5 minutes).
 
 Once the deployment is running, access the Airflow webserver:
 
+#### Option A: Using Web UI (Easiest)
+
+1. Navigate to http://localhost:3000/deployments
+2. Find your deployment `my-airflow-dev`
+3. Click the **Open** button (with link icon)
+4. The Airflow UI will open in a new tab
+
+#### Option B: Using curl/Browser
+
 ```bash
 # Get the webserver URL
 curl http://localhost:8080/api/v1/deployments/my-airflow-dev | jq .webserverUrl
@@ -323,18 +403,37 @@ open <webserver-url>
 
 ### List All Deployments
 
+**Using Web UI:**
+1. Navigate to http://localhost:3000
+2. Click on **Deployments** in the navigation
+3. View all deployments with their status, version, and resource information
+
+**Using API:**
 ```bash
 curl http://localhost:8080/api/v1/deployments
 ```
 
 ### Get Deployment Details
 
+**Using Web UI:**
+1. Navigate to http://localhost:3000/deployments
+2. Click on any deployment to view full details
+
+**Using API:**
 ```bash
 curl http://localhost:8080/api/v1/deployments/{deployment-id}
 ```
 
+### Access Airflow UI
+
+**Using Web UI:**
+1. Navigate to http://localhost:3000/deployments
+2. Click the **Open** button (link icon) next to the deployment
+3. The Airflow webserver will open in a new tab
+
 ### Scale Workers (Celery Executor Only)
 
+**Using API:**
 ```bash
 curl -X POST http://localhost:8080/api/v1/deployments/{deployment-id}/scale \
   -H "Content-Type: application/json" \
@@ -346,6 +445,7 @@ curl -X POST http://localhost:8080/api/v1/deployments/{deployment-id}/scale \
 
 ### Upgrade Deployment
 
+**Using API:**
 ```bash
 curl -X PUT http://localhost:8080/api/v1/deployments/{deployment-id} \
   -H "Content-Type: application/json" \
@@ -357,6 +457,12 @@ curl -X PUT http://localhost:8080/api/v1/deployments/{deployment-id} \
 
 ### Delete Deployment
 
+**Using Web UI:**
+1. Navigate to http://localhost:3000/deployments
+2. Click the **Delete** button next to the deployment
+3. Confirm the deletion
+
+**Using API:**
 ```bash
 curl -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id}
 ```
