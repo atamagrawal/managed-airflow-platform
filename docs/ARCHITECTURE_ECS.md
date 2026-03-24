@@ -340,7 +340,7 @@ Tenant A                          Tenant B
   "memory": "2048", // 2 GB (configurable)
   "containerDefinitions": [{
     "name": "airflow-scheduler",
-    "image": "apache/airflow:2.7.0",
+    "image": "apache/airflow:3.1.8",
     "command": ["scheduler"],
     "environment": [
       // See section 5.6 for full environment variables
@@ -365,7 +365,7 @@ Tenant A                          Tenant B
   "memory": "1024", // 1 GB (configurable)
   "containerDefinitions": [{
     "name": "airflow-webserver",
-    "image": "apache/airflow:2.7.0",
+    "image": "apache/airflow:3.1.8",
     "command": ["webserver"],
     "portMappings": [{"containerPort": 8080}],
     "environment": [
@@ -391,7 +391,7 @@ Tenant A                          Tenant B
   "memory": "2048", // 2 GB (configurable)
   "containerDefinitions": [{
     "name": "airflow-worker",
-    "image": "apache/airflow:2.7.0",
+    "image": "apache/airflow:3.1.8",
     "command": ["celery", "worker"],
     "environment": [
       // See section 5.6 for full environment variables
@@ -640,7 +640,7 @@ POST /api/deployments
 {
   "tenantId": "acme-corp",
   "deploymentId": "prod-airflow",
-  "airflowVersion": "2.7.0",
+  "airflowVersion": "3.1.8",
   "executorType": "CELERY",
   "schedulerCpu": "1024",
   "schedulerMemory": "2048",
@@ -717,7 +717,7 @@ POST /api/deployments
 ```bash
 PUT /api/deployments/{deploymentId}
 {
-  "airflowVersion": "2.8.0",
+  "airflowVersion": "3.1.8",
   "schedulerCpu": "2048",
   "schedulerMemory": "4096"
 }

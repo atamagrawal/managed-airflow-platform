@@ -171,7 +171,7 @@ curl -X POST http://localhost:8080/api/deployments \
     "tenantId": "test-tenant",
     "name": "test-deployment",
     "description": "Test ECS deployment",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "celery",
     "minWorkers": 1,
     "maxWorkers": 5,

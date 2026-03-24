@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Typography, Space, Tag, Popconfirm } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Typography, Space, Tag, Popconfirm, Alert } from 'antd';
 import { PlusOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { deploymentAPI, tenantAPI } from '../services/api';
@@ -174,21 +174,28 @@ const Deployments = () => {
         }}
         width={700}
       >
+        <Alert
+          message="Deployment Provider"
+          description="The deployment will be created using the active provider (Local, Kubernetes, ECS, or EC2) configured in the control plane. For local testing, ensure Docker is running and the control plane is started with the 'local' profile."
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
         <Form
           form={form}
           layout="vertical"
           onFinish={handleCreateDeployment}
           initialValues={{
-            airflowVersion: '1.13.0',
-            executorType: 'CELERY',
+            airflowVersion: '3.1.8',
+            executorType: 'LOCAL',
             minWorkers: 1,
-            maxWorkers: 5,
-            schedulerCpu: '1000m',
-            schedulerMemory: '2Gi',
-            workerCpu: '1000m',
-            workerMemory: '2Gi',
-            webserverCpu: '500m',
-            webserverMemory: '1Gi',
+            maxWorkers: 3,
+            schedulerCpu: '500',
+            schedulerMemory: '1024',
+            workerCpu: '500',
+            workerMemory: '1024',
+            webserverCpu: '500',
+            webserverMemory: '1024',
           }}
         >
           <Form.Item
@@ -221,24 +228,29 @@ const Deployments = () => {
             name="airflowVersion"
             label="Airflow Version"
             rules={[{ required: true, message: 'Please enter Airflow version' }]}
+            tooltip="Apache Airflow version to deploy (e.g., 3.1.8, 2.8.1)"
           >
-            <Input placeholder="e.g., 1.13.0" />
+            <Input placeholder="e.g., 3.1.8" />
           </Form.Item>
 
           <Form.Item
             name="executorType"
             label="Executor Type"
             rules={[{ required: true, message: 'Please select executor type' }]}
+            tooltip="LOCAL: Simple, single-process execution. CELERY: Distributed task execution (requires Redis). KUBERNETES: Each task runs in separate pod (K8s only)"
           >
             <Select placeholder="Select executor type">
-              <Option value="LOCAL">Local Executor</Option>
-              <Option value="CELERY">Celery Executor</Option>
-              <Option value="KUBERNETES">Kubernetes Executor</Option>
-              <Option value="CELERY_KUBERNETES">Celery Kubernetes Executor</Option>
+              <Option value="LOCAL">Local Executor (recommended for dev/test)</Option>
+              <Option value="CELERY">Celery Executor (distributed execution)</Option>
+              <Option value="KUBERNETES">Kubernetes Executor (K8s only)</Option>
+              <Option value="CELERY_KUBERNETES">Celery Kubernetes Executor (hybrid)</Option>
             </Select>
           </Form.Item>
 
-          <Form.Item label="Worker Autoscaling">
+          <Form.Item
+            label="Worker Autoscaling"
+            tooltip="For Local/EC2: Manual scaling. For ECS/K8s: Auto-scaling based on metrics"
+          >
             <Space>
               <Form.Item
                 name="minWorkers"
@@ -258,7 +270,65 @@ const Deployments = () => {
             </Space>
           </Form.Item>
 
-          <Form.Item name="ingressHost" label="Ingress Host (Optional)">
+          <Form.Item
+            name="schedulerCpu"
+            label="Scheduler CPU (millicores)"
+            tooltip="CPU allocation in millicores. 500 = 0.5 CPU, 1000 = 1 CPU"
+            rules={[{ required: true, message: 'Required' }]}
+          >
+            <Input placeholder="500" />
+          </Form.Item>
+
+          <Form.Item
+            name="schedulerMemory"
+            label="Scheduler Memory (MB)"
+            tooltip="Memory allocation in megabytes"
+            rules={[{ required: true, message: 'Required' }]}
+          >
+            <Input placeholder="1024" />
+          </Form.Item>
+
+          <Form.Item
+            name="webserverCpu"
+            label="Webserver CPU (millicores)"
+            tooltip="CPU allocation in millicores. 500 = 0.5 CPU"
+            rules={[{ required: true, message: 'Required' }]}
+          >
+            <Input placeholder="500" />
+          </Form.Item>
+
+          <Form.Item
+            name="webserverMemory"
+            label="Webserver Memory (MB)"
+            tooltip="Memory allocation in megabytes"
+            rules={[{ required: true, message: 'Required' }]}
+          >
+            <Input placeholder="1024" />
+          </Form.Item>
+
+          <Form.Item
+            name="workerCpu"
+            label="Worker CPU (millicores)"
+            tooltip="CPU allocation per worker in millicores"
+            rules={[{ required: true, message: 'Required' }]}
+          >
+            <Input placeholder="500" />
+          </Form.Item>
+
+          <Form.Item
+            name="workerMemory"
+            label="Worker Memory (MB)"
+            tooltip="Memory allocation per worker in megabytes"
+            rules={[{ required: true, message: 'Required' }]}
+          >
+            <Input placeholder="1024" />
+          </Form.Item>
+
+          <Form.Item
+            name="ingressHost"
+            label="Ingress Host (Optional - Kubernetes only)"
+            tooltip="Custom domain for Airflow UI. Only applicable for Kubernetes deployments with ingress configured"
+          >
             <Input placeholder="e.g., airflow.example.com" />
           </Form.Item>
         </Form>

@@ -74,15 +74,23 @@ const DeploymentDetails = () => {
       <Card title="Basic Information" style={{ marginBottom: 16 }}>
         <Descriptions column={2} bordered>
           <Descriptions.Item label="Deployment ID">{deployment.deploymentId}</Descriptions.Item>
-          <Descriptions.Item label="Name">{deployment.name}</Descriptions.Item>
+          <Descriptions.Item label="Name">{deployment.name || deployment.deploymentId}</Descriptions.Item>
           <Descriptions.Item label="Tenant ID">{deployment.tenantId}</Descriptions.Item>
           <Descriptions.Item label="Status">
             <Tag color={getStatusColor(deployment.status)}>{deployment.status}</Tag>
           </Descriptions.Item>
           <Descriptions.Item label="Airflow Version">{deployment.airflowVersion}</Descriptions.Item>
           <Descriptions.Item label="Executor Type">{deployment.executorType}</Descriptions.Item>
-          <Descriptions.Item label="Namespace">{deployment.namespace}</Descriptions.Item>
-          <Descriptions.Item label="Helm Release">{deployment.helmReleaseName}</Descriptions.Item>
+          {deployment.namespace && (
+            <Descriptions.Item label="Namespace (Kubernetes)">
+              {deployment.namespace}
+            </Descriptions.Item>
+          )}
+          {deployment.helmReleaseName && (
+            <Descriptions.Item label="Helm Release (Kubernetes)">
+              {deployment.helmReleaseName}
+            </Descriptions.Item>
+          )}
           <Descriptions.Item label="Description" span={2}>
             {deployment.description || 'N/A'}
           </Descriptions.Item>
@@ -93,12 +101,24 @@ const DeploymentDetails = () => {
         <Descriptions column={2} bordered>
           <Descriptions.Item label="Min Workers">{deployment.minWorkers}</Descriptions.Item>
           <Descriptions.Item label="Max Workers">{deployment.maxWorkers}</Descriptions.Item>
-          <Descriptions.Item label="Scheduler CPU">{deployment.schedulerCpu}</Descriptions.Item>
-          <Descriptions.Item label="Scheduler Memory">{deployment.schedulerMemory}</Descriptions.Item>
-          <Descriptions.Item label="Worker CPU">{deployment.workerCpu}</Descriptions.Item>
-          <Descriptions.Item label="Worker Memory">{deployment.workerMemory}</Descriptions.Item>
-          <Descriptions.Item label="Webserver CPU">{deployment.webserverCpu}</Descriptions.Item>
-          <Descriptions.Item label="Webserver Memory">{deployment.webserverMemory}</Descriptions.Item>
+          <Descriptions.Item label="Scheduler CPU">
+            {deployment.schedulerCpu} {deployment.schedulerCpu && !deployment.schedulerCpu.includes('m') ? 'millicores' : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Scheduler Memory">
+            {deployment.schedulerMemory} {deployment.schedulerMemory && !deployment.schedulerMemory.includes('Gi') && !deployment.schedulerMemory.includes('Mi') ? 'MB' : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Worker CPU">
+            {deployment.workerCpu} {deployment.workerCpu && !deployment.workerCpu.includes('m') ? 'millicores' : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Worker Memory">
+            {deployment.workerMemory} {deployment.workerMemory && !deployment.workerMemory.includes('Gi') && !deployment.workerMemory.includes('Mi') ? 'MB' : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Webserver CPU">
+            {deployment.webserverCpu} {deployment.webserverCpu && !deployment.webserverCpu.includes('m') ? 'millicores' : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Webserver Memory">
+            {deployment.webserverMemory} {deployment.webserverMemory && !deployment.webserverMemory.includes('Gi') && !deployment.webserverMemory.includes('Mi') ? 'MB' : ''}
+          </Descriptions.Item>
         </Descriptions>
       </Card>
 

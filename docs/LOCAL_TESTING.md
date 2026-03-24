@@ -250,7 +250,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
   -d '{
     "deploymentId": "my-airflow-dev",
     "tenantId": "my-company",
-    "airflowVersion": "2.8.1",
+    "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
     "webserverCpu": "500",
     "webserverMemory": "1024",
@@ -269,7 +269,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
   "deploymentId": "my-airflow-dev",
   "tenantId": "my-company",
   "status": "DEPLOYING",
-  "airflowVersion": "2.8.1",
+  "airflowVersion": "3.1.8",
   "webserverUrl": "http://localhost:8093"
 }
 ```
@@ -350,7 +350,7 @@ curl -X POST http://localhost:8080/api/v1/deployments/{deployment-id}/scale \
 curl -X PUT http://localhost:8080/api/v1/deployments/{deployment-id} \
   -H "Content-Type: application/json" \
   -d '{
-    "airflowVersion": "2.8.2",
+    "airflowVersion": "3.1.8",
     "webserverMemory": "2048"
   }'
 ```
@@ -524,7 +524,7 @@ docker-compose restart airflow-scheduler airflow-worker
 For permanent installation, create a custom Dockerfile:
 
 ```dockerfile
-FROM apache/airflow:2.8.1
+FROM apache/airflow:3.1.8
 RUN pip install --no-cache-dir pandas numpy scikit-learn
 ```
 

@@ -324,7 +324,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
   -d '{
     "deploymentId": "test-airflow",
     "tenantId": "test-company",
-    "airflowVersion": "2.8.1",
+    "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
     "webserverCpu": "500",
     "webserverMemory": "1024",
@@ -1147,7 +1147,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
   -d '{
     "tenantId": "test-tenant",
     "deploymentId": "test-deployment",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
     "schedulerCpu": "1024",
     "schedulerMemory": "2048",

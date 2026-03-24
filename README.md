@@ -246,7 +246,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
     "tenantId": "data-team",
     "deploymentId": "prod-etl",
     "name": "Production ETL",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "CELERY",
     "minWorkers": 1,
     "maxWorkers": 5,

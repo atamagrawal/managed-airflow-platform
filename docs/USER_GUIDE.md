@@ -196,7 +196,7 @@ Deployments are Apache Airflow instances. The deployment process differs slightl
 - **Description** - Brief description (optional)
 
 ##### Airflow Configuration
-- **Airflow Version** - Version to deploy (e.g., "2.7.0")
+- **Airflow Version** - Version to deploy (e.g., "3.1.8")
 - **Executor Type** - Choose the executor:
   - **LOCAL** - Simple, runs tasks in scheduler process (dev/test)
   - **CELERY** - Distributed, recommended for production
@@ -237,7 +237,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
     "deploymentId": "local-dev",
     "name": "Local Development",
     "description": "Local development environment",
-    "airflowVersion": "2.8.1",
+    "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
     "schedulerCpu": "500",
     "schedulerMemory": "1024",
@@ -256,7 +256,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
   "deploymentId": "local-dev",
   "tenantId": "my-company",
   "status": "DEPLOYING",
-  "airflowVersion": "2.8.1",
+  "airflowVersion": "3.1.8",
   "webserverUrl": "http://localhost:8093"
 }
 ```
@@ -270,7 +270,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
     "deploymentId": "prod-etl",
     "name": "Production ETL",
     "description": "Main production ETL pipeline",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "CELERY",
     "schedulerCpu": "1024",
     "schedulerMemory": "2048",
@@ -293,7 +293,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
     "deploymentId": "staging-etl",
     "name": "Staging ETL",
     "description": "Staging environment",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "CELERY",
     "schedulerCpu": "512",
     "schedulerMemory": "1024",
@@ -315,7 +315,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
     "deploymentId": "dev-etl",
     "name": "Development ETL",
     "description": "Development environment",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
     "schedulerCpu": "1000",
     "schedulerMemory": "2048",
@@ -383,7 +383,7 @@ curl -X PUT http://localhost:8080/api/v1/deployments/{deploymentId} \
     "tenantId": "data-team",
     "name": "Production ETL",
     "description": "Updated description",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "CELERY",
     "minWorkers": 3,
     "maxWorkers": 15,
@@ -1101,7 +1101,7 @@ Content-Type: application/json
   "deploymentId": "prod-airflow",
   "name": "Production Airflow",
   "description": "Main production instance",
-  "airflowVersion": "2.7.0",
+  "airflowVersion": "3.1.8",
   "executorType": "CELERY",
   "minWorkers": 1,
   "maxWorkers": 5,
@@ -1124,7 +1124,7 @@ Content-Type: application/json
   "tenantId": "engineering-team",
   "name": "Production Airflow",
   "description": "Updated description",
-  "airflowVersion": "2.7.0",
+  "airflowVersion": "3.1.8",
   "executorType": "CELERY",
   "minWorkers": 2,
   "maxWorkers": 10,
@@ -1171,7 +1171,7 @@ DEPLOYMENT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/deployments \
     "tenantId": "data-team",
     "deploymentId": "my-airflow",
     "name": "My Airflow Instance",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "CELERY",
     "minWorkers": 1,
     "maxWorkers": 5,

@@ -236,7 +236,7 @@ curl -X POST http://localhost:8080/api/deployments \
   -d '{
     "tenantId": "test-tenant",
     "name": "dev-airflow",
-    "airflowVersion": "2.7.0",
+    "airflowVersion": "3.1.8",
     "executorType": "celery",
     "minWorkers": 2,
     "maxWorkers": 5
