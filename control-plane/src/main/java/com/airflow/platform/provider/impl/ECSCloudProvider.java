@@ -44,17 +44,22 @@ public class ECSCloudProvider implements CloudProvider {
             CreateClusterRequest request = CreateClusterRequest.builder()
                     .clusterName(clusterName)
                     .tags(
-                            Tag.builder().key("app").value("managed-airflow").build(),
-                            Tag.builder().key("tenant-id").value(tenant.getTenantId()).build(),
-                            Tag.builder().key("managed-by").value("airflow-control-plane").build()
+                            software.amazon.awssdk.services.ecs.model.Tag.builder().key("app").value("managed-airflow").build(),
+                            software.amazon.awssdk.services.ecs.model.Tag.builder().key("tenant-id").value(tenant.getTenantId()).build(),
+                            software.amazon.awssdk.services.ecs.model.Tag.builder().key("managed-by").value("airflow-control-plane").build()
                     )
                     .capacityProviders("FARGATE", "FARGATE_SPOT")
                     .build();
 
             ecsClient.createCluster(request);
             log.info("ECS cluster created successfully: {}", clusterName);
-        } catch (ClusterAlreadyExistsException e) {
-            log.info("ECS cluster already exists: {}", clusterName);
+        } catch (EcsException e) {
+            if (e.awsErrorDetails() != null && "ClusterAlreadyExistsException".equals(e.awsErrorDetails().errorCode())) {
+                log.info("ECS cluster already exists: {}", clusterName);
+                return;
+            }
+            log.error("Failed to create ECS cluster: {}", clusterName, e);
+            throw new DeploymentException("Failed to create ECS cluster: " + e.getMessage(), e);
         } catch (Exception e) {
             log.error("Failed to create ECS cluster: {}", clusterName, e);
             throw new DeploymentException("Failed to create ECS cluster: " + e.getMessage(), e);

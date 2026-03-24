@@ -2,7 +2,6 @@ package com.airflow.platform.service;
 
 import com.airflow.platform.exception.DeploymentException;
 import io.kubernetes.client.openapi.ApiClient;
-import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.CoreV1Api;
 import io.kubernetes.client.openapi.models.*;
 import io.kubernetes.client.util.Config;
@@ -47,11 +46,11 @@ public class KubernetesService {
         ns.setMetadata(metadata);
 
         try {
-            coreV1Api.createNamespace(ns, null, null, null, null);
+            coreV1Api.createNamespace(ns);
             log.info("Namespace created successfully: {}", namespace);
-        } catch (ApiException e) {
+        } catch (Exception e) {
             log.error("Failed to create namespace: {}", namespace, e);
-            throw new DeploymentException("Failed to create namespace: " + e.getResponseBody(), e);
+            throw new DeploymentException("Failed to create namespace: " + e.getMessage(), e);
         }
     }
 
@@ -62,11 +61,11 @@ public class KubernetesService {
         log.info("Deleting namespace: {}", namespace);
 
         try {
-            coreV1Api.deleteNamespace(namespace, null, null, null, null, null, null);
+            coreV1Api.deleteNamespace(namespace);
             log.info("Namespace deleted successfully: {}", namespace);
-        } catch (ApiException e) {
+        } catch (Exception e) {
             log.error("Failed to delete namespace: {}", namespace, e);
-            throw new DeploymentException("Failed to delete namespace: " + e.getResponseBody(), e);
+            throw new DeploymentException("Failed to delete namespace: " + e.getMessage(), e);
         }
     }
 
@@ -75,14 +74,14 @@ public class KubernetesService {
      */
     public boolean namespaceExists(String namespace) {
         try {
-            coreV1Api.readNamespace(namespace, null);
+            coreV1Api.readNamespace(namespace);
             return true;
-        } catch (ApiException e) {
-            if (e.getCode() == 404) {
+        } catch (Exception e) {
+            if (e.getMessage() != null && e.getMessage().contains("404")) {
                 return false;
             }
             log.error("Error checking namespace existence: {}", namespace, e);
-            throw new DeploymentException("Error checking namespace: " + e.getResponseBody(), e);
+            throw new DeploymentException("Error checking namespace: " + e.getMessage(), e);
         }
     }
 
@@ -100,11 +99,11 @@ public class KubernetesService {
         secret.setStringData(data);
 
         try {
-            coreV1Api.createNamespacedSecret(namespace, secret, null, null, null, null);
+            coreV1Api.createNamespacedSecret(namespace, secret);
             log.info("Secret created successfully: {}", secretName);
-        } catch (ApiException e) {
+        } catch (Exception e) {
             log.error("Failed to create secret: {}", secretName, e);
-            throw new DeploymentException("Failed to create secret: " + e.getResponseBody(), e);
+            throw new DeploymentException("Failed to create secret: " + e.getMessage(), e);
         }
     }
 

@@ -15,22 +15,22 @@ const DeploymentDetails = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    const fetchDeploymentDetails = async () => {
+      try {
+        setLoading(true);
+        const response = await deploymentAPI.getById(deploymentId);
+        setDeployment(response.data);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching deployment details:', err);
+        setError('Failed to load deployment details');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchDeploymentDetails();
   }, [deploymentId]);
-
-  const fetchDeploymentDetails = async () => {
-    try {
-      setLoading(true);
-      const response = await deploymentAPI.getById(deploymentId);
-      setDeployment(response.data);
-      setError(null);
-    } catch (err) {
-      console.error('Error fetching deployment details:', err);
-      setError('Failed to load deployment details');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getStatusColor = (status) => {
     const colors = {
