@@ -38,9 +38,11 @@ public class DockerComposeGenerator {
         compose.append("  AIRFLOW__API_AUTH__JWT_SECRET: airflow_jwt_secret\n");
         compose.append("  AIRFLOW__API_AUTH__JWT_ISSUER: airflow\n");
         compose.append("  AIRFLOW__CORE__FERNET_KEY: ''\n");
-        compose.append("  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'\n");
+        // New DAGs should start unpaused; otherwise manual triggers can stay stuck in "queued".
+        compose.append("  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'\n");
         compose.append("  AIRFLOW__CORE__LOAD_EXAMPLES: 'false'\n");
         compose.append("  AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'\n");
+        compose.append("  AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: '5'\n");
         compose.append("  _PIP_ADDITIONAL_REQUIREMENTS: ''\n");
 
         if (needsRedis) {
@@ -167,6 +169,12 @@ public class DockerComposeGenerator {
         compose.append("  airflow-dag-processor:\n");
         compose.append("    <<: *airflow-common\n");
         compose.append("    command: dag-processor\n");
+        compose.append("    environment:\n");
+        compose.append("      <<: *airflow-common-env\n");
+        compose.append("      AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: \"5\"\n");
+        compose.append("      AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: \"0\"\n");
+        compose.append("      AIRFLOW__SCHEDULER__PARSING_PROCESSES: \"4\"\n");
+        compose.append("      AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: \"True\"\n");
         compose.append("    healthcheck:\n");
         compose.append("      test: [\"CMD-SHELL\", 'airflow jobs check --job-type DagProcessorJob --hostname \"$${HOSTNAME}\"']\n");
         compose.append("      interval: 30s\n");

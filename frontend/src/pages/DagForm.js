@@ -132,8 +132,6 @@ dag = DAG(
     'my_sample_dag',
     default_args=default_args,
     description='A simple sample DAG',
-    schedule_interval=timedelta(days=1),
-    start_date=datetime(2024, 1, 1),
     catchup=False,
     tags=['example'],
 )
