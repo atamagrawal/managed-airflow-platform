@@ -363,14 +363,56 @@ DAGs can optionally be associated with Git repositories:
 3. Status set to VALID or INVALID
 4. User clicks "Deploy" button
 5. Status changes to DEPLOYING
-6. DAG file should be written to Airflow DAG folder
+6. DAG file written to Airflow DAG folder (based on deployment provider)
 7. Status changes to DEPLOYED
+
+**Deployment by Provider:**
+- **Local:** Writes DAG file to `~/airflow-deployments/{tenant-id}/{deployment-id}/dags/`
+- **Kubernetes:** Planned - ConfigMap/Secret or PVC deployment
+- **ECS:** Planned - Write to EFS volume
+- **EC2:** Planned - Write via SSM commands
 
 **Planned Enhancements:**
 - Kubernetes ConfigMap/Secret deployment
 - Git-sync integration for automatic syncing
 - S3/GCS bucket deployment
 - Persistent Volume (PV) deployment
+
+#### 7.7 DAG Run Triggering
+
+The platform provides the ability to trigger DAG runs directly through the UI and API.
+
+**Trigger Flow:**
+1. User clicks "Run" button on a DEPLOYED DAG
+2. Backend extracts Airflow DAG ID from Python code
+3. Backend calls Airflow REST API: `POST /api/v1/dags/{dag_id}/dagRuns`
+4. Airflow queues the DAG run
+5. User receives success/failure response
+
+**Implementation Details:**
+- Uses Spring RestTemplate to call Airflow API
+- Automatic DAG ID extraction via regex patterns
+- Basic authentication with Airflow (admin/admin)
+- Generates unique run ID: `manual_{timestamp}`
+- Returns Airflow's response to user
+
+**API Integration:**
+```java
+// Airflow REST API endpoint
+POST {webserver-url}/api/v1/dags/{dag_id}/dagRuns
+
+// Request body
+{
+  "conf": {},
+  "dag_run_id": "manual_1234567890"
+}
+```
+
+**Error Handling:**
+- Validates DAG is DEPLOYED before triggering
+- Checks webserver URL is available
+- Returns user-friendly error messages
+- Logs failures for troubleshooting
 
 ### 8. Data Model
 

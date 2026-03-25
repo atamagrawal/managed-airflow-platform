@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Descriptions, Button, Space, Tag, message, Typography, Spin } from 'antd';
-import { ArrowLeftOutlined, EditOutlined, RocketOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, EditOutlined, RocketOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import { dagAPI } from '../services/api';
@@ -39,6 +39,20 @@ const DagDetails = () => {
     } catch (error) {
       message.error('Failed to deploy DAG');
       console.error('Error deploying DAG:', error);
+    }
+  };
+
+  const handleTrigger = async () => {
+    try {
+      const response = await dagAPI.trigger(dagId);
+      if (response.data.success) {
+        message.success('DAG run triggered successfully');
+      } else {
+        message.error(response.data.message || 'Failed to trigger DAG');
+      }
+    } catch (error) {
+      message.error('Failed to trigger DAG run');
+      console.error('Error triggering DAG:', error);
     }
   };
 
@@ -84,6 +98,16 @@ const DagDetails = () => {
             {dag.status === 'VALID' && (
               <Button type="primary" icon={<RocketOutlined />} onClick={handleDeploy}>
                 Deploy
+              </Button>
+            )}
+            {dag.status === 'DEPLOYED' && (
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                onClick={handleTrigger}
+                style={{ background: '#52c41a', borderColor: '#52c41a' }}
+              >
+                Run DAG
               </Button>
             )}
           </Space>

@@ -75,4 +75,11 @@ public class DagController {
         DagResponse response = dagService.deployDag(dagId);
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/{dagId}/trigger")
+    @Operation(summary = "Trigger a DAG run in Airflow")
+    public ResponseEntity<java.util.Map<String, Object>> triggerDagRun(@PathVariable String dagId) {
+        java.util.Map<String, Object> response = dagService.triggerDagRun(dagId);
+        return ResponseEntity.ok(response);
+    }
 }
