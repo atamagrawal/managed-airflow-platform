@@ -28,4 +28,15 @@ export const deploymentAPI = {
   delete: (deploymentId) => api.delete(`/deployments/${deploymentId}`),
 };
 
+// DAG APIs
+export const dagAPI = {
+  getAll: () => api.get('/dags'),
+  getById: (dagId) => api.get(`/dags/${dagId}`),
+  getByDeployment: (deploymentId) => api.get(`/dags/deployment/${deploymentId}`),
+  create: (data) => api.post('/dags', data),
+  update: (dagId, data) => api.put(`/dags/${dagId}`, data),
+  delete: (dagId) => api.delete(`/dags/${dagId}`),
+  deploy: (dagId) => api.post(`/dags/${dagId}/deploy`),
+};
+
 export default api;

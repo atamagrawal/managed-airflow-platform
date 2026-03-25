@@ -79,12 +79,13 @@ The control plane is the management layer responsible for orchestrating all tena
 - REST API for UI and external integrations
 
 **Key Components:**
-- **Controllers:** REST endpoints for tenants and deployments
-- **Services:** Business logic for tenant and deployment operations
+- **Controllers:** REST endpoints for tenants, deployments, and DAGs
+- **Services:** Business logic for tenant, deployment, and DAG operations
 - **Repositories:** Data access layer using Spring Data JPA
-- **Models:** JPA entities (Tenant, AirflowDeployment)
+- **Models:** JPA entities (Tenant, AirflowDeployment, Dag)
 - **Kubernetes Service:** Integration with Kubernetes API
 - **Helm Service:** Helm chart deployment via shell commands
+- **DAG Service:** DAG lifecycle management, validation, and deployment
 
 **Technology Stack:**
 - Java 17
@@ -108,12 +109,15 @@ The control plane is the management layer responsible for orchestrating all tena
 - Tenant management (CRUD operations)
 - Deployment management (create, view, delete)
 - Deployment details view
+- **DAG management (create, edit, view, deploy)**
+- **Monaco code editor for DAG development**
 - Responsive design using Ant Design
 
 **Technology Stack:**
 - React 18
 - React Router
 - Ant Design (UI components)
+- Monaco Editor (code editor)
 - Axios (HTTP client)
 - Recharts (data visualization)
 
@@ -265,15 +269,119 @@ The Kubernetes service handles:
   - Manage KEDA ScaledObjects
   - Configure ingress
 
-### 7. Data Model
+### 7. DAG Management System
 
-#### 7.1 Entity Relationships
+The platform provides a comprehensive DAG management system that allows users to create, edit, and deploy DAGs directly from the web interface.
+
+#### 7.1 DAG Entity Model
+
+**DAG Entity:**
+```java
+Dag {
+  - dagId: Unique identifier (auto-generated)
+  - deployment: Associated AirflowDeployment
+  - name: Display name
+  - description: DAG description
+  - dagCode: Python code for the DAG
+  - fileName: Python file name (e.g., "my_dag.py")
+  - status: DRAFT/VALIDATING/VALID/INVALID/DEPLOYING/DEPLOYED/FAILED
+  - gitRepository: Optional Git repository URL
+  - gitBranch: Git branch (e.g., "main")
+  - gitPath: Path within repository
+  - gitCommitHash: Last synced commit
+  - validationErrors: Validation error messages
+  - isPaused: Whether DAG should be paused
+  - isActive: Whether DAG is active
+  - owner: DAG owner/team
+  - tags: Comma-separated tags
+  - createdAt, updatedAt: Timestamps
+  - lastSyncedAt, lastDeployedAt: Sync/deploy timestamps
+}
+```
+
+#### 7.2 DAG Lifecycle
+
+```
+1. DRAFT → User creates DAG in UI
+2. VALIDATING → System validates Python code
+3. VALID/INVALID → Validation result
+4. DEPLOYING → DAG being deployed to Airflow
+5. DEPLOYED → Successfully deployed and running
+6. FAILED → Deployment failed
+```
+
+#### 7.3 DAG Management Components
+
+**Backend (Spring Boot):**
+- **DagController**: REST API endpoints (`/api/v1/dags`)
+- **DagService**: Business logic for CRUD operations and validation
+- **DagRepository**: JPA repository for database access
+- **Validation Engine**: Python code validation (syntax, imports, structure)
+
+**Frontend (React):**
+- **Dags.js**: DAG listing page with filtering and actions
+- **DagForm.js**: Create/edit form with Monaco code editor
+- **DagDetails.js**: Read-only DAG details and code view
+- **Monaco Editor**: Full-featured Python code editor with syntax highlighting
+
+#### 7.4 DAG Validation
+
+The platform performs basic validation on DAG code:
+
+1. **Syntax Validation:**
+   - Checks for required Airflow imports
+   - Validates DAG object definition
+   - Checks for balanced parentheses
+   - Basic Python syntax verification
+
+2. **Future Enhancements:**
+   - Python AST (Abstract Syntax Tree) parsing
+   - Airflow DAG parsing without execution
+   - Custom linting rules
+   - Security scanning for malicious code
+
+#### 7.5 Git Integration
+
+DAGs can optionally be associated with Git repositories:
+
+**Current Implementation:**
+- Git repository URL, branch, and path stored in database
+- Manual configuration per DAG
+- Metadata only (no automatic sync yet)
+
+**Planned Features:**
+- Automatic Git-sync sidecar container
+- Two-way sync (UI changes → Git, Git changes → Airflow)
+- Commit tracking and version history
+- Pull request integration
+
+#### 7.6 DAG Deployment Process
+
+**Current Flow:**
+1. User creates/edits DAG in UI
+2. DAG code validated by backend
+3. Status set to VALID or INVALID
+4. User clicks "Deploy" button
+5. Status changes to DEPLOYING
+6. DAG file should be written to Airflow DAG folder
+7. Status changes to DEPLOYED
+
+**Planned Enhancements:**
+- Kubernetes ConfigMap/Secret deployment
+- Git-sync integration for automatic syncing
+- S3/GCS bucket deployment
+- Persistent Volume (PV) deployment
+
+### 8. Data Model
+
+#### 8.1 Entity Relationships
 
 ```
 Tenant (1) ──────< (N) AirflowDeployment
+AirflowDeployment (1) ──────< (N) Dag
 ```
 
-#### 7.2 Database Schema
+#### 8.2 Database Schema
 
 **Tenants Table:**
 ```sql
@@ -320,6 +428,33 @@ airflow_deployments (
   created_at TIMESTAMP,
   updated_at TIMESTAMP,
   deployed_at TIMESTAMP
+)
+```
+
+**DAGs Table:**
+```sql
+dags (
+  id BIGINT PRIMARY KEY,
+  dag_id VARCHAR(100) UNIQUE,
+  deployment_id BIGINT FOREIGN KEY,
+  name VARCHAR(200),
+  description VARCHAR(1000),
+  dag_code TEXT,
+  git_repository VARCHAR(500),
+  git_branch VARCHAR(100),
+  git_path VARCHAR(500),
+  git_commit_hash VARCHAR(100),
+  status VARCHAR(50),
+  file_name VARCHAR(100),
+  validation_errors TEXT,
+  is_paused BOOLEAN,
+  is_active BOOLEAN,
+  owner VARCHAR(100),
+  tags VARCHAR(500),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  last_synced_at TIMESTAMP,
+  last_deployed_at TIMESTAMP
 )
 ```
 
@@ -501,10 +636,13 @@ The platform is designed to work across cloud providers:
 
 ## Future Enhancements
 
-1. **DAG Management**
-   - Git-based DAG deployment
-   - DAG version control
+1. **Advanced DAG Management**
+   - Git-sync automation for DAG deployment
+   - DAG version control and rollback
    - CI/CD integration for DAG testing
+   - Advanced Python validation (AST parsing)
+   - DAG testing framework
+   - DAG marketplace with templates
 
 2. **Cost Management**
    - Resource usage tracking per tenant

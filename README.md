@@ -42,6 +42,7 @@ Choose the deployment option that fits your needs:
 
 ### Management & Monitoring
 - **Control Plane UI** - React-based web interface for managing tenants and deployments
+- **DAG Management** - Web-based DAG creation with code editor, Git integration, and deployment
 - **REST API** - Complete API for programmatic management
 - **Multiple Executor Support** - Local, Celery, Kubernetes, and hybrid executors
 - **Monitoring Ready** - Built-in health checks and metrics endpoints
@@ -264,6 +265,39 @@ curl -X POST http://localhost:8080/api/v1/deployments \
 - ECS: ~5-7 minutes
 - Kubernetes: ~5-10 minutes
 
+### Creating and Managing DAGs
+
+**Via UI:**
+1. Navigate to DAGs page
+2. Click "Create DAG"
+3. Select deployment, enter DAG details
+4. Write Python code in Monaco editor
+5. Save and deploy to Airflow
+
+**Via API:**
+```bash
+curl -X POST http://localhost:8080/api/v1/dags \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deploymentId": "prod-etl",
+    "name": "My ETL Pipeline",
+    "description": "Daily ETL job",
+    "fileName": "my_etl_dag.py",
+    "dagCode": "from airflow import DAG\n# DAG code here...",
+    "gitRepository": "https://github.com/user/airflow-dags.git",
+    "gitBranch": "main",
+    "owner": "data-team",
+    "tags": "etl,daily,production"
+  }'
+```
+
+**Features:**
+- Monaco code editor with Python syntax highlighting
+- Basic DAG validation
+- Git repository integration (optional)
+- Deploy directly to Airflow instances
+- View, edit, and manage all DAGs from UI
+
 ### Accessing Airflow
 
 **After deployment completes:**
@@ -288,10 +322,25 @@ managed-airflow-platform/
 │   │   │   │   └── com/airflow/platform/
 │   │   │   │       ├── config/             # Configuration classes
 │   │   │   │       ├── controller/         # REST controllers
+│   │   │   │       │   ├── TenantController.java
+│   │   │   │       │   ├── DeploymentController.java
+│   │   │   │       │   └── DagController.java
 │   │   │   │       ├── service/            # Business logic
+│   │   │   │       │   ├── TenantService.java
+│   │   │   │       │   ├── AirflowDeploymentService.java
+│   │   │   │       │   └── DagService.java
 │   │   │   │       ├── model/              # JPA entities
+│   │   │   │       │   ├── Tenant.java
+│   │   │   │       │   ├── AirflowDeployment.java
+│   │   │   │       │   └── Dag.java
 │   │   │   │       ├── repository/         # Data access
+│   │   │   │       │   ├── TenantRepository.java
+│   │   │   │       │   ├── AirflowDeploymentRepository.java
+│   │   │   │       │   └── DagRepository.java
 │   │   │   │       ├── dto/                # Request/Response DTOs
+│   │   │   │       │   ├── DagCreateRequest.java
+│   │   │   │       │   ├── DagUpdateRequest.java
+│   │   │   │       │   └── DagResponse.java
 │   │   │   │       ├── exception/          # Exception handling
 │   │   │   │       ├── provider/           # Deployment providers
 │   │   │   │       │   ├── CloudProvider.java
@@ -314,8 +363,18 @@ managed-airflow-platform/
 ├── frontend/                          # React frontend
 │   ├── src/
 │   │   ├── components/               # Reusable components
+│   │   │   ├── Sidebar.js
+│   │   │   └── Header.js
 │   │   ├── pages/                    # Page components
+│   │   │   ├── Dashboard.js
+│   │   │   ├── Tenants.js
+│   │   │   ├── Deployments.js
+│   │   │   ├── DeploymentDetails.js
+│   │   │   ├── Dags.js              # DAG listing page
+│   │   │   ├── DagForm.js           # DAG create/edit page
+│   │   │   └── DagDetails.js        # DAG details page
 │   │   ├── services/                 # API client
+│   │   │   └── api.js               # REST API client (includes dagAPI)
 │   │   └── utils/                    # Utilities
 │   ├── public/
 │   └── package.json
@@ -385,6 +444,7 @@ managed-airflow-platform/
 - **React 18** - UI framework
 - **React Router** - Routing
 - **Ant Design** - UI component library
+- **Monaco Editor** - Code editor for DAG creation
 - **Axios** - HTTP client
 - **Recharts** - Data visualization
 
@@ -428,13 +488,27 @@ Once the control plane is running, access the interactive API documentation:
 
 ### Key Endpoints
 
+**Tenants:**
 - `POST /api/v1/tenants` - Create tenant
 - `GET /api/v1/tenants` - List tenants
+- `GET /api/v1/tenants/{tenantId}` - Get tenant
+- `DELETE /api/v1/tenants/{tenantId}` - Delete tenant
+
+**Deployments:**
 - `POST /api/v1/deployments` - Create Airflow deployment
 - `GET /api/v1/deployments` - List deployments
-- `PUT /api/v1/deployments/{id}` - Update deployment
-- `DELETE /api/v1/deployments/{id}` - Delete deployment
-- `POST /api/v1/deployments/{id}/scale` - Scale workers
+- `GET /api/v1/deployments/{deploymentId}` - Get deployment
+- `PUT /api/v1/deployments/{deploymentId}` - Update deployment
+- `DELETE /api/v1/deployments/{deploymentId}` - Delete deployment
+
+**DAGs:**
+- `POST /api/v1/dags` - Create DAG
+- `GET /api/v1/dags` - List all DAGs
+- `GET /api/v1/dags/{dagId}` - Get DAG details
+- `GET /api/v1/dags/deployment/{deploymentId}` - List DAGs by deployment
+- `PUT /api/v1/dags/{dagId}` - Update DAG
+- `DELETE /api/v1/dags/{dagId}` - Delete DAG
+- `POST /api/v1/dags/{dagId}/deploy` - Deploy DAG to Airflow
 
 ## Configuration
 
@@ -733,7 +807,7 @@ terraform apply
 
 ### ✅ Completed Features
 
-- [x] Multiple deployment options (Kubernetes, ECS, EC2)
+- [x] Multiple deployment options (Kubernetes, ECS, EC2, Local)
 - [x] Provider abstraction for multi-cloud support
 - [x] Docker Compose-based deployment
 - [x] AWS ECS with Fargate support
@@ -741,16 +815,21 @@ terraform apply
 - [x] Multi-tenant architecture
 - [x] REST API and Web UI
 - [x] Comprehensive documentation
+- [x] **DAG Management UI** - Create, edit, and deploy DAGs from web interface
+- [x] **Code Editor** - Monaco editor with Python syntax highlighting
+- [x] **DAG Validation** - Basic validation for DAG code
 
 ### 🚧 In Progress
 
 - [ ] Enhanced monitoring dashboards
 - [ ] Cost tracking and billing
-- [ ] DAG management UI
+- [ ] Advanced DAG validation (Python AST parsing)
 
 ### 📋 Planned Features
 
-- [ ] Git integration for DAG management
+- [ ] **Git-sync Integration** - Automatic DAG synchronization from Git repositories
+- [ ] **DAG Deployment Pipeline** - Automated deployment of DAGs to Airflow instances
+- [ ] **DAG Testing Framework** - Pre-deployment testing and validation
 - [ ] Multi-cluster support
 - [ ] Self-service tenant registration
 - [ ] Plugin marketplace
@@ -761,6 +840,7 @@ terraform apply
 - [ ] Additional cloud providers (GCP Native, Azure Native)
 - [ ] Backup and restore automation
 - [ ] Migration tools (between deployment options)
+- [ ] DAG version history and rollback
 
 ## Documentation
 

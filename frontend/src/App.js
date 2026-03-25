@@ -8,6 +8,9 @@ import Dashboard from './pages/Dashboard';
 import Tenants from './pages/Tenants';
 import Deployments from './pages/Deployments';
 import DeploymentDetails from './pages/DeploymentDetails';
+import Dags from './pages/Dags';
+import DagForm from './pages/DagForm';
+import DagDetails from './pages/DagDetails';
 
 const { Content } = Layout;
 
@@ -25,6 +28,10 @@ function App() {
               <Route path="/tenants" element={<Tenants />} />
               <Route path="/deployments" element={<Deployments />} />
               <Route path="/deployments/:deploymentId" element={<DeploymentDetails />} />
+              <Route path="/dags" element={<Dags />} />
+              <Route path="/dags/create" element={<DagForm />} />
+              <Route path="/dags/:dagId" element={<DagDetails />} />
+              <Route path="/dags/:dagId/edit" element={<DagForm />} />
             </Routes>
           </Content>
         </Layout>
