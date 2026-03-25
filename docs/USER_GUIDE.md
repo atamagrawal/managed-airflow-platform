@@ -8,10 +8,11 @@ This guide explains how to use the Managed Airflow Platform to create and manage
 2. [Understanding Deployment Options](#understanding-deployment-options)
 3. [Managing Tenants](#managing-tenants)
 4. [Managing Deployments](#managing-deployments)
-5. [Accessing Airflow](#accessing-airflow)
-6. [Monitoring and Troubleshooting](#monitoring-and-troubleshooting)
-7. [API Reference](#api-reference)
-8. [Best Practices](#best-practices)
+5. [Managing DAGs](#managing-dags)
+6. [Accessing Airflow](#accessing-airflow)
+7. [Monitoring and Troubleshooting](#monitoring-and-troubleshooting)
+8. [API Reference](#api-reference)
+9. [Best Practices](#best-practices)
 
 ## Getting Started
 
@@ -420,6 +421,389 @@ curl -X POST http://localhost:8080/api/v1/deployments/{deploymentId}/scale \
 3. All resources will be removed
 
 **Warning:** This will delete all Airflow components and metadata. DAGs and task history will be lost unless backed up.
+
+## Managing DAGs
+
+The platform provides a comprehensive web-based interface for creating, editing, and deploying DAGs directly to your Airflow instances.
+
+### Overview
+
+DAGs (Directed Acyclic Graphs) define your workflows in Airflow. Instead of manually uploading DAG files to Airflow, you can use the platform's UI to:
+
+- Write DAGs using a Monaco code editor (same editor used in VS Code)
+- Validate DAG code before deployment
+- Associate DAGs with Git repositories for version control
+- Deploy DAGs directly to Airflow instances
+- Track DAG status and deployment history
+
+### Creating a DAG
+
+#### Via UI
+
+1. Click **DAGs** in the sidebar
+2. Click the **Create DAG** button
+3. Fill in the DAG details:
+
+##### Basic Information
+- **Deployment** - Select the Airflow deployment where this DAG will run (required)
+- **DAG Name** - Human-readable name (e.g., "Daily ETL Pipeline")
+- **Description** - Brief description of what the DAG does
+- **File Name** - Python file name, must end with `.py` (e.g., "daily_etl_dag.py")
+
+##### DAG Code
+- Write your Airflow DAG code in the Monaco editor
+- Full Python syntax highlighting
+- Auto-completion and error detection
+- A default template is provided for new DAGs
+
+**Default DAG Template:**
+```python
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+dag = DAG(
+    'my_sample_dag',
+    default_args=default_args,
+    description='A simple sample DAG',
+    schedule_interval=timedelta(days=1),
+    start_date=datetime(2024, 1, 1),
+    catchup=False,
+    tags=['example'],
+)
+
+def print_hello():
+    print('Hello from Airflow!')
+    return 'Hello task completed'
+
+hello_task = PythonOperator(
+    task_id='hello_task',
+    python_callable=print_hello,
+    dag=dag,
+)
+
+bash_task = BashOperator(
+    task_id='bash_task',
+    bash_command='echo "Running bash task"',
+    dag=dag,
+)
+
+hello_task >> bash_task
+```
+
+##### Git Configuration (Optional)
+- **Git Repository** - URL of your Git repository (e.g., `https://github.com/user/airflow-dags.git`)
+- **Git Branch** - Branch name (default: "main")
+- **Git Path** - Path within the repository where the DAG file is located (e.g., "dags/")
+
+##### Additional Metadata
+- **Owner** - Team or person responsible for the DAG
+- **Tags** - Comma-separated tags for organization (e.g., "etl, production, daily")
+- **Initial State** - Whether the DAG should be Active or Paused when first deployed
+
+4. Click **Create DAG** to save
+
+#### Via API
+
+```bash
+curl -X POST http://localhost:8080/api/v1/dags \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deploymentId": "prod-etl",
+    "name": "Daily ETL Pipeline",
+    "description": "Processes daily data from sources",
+    "fileName": "daily_etl_dag.py",
+    "dagCode": "from datetime import datetime, timedelta\nfrom airflow import DAG\nfrom airflow.operators.bash import BashOperator\n\ndefault_args = {\n    \"owner\": \"data-team\",\n    \"start_date\": datetime(2024, 1, 1),\n}\n\ndag = DAG(\n    \"daily_etl\",\n    default_args=default_args,\n    schedule_interval=\"@daily\",\n    catchup=False,\n)\n\ntask = BashOperator(\n    task_id=\"process_data\",\n    bash_command=\"echo Processing data...\",\n    dag=dag,\n)",
+    "gitRepository": "https://github.com/mycompany/airflow-dags.git",
+    "gitBranch": "main",
+    "gitPath": "dags/",
+    "owner": "data-team",
+    "tags": "etl,daily,production",
+    "isPaused": false
+  }'
+```
+
+**Response:**
+```json
+{
+  "dagId": "daily_etl_a1b2c3d4",
+  "deploymentId": "prod-etl",
+  "deploymentName": "Production ETL",
+  "name": "Daily ETL Pipeline",
+  "fileName": "daily_etl_dag.py",
+  "status": "VALID",
+  "validationErrors": null,
+  "createdAt": "2024-01-15T10:30:00",
+  "updatedAt": "2024-01-15T10:30:00"
+}
+```
+
+### DAG Validation
+
+After creating or updating a DAG, the platform automatically validates the code:
+
+**Validation Checks:**
+- Required Airflow imports present
+- DAG object definition exists
+- Basic Python syntax (balanced parentheses, basic structure)
+- Import statements present
+
+**Validation Results:**
+- **VALID** - DAG passed validation and can be deployed
+- **INVALID** - DAG has validation errors (shown in UI and stored in database)
+
+**Viewing Validation Errors:**
+- Via UI: Red alert box displays errors on DAG details page
+- Via API: Check the `validationErrors` field in the response
+
+### Viewing DAGs
+
+#### Via UI
+
+1. Click **DAGs** in the sidebar
+2. The DAG listing page shows all DAGs across all deployments
+
+**Displayed Information:**
+- DAG ID, Name, Deployment
+- File Name, Status, Owner
+- Git Repository and Branch
+- Last Deployed timestamp
+- Created timestamp
+
+**Filter by Deployment:**
+- Use the dropdown to filter DAGs by specific deployment
+- Select "All Deployments" to see everything
+
+#### Via API
+
+**Get all DAGs:**
+```bash
+curl http://localhost:8080/api/v1/dags
+```
+
+**Get DAGs for a specific deployment:**
+```bash
+curl http://localhost:8080/api/v1/dags/deployment/prod-etl
+```
+
+**Get specific DAG:**
+```bash
+curl http://localhost:8080/api/v1/dags/{dagId}
+```
+
+### Editing a DAG
+
+#### Via UI
+
+1. Go to the DAGs page
+2. Click **Edit** button next to the DAG
+3. Modify the DAG details or code in the Monaco editor
+4. Click **Update DAG** to save changes
+
+**Note:** Editing a DAG will re-trigger validation. The status will change to VALID or INVALID based on the validation result.
+
+#### Via API
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/dags/{dagId} \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated DAG Name",
+    "description": "Updated description",
+    "dagCode": "# Updated code here...",
+    "owner": "new-team"
+  }'
+```
+
+### Deploying a DAG
+
+Once a DAG is VALID, you can deploy it to the Airflow instance.
+
+#### Via UI
+
+1. Go to the DAGs page
+2. Find a DAG with status **VALID**
+3. Click the **Deploy** button
+4. Confirm deployment
+5. Status changes to DEPLOYING, then DEPLOYED
+
+**Or from DAG Details:**
+1. View a DAG with status **VALID**
+2. Click the **Deploy to Airflow** button at top right
+3. Status changes to DEPLOYING, then DEPLOYED
+
+#### Via API
+
+```bash
+curl -X POST http://localhost:8080/api/v1/dags/{dagId}/deploy
+```
+
+**Response:**
+```json
+{
+  "dagId": "daily_etl_a1b2c3d4",
+  "status": "DEPLOYED",
+  "lastDeployedAt": "2024-01-15T10:35:00"
+}
+```
+
+### DAG Status Lifecycle
+
+| Status | Description | Actions Available |
+|--------|-------------|-------------------|
+| **DRAFT** | Newly created, not validated yet | Edit, Delete |
+| **VALIDATING** | Being validated | Wait |
+| **VALID** | Passed validation | Edit, Deploy, Delete |
+| **INVALID** | Failed validation | Edit, Delete |
+| **DEPLOYING** | Being deployed to Airflow | Wait |
+| **DEPLOYED** | Successfully deployed | View in Airflow, Edit, Delete |
+| **FAILED** | Deployment failed | Edit, Retry, Delete |
+| **DELETING** | Being deleted | Wait |
+| **DELETED** | Removed | None |
+
+### Deleting a DAG
+
+#### Via UI
+
+1. Go to the DAGs page
+2. Click **Delete** button next to the DAG
+3. Confirm deletion
+4. DAG will be removed from the platform and from Airflow (if deployed)
+
+#### Via API
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/dags/{dagId}
+```
+
+**Warning:** This removes the DAG from both the platform database and the Airflow deployment.
+
+### Viewing DAG Code
+
+#### Via UI
+
+**Read-Only View:**
+1. Go to DAGs page
+2. Click **View** button next to a DAG
+3. DAG details page shows all information including code
+
+The code is displayed in a read-only Monaco editor with syntax highlighting.
+
+### Git Integration
+
+DAGs can optionally be linked to Git repositories for version control.
+
+**Current Features:**
+- Store Git repository URL, branch, and path
+- Track which Git repo each DAG comes from
+- Manually configure Git settings per DAG
+
+**Planned Features (Not Yet Implemented):**
+- Automatic Git-sync to sync changes from Git to Airflow
+- Two-way sync (UI changes push to Git)
+- Commit tracking and version history
+- Pull request integration
+
+**Recommended Workflow:**
+1. Create DAG in platform UI
+2. Test and validate in development deployment
+3. Push to Git repository manually
+4. Update Git settings in DAG
+5. Use Git as source of truth
+6. Platform maintains metadata and deployment state
+
+### Best Practices for DAG Management
+
+1. **Naming Conventions:**
+   - Use descriptive names for DAGs
+   - Include environment or purpose in filename
+   - Example: `prod_customer_etl_dag.py`, `staging_ml_training_dag.py`
+
+2. **Validation:**
+   - Always check for VALID status before deploying
+   - Fix validation errors immediately
+   - Test DAG code locally before creating in platform
+
+3. **Git Integration:**
+   - Use Git repositories for version control
+   - Maintain DAG code in version control
+   - Document Git settings in DAG metadata
+
+4. **Organization:**
+   - Use tags to categorize DAGs (e.g., "etl", "ml", "reporting")
+   - Set appropriate owners for each DAG
+   - Use deployment filters to focus on specific environments
+
+5. **Testing:**
+   - Test new DAGs in development/staging deployments first
+   - Verify DAG appears in Airflow UI after deployment
+   - Check Airflow logs for any import errors
+
+6. **Code Quality:**
+   - Follow Airflow best practices
+   - Use appropriate operators for tasks
+   - Implement proper error handling
+   - Add meaningful descriptions and documentation
+
+7. **Security:**
+   - Avoid hardcoding credentials in DAG code
+   - Use Airflow Connections and Variables
+   - Review code for security vulnerabilities
+   - Limit access to production DAGs
+
+### Troubleshooting DAG Issues
+
+#### DAG Shows as INVALID
+
+**Check validation errors:**
+- Via UI: View the DAG details page
+- Via API: Check `validationErrors` field
+
+**Common Issues:**
+- Missing Airflow imports
+- Syntax errors in Python code
+- Unbalanced parentheses or brackets
+- No DAG object defined
+
+**Solution:** Edit the DAG code to fix the reported errors and save again.
+
+#### DAG Won't Deploy
+
+**Possible causes:**
+- DAG status is not VALID
+- Deployment is not in RUNNING status
+- Network issues with Airflow instance
+
+**Solution:**
+1. Verify DAG is VALID
+2. Check deployment status is RUNNING
+3. Check platform logs for errors
+
+#### DAG Not Appearing in Airflow UI
+
+**Note:** Current implementation stores DAG in platform database but does not automatically deploy to Airflow's DAG folder.
+
+**Workaround (until Git-sync is implemented):**
+- Manually copy DAG code to Airflow DAG folder
+- Use methods described in "Uploading DAGs" section
+- Alternatively, set up your own Git-sync process
+
+**Future Enhancement:**
+The platform will automatically deploy DAGs to Airflow using one of these methods:
+- Kubernetes ConfigMap/Secret
+- Git-sync sidecar container
+- S3/GCS bucket with sync
+- Persistent Volume (PV) mount
 
 ## Accessing Airflow
 
@@ -1146,6 +1530,140 @@ Content-Type: application/json
   "minWorkers": 2,
   "maxWorkers": 10
 }
+```
+
+#### DAGs
+
+**List all DAGs:**
+```bash
+GET /api/v1/dags
+```
+
+**Get DAG by ID:**
+```bash
+GET /api/v1/dags/{dagId}
+```
+
+**Get DAGs for a deployment:**
+```bash
+GET /api/v1/dags/deployment/{deploymentId}
+```
+
+**Create DAG:**
+```bash
+POST /api/v1/dags
+Content-Type: application/json
+
+{
+  "deploymentId": "prod-etl",
+  "name": "Daily ETL Pipeline",
+  "description": "Processes daily data from sources",
+  "fileName": "daily_etl_dag.py",
+  "dagCode": "from airflow import DAG\n# DAG code here...",
+  "gitRepository": "https://github.com/mycompany/airflow-dags.git",
+  "gitBranch": "main",
+  "gitPath": "dags/",
+  "owner": "data-team",
+  "tags": "etl,daily,production",
+  "isPaused": false
+}
+```
+
+**Update DAG:**
+```bash
+PUT /api/v1/dags/{dagId}
+Content-Type: application/json
+
+{
+  "name": "Updated DAG Name",
+  "description": "Updated description",
+  "dagCode": "# Updated code...",
+  "owner": "new-team"
+}
+```
+
+**Delete DAG:**
+```bash
+DELETE /api/v1/dags/{dagId}
+```
+
+**Deploy DAG to Airflow:**
+```bash
+POST /api/v1/dags/{dagId}/deploy
+```
+
+### Complete Example: Create Tenant, Deployment, and DAG
+
+```bash
+# 1. Create tenant
+TENANT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantId": "data-team",
+    "organizationName": "Data Team"
+  }')
+
+echo "Tenant created: $TENANT_RESPONSE"
+
+# 2. Wait for tenant to be ready
+sleep 10
+
+# 3. Create deployment
+DEPLOYMENT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/deployments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantId": "data-team",
+    "deploymentId": "my-airflow",
+    "name": "My Airflow Instance",
+    "airflowVersion": "3.1.8",
+    "executorType": "CELERY",
+    "minWorkers": 1,
+    "maxWorkers": 5,
+    "schedulerCpu": "1024",
+    "schedulerMemory": "2048",
+    "webserverCpu": "512",
+    "webserverMemory": "1024",
+    "workerCpu": "1024",
+    "workerMemory": "2048"
+  }')
+
+echo "Deployment created: $DEPLOYMENT_RESPONSE"
+DEPLOYMENT_ID=$(echo $DEPLOYMENT_RESPONSE | jq -r '.deploymentId')
+
+# 4. Wait for deployment to be ready
+while true; do
+  STATUS=$(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID | jq -r '.status')
+  echo "Deployment status: $STATUS"
+  if [ "$STATUS" = "RUNNING" ]; then
+    break
+  fi
+  sleep 30
+done
+
+# 5. Create DAG
+DAG_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/dags \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deploymentId": "'$DEPLOYMENT_ID'",
+    "name": "My First DAG",
+    "description": "A simple example DAG",
+    "fileName": "my_first_dag.py",
+    "dagCode": "from datetime import datetime, timedelta\nfrom airflow import DAG\nfrom airflow.operators.bash import BashOperator\n\ndefault_args = {\"owner\": \"airflow\", \"start_date\": datetime(2024, 1, 1)}\ndag = DAG(\"my_first_dag\", default_args=default_args, schedule_interval=\"@daily\", catchup=False)\ntask = BashOperator(task_id=\"hello\", bash_command=\"echo Hello Airflow\", dag=dag)",
+    "owner": "data-team",
+    "tags": "example,test",
+    "isPaused": false
+  }')
+
+echo "DAG created: $DAG_RESPONSE"
+DAG_ID=$(echo $DAG_RESPONSE | jq -r '.dagId')
+
+# 6. Deploy DAG to Airflow
+if [ "$(echo $DAG_RESPONSE | jq -r '.status')" = "VALID" ]; then
+  curl -X POST http://localhost:8080/api/v1/dags/$DAG_ID/deploy
+  echo "DAG deployed to Airflow"
+else
+  echo "DAG validation failed, check errors"
+fi
 ```
 
 ### Complete Example: Create Tenant and Deployment
