@@ -12,6 +12,7 @@ const Deployments = () => {
   const [deployments, setDeployments] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [creatingDeployment, setCreatingDeployment] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [deploymentProvider, setDeploymentProvider] = useState('kubernetes');
   const [form] = Form.useForm();
@@ -54,15 +55,59 @@ const Deployments = () => {
   };
 
   const handleCreateDeployment = async (values) => {
+    const tempId = -Date.now();
     try {
-      await deploymentAPI.create(values);
-      message.success('Deployment created successfully');
+      if (creatingDeployment) return;
+      setCreatingDeployment(true);
+
+      // UX: close the form immediately, while we create the deployment in the background.
+      // Also show an in-progress row in the deployments table.
       setModalVisible(false);
       form.resetFields();
+
+      const tempDeploymentId = 'pending...';
+      const tempCreatedAt = new Date().toISOString();
+
+      setDeployments((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          deploymentId: tempDeploymentId,
+          tenantId: values.tenantId,
+          name: values.name,
+          description: values.description,
+          airflowVersion: values.airflowVersion,
+          executorType: values.executorType,
+          status: 'DEPLOYING',
+          namespace: '',
+          helmReleaseName: '',
+          minWorkers: values.minWorkers,
+          maxWorkers: values.maxWorkers,
+          schedulerCpu: values.schedulerCpu,
+          schedulerMemory: values.schedulerMemory,
+          workerCpu: values.workerCpu,
+          workerMemory: values.workerMemory,
+          webserverCpu: values.webserverCpu,
+          webserverMemory: values.webserverMemory,
+          webserverUrl: undefined,
+          ingressHost: '',
+          createdAt: tempCreatedAt,
+          updatedAt: tempCreatedAt,
+          deployedAt: tempCreatedAt,
+        },
+      ]);
+
+      await deploymentAPI.create(values);
+      // Replace the optimistic row with server truth.
+      message.success('Deployment created successfully');
       fetchDeployments();
     } catch (error) {
+      // Remove optimistic row on error
+      setDeployments((prev) => prev.filter((d) => d.id !== tempId));
       message.error('Failed to create deployment');
       console.error('Error creating deployment:', error);
+    } finally {
+      setCreatingDeployment(false);
     }
   };
 
