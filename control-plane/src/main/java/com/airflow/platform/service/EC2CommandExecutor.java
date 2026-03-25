@@ -11,7 +11,6 @@ import software.amazon.awssdk.services.ssm.model.*;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -122,7 +121,7 @@ public class EC2CommandExecutor {
 
         List<String> commands = List.of(
                 "mkdir -p $(dirname " + remotePath + ")",
-                "cat > " + remotePath + " << 'EOF'\n" + localContent + "\nEOF",
+                "cat > " + remotePath + " << 'EOF'\n" + escapedContent + "\nEOF",
                 "chmod 644 " + remotePath
         );
 

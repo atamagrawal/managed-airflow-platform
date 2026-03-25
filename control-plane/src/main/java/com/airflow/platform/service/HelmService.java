@@ -2,6 +2,7 @@ package com.airflow.platform.service;
 
 import com.airflow.platform.exception.DeploymentException;
 import com.airflow.platform.model.AirflowDeployment;
+import com.airflow.platform.model.AirflowDeployment.ExecutorType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -91,8 +92,6 @@ public class HelmService {
         command.add(helmRepoName + "/airflow");
         command.add("-n");
         command.add(deployment.getNamespace());
-        command.add("--version");
-        command.add(deployment.getAirflowVersion());
         command.add("--create-namespace");
 
         // Add configuration values
@@ -109,8 +108,6 @@ public class HelmService {
         command.add(helmRepoName + "/airflow");
         command.add("-n");
         command.add(deployment.getNamespace());
-        command.add("--version");
-        command.add(deployment.getAirflowVersion());
 
         // Add configuration values
         addHelmValues(command, deployment);
@@ -118,47 +115,59 @@ public class HelmService {
         return command;
     }
 
+    /**
+     * Maps to official apache-airflow chart values (Airflow 3.x): executor string, apiServer resources, etc.
+     */
     private void addHelmValues(List<String> command, AirflowDeployment deployment) {
-        // Executor type
+        String v = deployment.getAirflowVersion();
         command.add("--set");
-        command.add("executor=" + deployment.getExecutorType().name());
+        command.add("airflowVersion=" + v);
+        command.add("--set");
+        command.add("images.airflow.tag=" + v);
 
-        // Scheduler resources
+        command.add("--set");
+        command.add("executor=" + helmExecutorValue(deployment.getExecutorType()));
+
         command.add("--set");
         command.add("scheduler.resources.requests.cpu=" + deployment.getSchedulerCpu());
         command.add("--set");
         command.add("scheduler.resources.requests.memory=" + deployment.getSchedulerMemory());
 
-        // Worker resources
         command.add("--set");
-        command.add("workers.resources.requests.cpu=" + deployment.getWorkerCpu());
+        command.add("apiServer.resources.requests.cpu=" + deployment.getWebserverCpu());
         command.add("--set");
-        command.add("workers.resources.requests.memory=" + deployment.getWorkerMemory());
+        command.add("apiServer.resources.requests.memory=" + deployment.getWebserverMemory());
 
-        // Webserver resources
-        command.add("--set");
-        command.add("webserver.resources.requests.cpu=" + deployment.getWebserverCpu());
-        command.add("--set");
-        command.add("webserver.resources.requests.memory=" + deployment.getWebserverMemory());
-
-        // Worker autoscaling (for KEDA)
-        if (deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY ||
-                deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY_KUBERNETES) {
+        if (deployment.getExecutorType() == ExecutorType.CELERY
+                || deployment.getExecutorType() == ExecutorType.CELERY_KUBERNETES) {
             command.add("--set");
-            command.add("workers.keda.enabled=true");
+            command.add("workers.celery.resources.requests.cpu=" + deployment.getWorkerCpu());
             command.add("--set");
-            command.add("workers.keda.minReplicaCount=" + deployment.getMinWorkers());
+            command.add("workers.celery.resources.requests.memory=" + deployment.getWorkerMemory());
             command.add("--set");
-            command.add("workers.keda.maxReplicaCount=" + deployment.getMaxWorkers());
+            command.add("workers.celery.keda.enabled=true");
+            command.add("--set");
+            command.add("workers.celery.keda.minReplicaCount=" + deployment.getMinWorkers());
+            command.add("--set");
+            command.add("workers.celery.keda.maxReplicaCount=" + deployment.getMaxWorkers());
         }
 
-        // Ingress configuration
         if (deployment.getIngressHost() != null && !deployment.getIngressHost().isEmpty()) {
             command.add("--set");
-            command.add("ingress.enabled=true");
+            command.add("ingress.apiServer.enabled=true");
             command.add("--set");
-            command.add("ingress.web.host=" + deployment.getIngressHost());
+            command.add("ingress.apiServer.hosts[0].name=" + deployment.getIngressHost());
         }
+    }
+
+    /** Official chart expects values like {@code CeleryExecutor}, not enum names like {@code CELERY}. */
+    private static String helmExecutorValue(ExecutorType executorType) {
+        return switch (executorType) {
+            case LOCAL -> "LocalExecutor";
+            case CELERY -> "CeleryExecutor";
+            case KUBERNETES -> "KubernetesExecutor";
+            case CELERY_KUBERNETES -> "CeleryKubernetesExecutor";
+        };
     }
 
     private void executeCommand(List<String> command) throws Exception {

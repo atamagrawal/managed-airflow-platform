@@ -13,11 +13,13 @@ const Deployments = () => {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [deploymentProvider, setDeploymentProvider] = useState('kubernetes');
   const [form] = Form.useForm();
 
   useEffect(() => {
     fetchDeployments();
     fetchTenants();
+    fetchDeploymentConfig();
   }, []);
 
   const fetchDeployments = async () => {
@@ -39,6 +41,15 @@ const Deployments = () => {
       setTenants(response.data);
     } catch (error) {
       console.error('Error fetching tenants:', error);
+    }
+  };
+
+  const fetchDeploymentConfig = async () => {
+    try {
+      const response = await deploymentAPI.getConfig();
+      setDeploymentProvider(response.data.provider || 'kubernetes');
+    } catch (error) {
+      console.error('Error fetching deployment config:', error);
     }
   };
 
@@ -173,8 +184,16 @@ const Deployments = () => {
         width={700}
       >
         <Alert
-          message="Deployment Provider"
-          description="The deployment will be created using the active provider (Local, Kubernetes, ECS, or EC2) configured in the control plane. For local testing, ensure Docker is running and the control plane is started with the 'local' profile."
+          message={`Deployment Provider: ${deploymentProvider.toUpperCase()}`}
+          description={
+            deploymentProvider === 'local'
+              ? 'Deployments will be created using Docker Compose on localhost. Ensure Docker is running.'
+              : deploymentProvider === 'ec2'
+              ? 'Deployments will be created using Docker Compose on EC2 instances.'
+              : deploymentProvider === 'ecs'
+              ? 'Deployments will be created using AWS ECS Fargate.'
+              : 'Deployments will be created using Kubernetes with Helm charts.'
+          }
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -188,12 +207,22 @@ const Deployments = () => {
             executorType: 'LOCAL',
             minWorkers: 1,
             maxWorkers: 3,
-            schedulerCpu: '500',
-            schedulerMemory: '1024',
-            workerCpu: '500',
-            workerMemory: '1024',
-            webserverCpu: '500',
-            webserverMemory: '1024',
+            ...(deploymentProvider === 'ecs' && {
+              schedulerCpu: '512',
+              schedulerMemory: '1024',
+              workerCpu: '512',
+              workerMemory: '1024',
+              webserverCpu: '512',
+              webserverMemory: '1024',
+            }),
+            ...(deploymentProvider === 'kubernetes' && {
+              schedulerCpu: '1000m',
+              schedulerMemory: '2Gi',
+              workerCpu: '1000m',
+              workerMemory: '2Gi',
+              webserverCpu: '500m',
+              webserverMemory: '1Gi',
+            }),
           }}
         >
           <Form.Item
@@ -235,19 +264,33 @@ const Deployments = () => {
             name="executorType"
             label="Executor Type"
             rules={[{ required: true, message: 'Please select executor type' }]}
-            tooltip="LOCAL: Simple, single-process execution. CELERY: Distributed task execution (requires Redis). KUBERNETES: Each task runs in separate pod (K8s only)"
+            tooltip={
+              deploymentProvider === 'kubernetes'
+                ? 'LOCAL: Single-process execution. CELERY: Distributed with Redis. KUBERNETES: Each task in separate pod. CELERY_KUBERNETES: Hybrid approach.'
+                : 'LOCAL: Single-process execution (recommended for dev/test). CELERY: Distributed task execution with Redis.'
+            }
           >
             <Select placeholder="Select executor type">
-              <Option value="LOCAL">Local Executor (recommended for dev/test)</Option>
-              <Option value="CELERY">Celery Executor (distributed execution)</Option>
-              <Option value="KUBERNETES">Kubernetes Executor (K8s only)</Option>
-              <Option value="CELERY_KUBERNETES">Celery Kubernetes Executor (hybrid)</Option>
+              <Option value="LOCAL">Local Executor</Option>
+              <Option value="CELERY">Celery Executor (requires Redis)</Option>
+              {deploymentProvider === 'kubernetes' && (
+                <>
+                  <Option value="KUBERNETES">Kubernetes Executor</Option>
+                  <Option value="CELERY_KUBERNETES">Celery Kubernetes Executor</Option>
+                </>
+              )}
             </Select>
           </Form.Item>
 
           <Form.Item
-            label="Worker Autoscaling"
-            tooltip="For Local/EC2: Manual scaling. For ECS/K8s: Auto-scaling based on metrics"
+            label="Worker Scaling"
+            tooltip={
+              deploymentProvider === 'local' || deploymentProvider === 'ec2'
+                ? 'Number of worker replicas for Celery executor. Docker Compose will maintain this count.'
+                : deploymentProvider === 'ecs'
+                ? 'Min and desired worker count. ECS auto-scaling can adjust based on metrics.'
+                : 'Min and max workers. KEDA auto-scaling adjusts based on queue depth.'
+            }
           >
             <Space>
               <Form.Item
@@ -268,67 +311,101 @@ const Deployments = () => {
             </Space>
           </Form.Item>
 
-          <Form.Item
-            name="schedulerCpu"
-            label="Scheduler CPU (millicores)"
-            tooltip="CPU allocation in millicores. 500 = 0.5 CPU, 1000 = 1 CPU"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <Input placeholder="500" />
-          </Form.Item>
+          {(deploymentProvider === 'ecs' || deploymentProvider === 'kubernetes') && (
+            <>
+              <Form.Item
+                name="schedulerCpu"
+                label={deploymentProvider === 'kubernetes' ? 'Scheduler CPU (e.g., 1000m)' : 'Scheduler CPU (CPU units)'}
+                tooltip={
+                  deploymentProvider === 'kubernetes'
+                    ? 'CPU allocation in millicores with m suffix. Examples: 500m = 0.5 CPU, 1000m = 1 CPU'
+                    : 'CPU allocation in CPU units. Examples: 256, 512, 1024, 2048'
+                }
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder={deploymentProvider === 'kubernetes' ? '1000m' : '512'} />
+              </Form.Item>
 
-          <Form.Item
-            name="schedulerMemory"
-            label="Scheduler Memory (MB)"
-            tooltip="Memory allocation in megabytes"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <Input placeholder="1024" />
-          </Form.Item>
+              <Form.Item
+                name="schedulerMemory"
+                label={deploymentProvider === 'kubernetes' ? 'Scheduler Memory (e.g., 2Gi)' : 'Scheduler Memory (MB)'}
+                tooltip={
+                  deploymentProvider === 'kubernetes'
+                    ? 'Memory allocation with Mi/Gi suffix. Examples: 512Mi, 1Gi, 2Gi'
+                    : 'Memory allocation in megabytes. Examples: 512, 1024, 2048'
+                }
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder={deploymentProvider === 'kubernetes' ? '2Gi' : '1024'} />
+              </Form.Item>
 
-          <Form.Item
-            name="webserverCpu"
-            label="Webserver CPU (millicores)"
-            tooltip="CPU allocation in millicores. 500 = 0.5 CPU"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <Input placeholder="500" />
-          </Form.Item>
+              <Form.Item
+                name="webserverCpu"
+                label={deploymentProvider === 'kubernetes' ? 'Webserver CPU (e.g., 500m)' : 'Webserver CPU (CPU units)'}
+                tooltip={
+                  deploymentProvider === 'kubernetes'
+                    ? 'CPU allocation in millicores with m suffix'
+                    : 'CPU allocation in CPU units'
+                }
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder={deploymentProvider === 'kubernetes' ? '500m' : '512'} />
+              </Form.Item>
 
-          <Form.Item
-            name="webserverMemory"
-            label="Webserver Memory (MB)"
-            tooltip="Memory allocation in megabytes"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <Input placeholder="1024" />
-          </Form.Item>
+              <Form.Item
+                name="webserverMemory"
+                label={deploymentProvider === 'kubernetes' ? 'Webserver Memory (e.g., 1Gi)' : 'Webserver Memory (MB)'}
+                tooltip={
+                  deploymentProvider === 'kubernetes'
+                    ? 'Memory allocation with Mi/Gi suffix'
+                    : 'Memory allocation in megabytes'
+                }
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder={deploymentProvider === 'kubernetes' ? '1Gi' : '1024'} />
+              </Form.Item>
 
-          <Form.Item
-            name="workerCpu"
-            label="Worker CPU (millicores)"
-            tooltip="CPU allocation per worker in millicores"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <Input placeholder="500" />
-          </Form.Item>
+              <Form.Item
+                name="workerCpu"
+                label={deploymentProvider === 'kubernetes' ? 'Worker CPU (e.g., 1000m)' : 'Worker CPU (CPU units)'}
+                tooltip={
+                  deploymentProvider === 'kubernetes'
+                    ? 'CPU allocation per worker in millicores with m suffix'
+                    : 'CPU allocation per worker in CPU units'
+                }
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder={deploymentProvider === 'kubernetes' ? '1000m' : '512'} />
+              </Form.Item>
 
-          <Form.Item
-            name="workerMemory"
-            label="Worker Memory (MB)"
-            tooltip="Memory allocation per worker in megabytes"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <Input placeholder="1024" />
-          </Form.Item>
+              <Form.Item
+                name="workerMemory"
+                label={deploymentProvider === 'kubernetes' ? 'Worker Memory (e.g., 2Gi)' : 'Worker Memory (MB)'}
+                tooltip={
+                  deploymentProvider === 'kubernetes'
+                    ? 'Memory allocation per worker with Mi/Gi suffix'
+                    : 'Memory allocation per worker in megabytes'
+                }
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder={deploymentProvider === 'kubernetes' ? '2Gi' : '1024'} />
+              </Form.Item>
+            </>
+          )}
 
-          <Form.Item
-            name="ingressHost"
-            label="Ingress Host (Optional - Kubernetes only)"
-            tooltip="Custom domain for Airflow UI. Only applicable for Kubernetes deployments with ingress configured"
-          >
-            <Input placeholder="e.g., airflow.example.com" />
-          </Form.Item>
+          {(deploymentProvider === 'kubernetes' || deploymentProvider === 'ecs') && (
+            <Form.Item
+              name="ingressHost"
+              label="Custom Domain (Optional)"
+              tooltip={
+                deploymentProvider === 'kubernetes'
+                  ? 'Custom domain for Airflow UI. Used for Kubernetes ingress configuration.'
+                  : 'Custom domain for Airflow UI. Used for Application Load Balancer configuration.'
+              }
+            >
+              <Input placeholder="e.g., airflow.example.com" />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
     </div>

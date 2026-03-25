@@ -45,7 +45,8 @@ public class HelmDeploymentProvider implements DeploymentProvider {
         if (deployment.getIngressHost() != null && !deployment.getIngressHost().isEmpty()) {
             return "https://" + deployment.getIngressHost();
         }
-        return "http://" + deployment.getHelmReleaseName() + "-webserver." +
+        // Airflow 3 Helm chart exposes the UI/API via apiServer service (not webserver)
+        return "http://" + deployment.getHelmReleaseName() + "-api-server." +
                deployment.getNamespace() + ".svc.cluster.local:8080";
     }
 

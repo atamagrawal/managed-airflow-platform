@@ -7,11 +7,14 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * REST controller for Airflow deployment management
@@ -23,6 +26,17 @@ import java.util.List;
 public class DeploymentController {
 
     private final AirflowDeploymentService deploymentService;
+
+    @Value("${deployment.provider:kubernetes}")
+    private String deploymentProvider;
+
+    @GetMapping("/config")
+    @Operation(summary = "Get deployment provider configuration")
+    public ResponseEntity<Map<String, String>> getDeploymentConfig() {
+        Map<String, String> config = new HashMap<>();
+        config.put("provider", deploymentProvider);
+        return ResponseEntity.ok(config);
+    }
 
     @PostMapping
     @Operation(summary = "Create a new Airflow deployment")
