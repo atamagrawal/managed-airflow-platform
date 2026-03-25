@@ -10,8 +10,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.ecs.EcsClient;
 import software.amazon.awssdk.services.ecs.model.*;
-import software.amazon.awssdk.services.elasticloadbalancingv2.ElasticLoadBalancingV2Client;
-import software.amazon.awssdk.services.elasticloadbalancingv2.model.*;
 
 import java.util.*;
 
@@ -26,7 +24,6 @@ import java.util.*;
 public class ECSDeploymentProvider implements DeploymentProvider {
 
     private final EcsClient ecsClient;
-    private final ElasticLoadBalancingV2Client elbClient;
 
     @Value("${aws.ecs.cluster-prefix:managed-airflow}")
     private String clusterPrefix;
@@ -247,7 +244,7 @@ public class ECSDeploymentProvider implements DeploymentProvider {
                 .containerDefinitions(
                         ContainerDefinition.builder()
                                 .name("postgres")
-                                .image("postgres:13")
+                                .image("postgres:16")
                                 .environment(
                                         KeyValuePair.builder().name("POSTGRES_USER").value("airflow").build(),
                                         KeyValuePair.builder().name("POSTGRES_PASSWORD").value("airflow").build(),
@@ -357,7 +354,7 @@ public class ECSDeploymentProvider implements DeploymentProvider {
                         ContainerDefinition.builder()
                                 .name("airflow-webserver")
                                 .image("apache/airflow:" + deployment.getAirflowVersion())
-                                .command("webserver")
+                                .command("api-server")
                                 .environment(getAirflowEnvironment(deployment))
                                 .portMappings(PortMapping.builder()
                                         .containerPort(8080)
@@ -401,30 +398,33 @@ public class ECSDeploymentProvider implements DeploymentProvider {
     private List<KeyValuePair> getAirflowEnvironment(AirflowDeployment deployment) {
         List<KeyValuePair> env = new ArrayList<>();
 
-        // Database configuration - using containerized postgres with Service Connect
-        String postgresHost = getServiceName(deployment, "postgres") + "." + deployment.getDeploymentId();
+        String namespaceSuffix = "." + deployment.getDeploymentId();
+        String postgresHost = getServiceName(deployment, "postgres") + namespaceSuffix;
+        String apiServerHost = getServiceName(deployment, "webserver") + namespaceSuffix;
+
         env.add(KeyValuePair.builder().name("AIRFLOW__DATABASE__SQL_ALCHEMY_CONN")
-                .value("postgresql://airflow:airflow@" + postgresHost + ":5432/airflow").build());
+                .value("postgresql+psycopg2://airflow:airflow@" + postgresHost + ":5432/airflow").build());
 
-        // Executor configuration
-        String executor = getExecutorConfig(deployment.getExecutorType());
-        env.add(KeyValuePair.builder().name("AIRFLOW__CORE__EXECUTOR").value(executor).build());
+        env.add(KeyValuePair.builder().name("AIRFLOW__CORE__EXECUTOR")
+                .value(getExecutorConfig(deployment.getExecutorType())).build());
 
-        // Redis configuration (for Celery) - using containerized redis
+        env.add(KeyValuePair.builder().name("AIRFLOW__CORE__AUTH_MANAGER")
+                .value("airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager").build());
+        env.add(KeyValuePair.builder().name("AIRFLOW__CORE__EXECUTION_API_SERVER_URL")
+                .value("http://" + apiServerHost + ":8080/execution/").build());
+        env.add(KeyValuePair.builder().name("AIRFLOW__API_AUTH__JWT_SECRET").value("airflow_jwt_secret").build());
+        env.add(KeyValuePair.builder().name("AIRFLOW__API_AUTH__JWT_ISSUER").value("airflow").build());
+        env.add(KeyValuePair.builder().name("AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK").value("True").build());
+
         if (deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY ||
             deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY_KUBERNETES) {
-            String redisHost = getServiceName(deployment, "redis") + "." + deployment.getDeploymentId();
+            String redisHost = getServiceName(deployment, "redis") + namespaceSuffix;
             env.add(KeyValuePair.builder().name("AIRFLOW__CELERY__BROKER_URL")
-                    .value("redis://" + redisHost + ":6379/0").build());
+                    .value("redis://:@" + redisHost + ":6379/0").build());
             env.add(KeyValuePair.builder().name("AIRFLOW__CELERY__RESULT_BACKEND")
-                    .value("db+postgresql://airflow:airflow@" + postgresHost + ":5432/airflow").build());
+                    .value("db+postgresql+psycopg2://airflow:airflow@" + postgresHost + ":5432/airflow").build());
         }
 
-        // Webserver configuration
-        env.add(KeyValuePair.builder().name("AIRFLOW__WEBSERVER__BASE_URL")
-                .value("http://localhost:8080").build());
-
-        // Load examples
         env.add(KeyValuePair.builder().name("AIRFLOW__CORE__LOAD_EXAMPLES").value("False").build());
 
         return env;

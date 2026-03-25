@@ -22,6 +22,7 @@ export const deploymentAPI = {
   getAll: () => api.get('/deployments'),
   getById: (deploymentId) => api.get(`/deployments/${deploymentId}`),
   getByTenant: (tenantId) => api.get(`/deployments/tenant/${tenantId}`),
+  getConfig: () => api.get('/deployments/config'),
   create: (data) => api.post('/deployments', data),
   update: (deploymentId, data) => api.put(`/deployments/${deploymentId}`, data),
   delete: (deploymentId) => api.delete(`/deployments/${deploymentId}`),

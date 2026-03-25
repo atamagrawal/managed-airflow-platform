@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Typography, Space, Tag, Popconfirm } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, message, Typography, Space, Tag, Popconfirm, Alert } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { tenantAPI } from '../services/api';
 import dayjs from 'dayjs';
@@ -143,6 +143,13 @@ const Tenants = () => {
         }}
         width={600}
       >
+        <Alert
+          message="Tenant Information"
+          description="Tenant details are for organizational purposes. The actual deployment mode (Local, EC2, ECS, Kubernetes) is configured in the control plane."
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
         <Form form={form} layout="vertical" onFinish={handleCreateTenant}>
           <Form.Item
             name="name"
@@ -171,20 +178,30 @@ const Tenants = () => {
             name="cloudProvider"
             label="Cloud Provider"
             rules={[{ required: true, message: 'Please select a cloud provider' }]}
+            tooltip="Primary cloud provider for this tenant (for organizational tracking)"
           >
             <Select placeholder="Select cloud provider">
               <Option value="AWS">AWS</Option>
               <Option value="GCP">GCP</Option>
               <Option value="AZURE">Azure</Option>
+              <Option value="LOCAL">Local/On-Premises</Option>
             </Select>
           </Form.Item>
 
-          <Form.Item name="clusterName" label="Cluster Name">
-            <Input placeholder="Enter Kubernetes cluster name" />
+          <Form.Item
+            name="clusterName"
+            label="Cluster Name (Optional)"
+            tooltip="Cluster identifier for Kubernetes deployments (for organizational tracking)"
+          >
+            <Input placeholder="e.g., prod-cluster-us-east" />
           </Form.Item>
 
-          <Form.Item name="region" label="Region">
-            <Input placeholder="Enter region (e.g., us-east-1)" />
+          <Form.Item
+            name="region"
+            label="Region (Optional)"
+            tooltip="Cloud region identifier (for organizational tracking)"
+          >
+            <Input placeholder="e.g., us-east-1, us-west-2" />
           </Form.Item>
         </Form>
       </Modal>

@@ -1,4 +1,49 @@
 {
     "java.compile.nullAnalysis.mode": "automatic",
-    "java.configuration.updateBuildConfiguration": "interactive"
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "workbench.colorTheme": "Cursor Light",
+    "explorer.compactFolders": false,
+    "workbench.tree.indent": 16,
+    "workbench.iconTheme": "vs-seti",
+    "editor.fontSize": 14,
+    "editor.lineHeight": 22,
+    "editor.minimap.enabled": false,
+    "editor.renderWhitespace": "selection",
+    "breadcrumbs.enabled": true,
+    "outline.showProperties": true,
+    "outline.showVariables": true,
+    "java.import.maven.enabled": true,
+    "java.import.gradle.enabled": true,
+    "java.maven.downloadSources": true,
+    "java.referencesCodeLens.enabled": true,
+    "java.implementationsCodeLens.enabled": true,
+    "java.completion.favoriteStaticMembers": [
+        "org.junit.Assert.*",
+        "org.junit.jupiter.api.Assertions.*",
+        "org.mockito.Mockito.*"
+    ],
+    "java.project.explorer.showNonJavaResources": false,
+    "java.project.explorer.showLibraries": true,
+    "java.project.resourceFilters": [
+        "node_modules",
+        ".git",
+        ".svn",
+        ".hg",
+        "CVS",
+        ".DS_Store",
+        "target",
+        "build"
+    ],
+    "files.exclude": {
+        "**/.DS_Store": true,
+        "**/node_modules": true,
+        "**/target": true,
+        "**/build": true,
+        "**/.idea": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/target": true,
+        "**/build": true
+    }
 }

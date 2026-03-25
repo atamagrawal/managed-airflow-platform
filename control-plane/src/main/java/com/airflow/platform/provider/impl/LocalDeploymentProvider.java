@@ -19,7 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Local implementation of DeploymentProvider
@@ -30,6 +30,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Slf4j
 public class LocalDeploymentProvider implements DeploymentProvider {
+
+    private static volatile List<String> composeBaseCommand;
 
     private final DockerComposeGenerator composeGenerator;
 
@@ -130,7 +132,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             // Check if containers are running
             String output = executeDockerCompose(deploymentDir, "ps", "--services", "--filter", "status=running");
 
-            if (output != null && output.contains("webserver")) {
+            if (output != null && output.contains("apiserver")) {
                 return "RUNNING";
             } else if (output != null && !output.trim().isEmpty()) {
                 return "STARTING";
@@ -145,21 +147,23 @@ public class LocalDeploymentProvider implements DeploymentProvider {
 
     @Override
     public String getWebserverUrl(AirflowDeployment deployment) {
-        // For local deployments, webserver is always on localhost
-        int webserverPort = getWebserverPort(deployment);
-        return "http://localhost:" + webserverPort;
+        int port = getApiserverHostPort(deployment);
+        return "http://localhost:" + port;
     }
 
     @Override
     public void scale(AirflowDeployment deployment, int minWorkers, int maxWorkers) {
         log.info("Scaling deployment {} to {} workers", deployment.getDeploymentId(), minWorkers);
 
+        AirflowDeployment.ExecutorType ex = deployment.getExecutorType();
+        if (ex != AirflowDeployment.ExecutorType.CELERY && ex != AirflowDeployment.ExecutorType.CELERY_KUBERNETES) {
+            log.info("Skipping scale: executor {} does not use Celery workers", ex);
+            return;
+        }
+
         try {
             String deploymentDir = getDeploymentDirectory(deployment);
-
-            // For local deployment, we'll scale to minWorkers
-            // Note: Docker Compose doesn't support max workers natively
-            executeDockerCompose(deploymentDir, "up", "-d", "--scale", "worker=" + minWorkers);
+            executeDockerCompose(deploymentDir, "up", "-d", "--scale", "airflow-worker=" + minWorkers);
 
             log.info("Scaled successfully to {} workers", minWorkers);
         } catch (Exception e) {
@@ -179,16 +183,53 @@ public class LocalDeploymentProvider implements DeploymentProvider {
                deployment.getDeploymentId();
     }
 
-    private int getWebserverPort(AirflowDeployment deployment) {
-        // Use deployment ID hash to generate unique port
-        // Base port: 8080, range: 8080-8180
+    /** Host port for airflow-apiserver; must match {@link DockerComposeGenerator} local range. */
+    private int getApiserverHostPort(AirflowDeployment deployment) {
         int hash = Math.abs(deployment.getDeploymentId().hashCode());
-        return 8080 + (hash % 100);
+        return 8090 + (hash % 100);
+    }
+
+    private List<String> resolveComposeBaseCommand() throws IOException, InterruptedException {
+        List<String> cached = composeBaseCommand;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (LocalDeploymentProvider.class) {
+            if (composeBaseCommand != null) {
+                return composeBaseCommand;
+            }
+            if (composeCliWorks("docker", "compose", "version")) {
+                composeBaseCommand = List.of("docker", "compose");
+            } else if (composeCliWorks("docker-compose", "version")) {
+                composeBaseCommand = List.of("docker-compose");
+            } else {
+                throw new DeploymentException("Neither `docker compose` nor `docker-compose` is available on PATH");
+            }
+            return composeBaseCommand;
+        }
+    }
+
+    private boolean composeCliWorks(String... cmd) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+            Process p = pb.start();
+            if (!p.waitFor(15, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return false;
+            }
+            return p.exitValue() == 0;
+        } catch (IOException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private String executeDockerCompose(String workingDir, String... args) throws IOException, InterruptedException {
-        List<String> command = new ArrayList<>();
-        command.add("docker-compose");
+        List<String> command = new ArrayList<>(resolveComposeBaseCommand());
         command.addAll(List.of(args));
 
         log.info("Executing command in {}: {}", workingDir, String.join(" ", command));

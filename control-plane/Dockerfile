@@ -20,6 +20,9 @@ FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
+# Health check uses wget; not present in slim JRE Alpine by default
+RUN apk add --no-cache wget
+
 # Add non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
