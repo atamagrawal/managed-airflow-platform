@@ -37,6 +37,7 @@ export const dagAPI = {
   update: (dagId, data) => api.put(`/dags/${dagId}`, data),
   delete: (dagId) => api.delete(`/dags/${dagId}`),
   deploy: (dagId) => api.post(`/dags/${dagId}/deploy`),
+  trigger: (dagId) => api.post(`/dags/${dagId}/trigger`),
 };
 
 export default api;

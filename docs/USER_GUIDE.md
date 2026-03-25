@@ -657,6 +657,60 @@ curl -X POST http://localhost:8080/api/v1/dags/{dagId}/deploy
 }
 ```
 
+### Running/Triggering a DAG
+
+Once a DAG is deployed, you can trigger it to run immediately.
+
+#### Via UI
+
+**From DAG Listing Page:**
+1. Go to the DAGs page
+2. Find a DAG with status **DEPLOYED**
+3. Click the green **Run** button
+4. Confirm "Trigger this DAG to run now?"
+5. Success message appears when triggered
+6. Go to Airflow UI to see the run
+
+**From DAG Details Page:**
+1. View a DAG with status **DEPLOYED**
+2. Click the green **Run DAG** button at top right
+3. Success message appears when triggered
+
+#### Via API
+
+```bash
+curl -X POST http://localhost:8080/api/v1/dags/{dagId}/trigger
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "DAG run triggered successfully",
+  "airflowDagId": "my_sample_dag",
+  "response": {
+    "dag_run_id": "manual_1703001234567",
+    "dag_id": "my_sample_dag",
+    "state": "queued",
+    "execution_date": "2024-01-15T10:30:00+00:00"
+  }
+}
+```
+
+**What Happens When You Trigger:**
+1. Platform extracts the DAG ID from your Python code
+2. Calls Airflow REST API to create a new DAG run
+3. Airflow queues the run with ID: `manual_{timestamp}`
+4. Tasks start executing based on DAG schedule and dependencies
+5. You can monitor progress in Airflow UI
+
+**Viewing the Run in Airflow:**
+1. Open Airflow UI (click "Open" on deployment)
+2. Navigate to your DAG
+3. Click on "Runs" tab
+4. Find the run with ID `manual_*`
+5. Monitor task execution in Grid/Graph view
+
 ### DAG Status Lifecycle
 
 | Status | Description | Actions Available |
@@ -666,7 +720,7 @@ curl -X POST http://localhost:8080/api/v1/dags/{dagId}/deploy
 | **VALID** | Passed validation | Edit, Deploy, Delete |
 | **INVALID** | Failed validation | Edit, Delete |
 | **DEPLOYING** | Being deployed to Airflow | Wait |
-| **DEPLOYED** | Successfully deployed | View in Airflow, Edit, Delete |
+| **DEPLOYED** | Successfully deployed | **Run**, View in Airflow, Edit, Delete |
 | **FAILED** | Deployment failed | Edit, Retry, Delete |
 | **DELETING** | Being deleted | Wait |
 | **DELETED** | Removed | None |
@@ -748,6 +802,8 @@ DAGs can optionally be linked to Git repositories for version control.
    - Test new DAGs in development/staging deployments first
    - Verify DAG appears in Airflow UI after deployment
    - Check Airflow logs for any import errors
+   - Trigger a test run to ensure tasks execute correctly
+   - Monitor the first few runs for any issues
 
 6. **Code Quality:**
    - Follow Airflow best practices
@@ -804,6 +860,53 @@ The platform will automatically deploy DAGs to Airflow using one of these method
 - Git-sync sidecar container
 - S3/GCS bucket with sync
 - Persistent Volume (PV) mount
+
+#### Cannot Trigger DAG Run
+
+**Symptoms:**
+- "Run" button doesn't appear
+- Error message when triggering
+- DAG run doesn't start in Airflow
+
+**Possible causes:**
+1. DAG status is not DEPLOYED
+2. Airflow webserver URL not configured
+3. DAG ID cannot be extracted from code
+4. Airflow API authentication failed
+
+**Solution:**
+1. **Check DAG status:**
+   - Ensure status is DEPLOYED (not VALID or other)
+   - Deploy the DAG first if needed
+
+2. **Verify webserver URL:**
+   - Check deployment has a valid webserver URL
+   - Test URL accessibility: `curl {webserver-url}/health`
+
+3. **Check DAG ID in code:**
+   - Ensure DAG has a clear `dag_id` parameter or first argument
+   - Example: `DAG('my_dag_id', ...)` or `dag_id='my_dag_id'`
+
+4. **Check Airflow credentials:**
+   - Default: admin/admin
+   - Verify in Airflow: Settings → Users
+
+5. **Check logs:**
+```bash
+# Backend logs will show trigger errors
+cd control-plane
+./mvnw spring-boot:run
+# Look for "Failed to trigger DAG run" messages
+```
+
+6. **Manual test:**
+```bash
+# Test Airflow API directly
+curl -X POST {webserver-url}/api/v1/dags/{dag_id}/dagRuns \
+  -H "Content-Type: application/json" \
+  -u admin:admin \
+  -d '{"dag_run_id": "test_123"}'
+```
 
 ## Accessing Airflow
 
@@ -1592,6 +1695,24 @@ DELETE /api/v1/dags/{dagId}
 POST /api/v1/dags/{dagId}/deploy
 ```
 
+**Trigger DAG run:**
+```bash
+POST /api/v1/dags/{dagId}/trigger
+```
+
+Response:
+```json
+{
+  "success": true,
+  "message": "DAG run triggered successfully",
+  "airflowDagId": "my_dag",
+  "response": {
+    "dag_run_id": "manual_1234567890",
+    "state": "queued"
+  }
+}
+```
+
 ### Complete Example: Create Tenant, Deployment, and DAG
 
 ```bash
@@ -1659,8 +1780,20 @@ DAG_ID=$(echo $DAG_RESPONSE | jq -r '.dagId')
 
 # 6. Deploy DAG to Airflow
 if [ "$(echo $DAG_RESPONSE | jq -r '.status')" = "VALID" ]; then
-  curl -X POST http://localhost:8080/api/v1/dags/$DAG_ID/deploy
-  echo "DAG deployed to Airflow"
+  DEPLOY_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/dags/$DAG_ID/deploy)
+  echo "DAG deployed: $DEPLOY_RESPONSE"
+
+  # 7. Wait for deployment to complete
+  sleep 5
+
+  # 8. Trigger DAG run
+  TRIGGER_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/dags/$DAG_ID/trigger)
+  echo "DAG run triggered: $TRIGGER_RESPONSE"
+
+  if [ "$(echo $TRIGGER_RESPONSE | jq -r '.success')" = "true" ]; then
+    echo "Success! DAG is running in Airflow"
+    echo "View run in Airflow UI at: $(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID | jq -r '.webserverUrl')"
+  fi
 else
   echo "DAG validation failed, check errors"
 fi

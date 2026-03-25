@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Space, Tag, Popconfirm, message, Typography, Select } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, RocketOutlined, EyeOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined, RocketOutlined, EyeOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { dagAPI, deploymentAPI } from '../services/api';
 import dayjs from 'dayjs';
@@ -93,6 +93,20 @@ const Dags = () => {
     }
   };
 
+  const handleTriggerDag = async (dagId, dagName) => {
+    try {
+      const response = await dagAPI.trigger(dagId);
+      if (response.data.success) {
+        message.success(`DAG "${dagName}" triggered successfully`);
+      } else {
+        message.error(response.data.message || 'Failed to trigger DAG');
+      }
+    } catch (error) {
+      message.error('Failed to trigger DAG run');
+      console.error('Error triggering DAG:', error);
+    }
+  };
+
   const getStatusColor = (status) => {
     const colors = {
       DRAFT: 'default',
@@ -178,7 +192,7 @@ const Dags = () => {
       title: 'Actions',
       key: 'actions',
       fixed: 'right',
-      width: 220,
+      width: 280,
       render: (_, record) => (
         <Space>
           <Button
@@ -206,6 +220,18 @@ const Dags = () => {
             >
               <Button type="link" size="small" icon={<RocketOutlined />}>
                 Deploy
+              </Button>
+            </Popconfirm>
+          )}
+          {record.status === 'DEPLOYED' && (
+            <Popconfirm
+              title="Trigger this DAG to run now?"
+              onConfirm={() => handleTriggerDag(record.dagId, record.name)}
+              okText="Yes"
+              cancelText="No"
+            >
+              <Button type="link" size="small" icon={<PlayCircleOutlined />} style={{ color: '#52c41a' }}>
+                Run
               </Button>
             </Popconfirm>
           )}

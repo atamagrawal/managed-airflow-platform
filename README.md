@@ -296,7 +296,37 @@ curl -X POST http://localhost:8080/api/v1/dags \
 - Basic DAG validation
 - Git repository integration (optional)
 - Deploy directly to Airflow instances
+- **Trigger DAG runs** directly from the UI
 - View, edit, and manage all DAGs from UI
+
+### Running DAGs
+
+Once a DAG is deployed, you can trigger runs directly from the platform:
+
+**Via UI:**
+1. Navigate to DAGs page
+2. Find a DAG with status "DEPLOYED"
+3. Click the green "Run" button
+4. Confirm to trigger the DAG run
+5. Check Airflow UI to see the run progress
+
+**Via API:**
+```bash
+curl -X POST http://localhost:8080/api/v1/dags/{dagId}/trigger
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "DAG run triggered successfully",
+  "airflowDagId": "my_sample_dag",
+  "response": {
+    "dag_run_id": "manual_1234567890",
+    "state": "queued"
+  }
+}
+```
 
 ### Accessing Airflow
 
@@ -509,6 +539,7 @@ Once the control plane is running, access the interactive API documentation:
 - `PUT /api/v1/dags/{dagId}` - Update DAG
 - `DELETE /api/v1/dags/{dagId}` - Delete DAG
 - `POST /api/v1/dags/{dagId}/deploy` - Deploy DAG to Airflow
+- `POST /api/v1/dags/{dagId}/trigger` - Trigger DAG run in Airflow
 
 ## Configuration
 
@@ -818,6 +849,7 @@ terraform apply
 - [x] **DAG Management UI** - Create, edit, and deploy DAGs from web interface
 - [x] **Code Editor** - Monaco editor with Python syntax highlighting
 - [x] **DAG Validation** - Basic validation for DAG code
+- [x] **DAG Run Trigger** - Trigger DAG runs directly from the UI
 
 ### 🚧 In Progress
 

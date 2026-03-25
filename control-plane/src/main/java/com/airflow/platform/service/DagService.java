@@ -11,11 +11,22 @@ import com.airflow.platform.repository.AirflowDeploymentRepository;
 import com.airflow.platform.repository.DagRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -25,15 +36,29 @@ import java.util.stream.Collectors;
  * Supports DAG creation, validation, and deployment to Airflow environments
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class DagService {
 
     private final DagRepository dagRepository;
     private final AirflowDeploymentRepository deploymentRepository;
+    private final RestTemplate restTemplate;
+
+    @Value("${deployment.provider:local}")
+    private String deploymentProvider;
+
+    @Value("${local.base-directory:${user.home}/airflow-deployments}")
+    private String localBaseDirectory;
 
     private static final Pattern DAG_ID_PATTERN = Pattern.compile("dag_id\\s*=\\s*['\"]([^'\"]+)['\"]");
     private static final Pattern DAG_OBJECT_PATTERN = Pattern.compile("\\bDAG\\s*\\(");
+
+    public DagService(DagRepository dagRepository,
+                      AirflowDeploymentRepository deploymentRepository,
+                      RestTemplate restTemplate) {
+        this.dagRepository = dagRepository;
+        this.deploymentRepository = deploymentRepository;
+        this.restTemplate = restTemplate;
+    }
 
     @Transactional
     public DagResponse createDag(DagCreateRequest request) {
@@ -176,8 +201,16 @@ public class DagService {
         dagRepository.save(dag);
 
         try {
-            // TODO: Remove DAG from Airflow deployment
-            // This will be implemented in the sync mechanism task
+            // Remove DAG from Airflow deployment
+            if ("local".equalsIgnoreCase(deploymentProvider)) {
+                deleteDagFromLocal(dag);
+            } else if ("kubernetes".equalsIgnoreCase(deploymentProvider)) {
+                deleteDagFromKubernetes(dag);
+            } else if ("ecs".equalsIgnoreCase(deploymentProvider)) {
+                deleteDagFromECS(dag);
+            } else if ("ec2".equalsIgnoreCase(deploymentProvider)) {
+                deleteDagFromEC2(dag);
+            }
 
             dag.setStatus(Dag.DagStatus.DELETED);
             dag.setIsActive(false);
@@ -189,6 +222,48 @@ public class DagService {
             dagRepository.save(dag);
             throw new DeploymentException("Failed to delete DAG: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Delete DAG from local filesystem
+     */
+    private void deleteDagFromLocal(Dag dag) throws IOException {
+        AirflowDeployment deployment = dag.getDeployment();
+        String tenantId = deployment.getTenant().getTenantId();
+        String deploymentId = deployment.getDeploymentId();
+
+        Path dagFilePath = Paths.get(localBaseDirectory, tenantId, deploymentId, "dags", dag.getFileName());
+
+        if (Files.exists(dagFilePath)) {
+            Files.delete(dagFilePath);
+            log.info("DAG file deleted from: {}", dagFilePath);
+        } else {
+            log.warn("DAG file not found at: {}", dagFilePath);
+        }
+    }
+
+    /**
+     * Delete DAG from Kubernetes
+     */
+    private void deleteDagFromKubernetes(Dag dag) {
+        log.warn("Kubernetes DAG deletion not yet implemented. DAG: {}", dag.getDagId());
+        // Don't throw exception for deletion - just log warning
+    }
+
+    /**
+     * Delete DAG from ECS
+     */
+    private void deleteDagFromECS(Dag dag) {
+        log.warn("ECS DAG deletion not yet implemented. DAG: {}", dag.getDagId());
+        // Don't throw exception for deletion - just log warning
+    }
+
+    /**
+     * Delete DAG from EC2
+     */
+    private void deleteDagFromEC2(Dag dag) {
+        log.warn("EC2 DAG deletion not yet implemented. DAG: {}", dag.getDagId());
+        // Don't throw exception for deletion - just log warning
     }
 
     @Transactional
@@ -207,9 +282,18 @@ public class DagService {
         dagRepository.save(dag);
 
         try {
-            // TODO: Deploy DAG to Airflow deployment
-            // This will be implemented in the sync mechanism task
-            // For now, we'll just mark it as deployed
+            // Deploy DAG to Airflow deployment based on provider type
+            if ("local".equalsIgnoreCase(deploymentProvider)) {
+                deployDagToLocal(dag);
+            } else if ("kubernetes".equalsIgnoreCase(deploymentProvider)) {
+                deployDagToKubernetes(dag);
+            } else if ("ecs".equalsIgnoreCase(deploymentProvider)) {
+                deployDagToECS(dag);
+            } else if ("ec2".equalsIgnoreCase(deploymentProvider)) {
+                deployDagToEC2(dag);
+            } else {
+                throw new DeploymentException("Unsupported deployment provider: " + deploymentProvider);
+            }
 
             dag.setStatus(Dag.DagStatus.DEPLOYED);
             dag.setLastDeployedAt(LocalDateTime.now());
@@ -223,6 +307,153 @@ public class DagService {
         }
 
         return DagResponse.fromEntity(dag);
+    }
+
+    /**
+     * Deploy DAG to local filesystem (Docker Compose deployment)
+     */
+    private void deployDagToLocal(Dag dag) throws IOException {
+        AirflowDeployment deployment = dag.getDeployment();
+        String tenantId = deployment.getTenant().getTenantId();
+        String deploymentId = deployment.getDeploymentId();
+
+        // Construct path: ~/airflow-deployments/{tenant-id}/{deployment-id}/dags/
+        Path dagsDirectory = Paths.get(localBaseDirectory, tenantId, deploymentId, "dags");
+
+        // Create directory if it doesn't exist
+        if (!Files.exists(dagsDirectory)) {
+            Files.createDirectories(dagsDirectory);
+            log.info("Created DAGs directory: {}", dagsDirectory);
+        }
+
+        // Write DAG file
+        Path dagFilePath = dagsDirectory.resolve(dag.getFileName());
+        Files.writeString(dagFilePath, dag.getDagCode(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+        log.info("DAG file written to: {}", dagFilePath);
+    }
+
+    /**
+     * Deploy DAG to Kubernetes (ConfigMap or PVC)
+     * TODO: Implement Kubernetes deployment
+     */
+    private void deployDagToKubernetes(Dag dag) {
+        log.warn("Kubernetes DAG deployment not yet implemented. DAG: {}", dag.getDagId());
+        throw new DeploymentException("Kubernetes DAG deployment is not yet implemented. " +
+                "Please manually add the DAG to your Airflow deployment or use Git-sync.");
+    }
+
+    /**
+     * Deploy DAG to ECS (Write to EFS volume)
+     * TODO: Implement ECS deployment
+     */
+    private void deployDagToECS(Dag dag) {
+        log.warn("ECS DAG deployment not yet implemented. DAG: {}", dag.getDagId());
+        throw new DeploymentException("ECS DAG deployment is not yet implemented. " +
+                "Please manually add the DAG to your Airflow deployment or use Git-sync.");
+    }
+
+    /**
+     * Deploy DAG to EC2 (Use SSM to write file)
+     * TODO: Implement EC2 deployment via SSM
+     */
+    private void deployDagToEC2(Dag dag) {
+        log.warn("EC2 DAG deployment not yet implemented. DAG: {}", dag.getDagId());
+        throw new DeploymentException("EC2 DAG deployment is not yet implemented. " +
+                "Please manually add the DAG to your Airflow deployment or use Git-sync.");
+    }
+
+    /**
+     * Trigger a DAG run in Airflow
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> triggerDagRun(String dagId) {
+        log.info("Triggering DAG run: {}", dagId);
+
+        Dag dag = dagRepository.findByDagId(dagId)
+                .orElseThrow(() -> new ResourceNotFoundException("DAG not found: " + dagId));
+
+        // Check if DAG is deployed
+        if (dag.getStatus() != Dag.DagStatus.DEPLOYED) {
+            throw new DeploymentException("Cannot trigger DAG run. DAG must be deployed first. Current status: " + dag.getStatus());
+        }
+
+        AirflowDeployment deployment = dag.getDeployment();
+        String webserverUrl = deployment.getWebserverUrl();
+
+        if (webserverUrl == null || webserverUrl.isEmpty()) {
+            throw new DeploymentException("Airflow webserver URL not found for deployment: " + deployment.getDeploymentId());
+        }
+
+        // Extract the actual DAG ID from the Python code
+        String airflowDagId = extractAirflowDagId(dag.getDagCode());
+        if (airflowDagId == null) {
+            throw new DeploymentException("Could not extract DAG ID from DAG code. Make sure the DAG has a dag_id parameter.");
+        }
+
+        try {
+            // Prepare the request to trigger DAG run
+            String triggerUrl = webserverUrl + "/api/v1/dags/" + airflowDagId + "/dagRuns";
+
+            // Create request body
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("conf", new HashMap<>()); // Empty configuration
+            requestBody.put("dag_run_id", "manual_" + System.currentTimeMillis());
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBasicAuth("admin", "admin"); // Default Airflow credentials
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+
+            // Make API call to Airflow
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    triggerUrl,
+                    HttpMethod.POST,
+                    request,
+                    Map.class
+            );
+
+            log.info("DAG run triggered successfully: {}", airflowDagId);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("message", "DAG run triggered successfully");
+            result.put("airflowDagId", airflowDagId);
+            result.put("response", response.getBody());
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Failed to trigger DAG run: {}", dagId, e);
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", false);
+            result.put("message", "Failed to trigger DAG run: " + e.getMessage());
+            result.put("error", e.getMessage());
+            return result;
+        }
+    }
+
+    /**
+     * Extract the Airflow DAG ID from Python code
+     * Looks for dag_id parameter in DAG constructor or variable assignment
+     */
+    private String extractAirflowDagId(String dagCode) {
+        // Try to find dag_id in DAG constructor: DAG('dag_id', ...)
+        Pattern dagConstructorPattern = Pattern.compile("DAG\\s*\\(\\s*['\"]([^'\"]+)['\"]");
+        java.util.regex.Matcher matcher = dagConstructorPattern.matcher(dagCode);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+
+        // Try to find dag_id parameter: dag_id='my_dag'
+        Pattern dagIdPattern = Pattern.compile("dag_id\\s*=\\s*['\"]([^'\"]+)['\"]");
+        matcher = dagIdPattern.matcher(dagCode);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+
+        return null;
     }
 
     /**
