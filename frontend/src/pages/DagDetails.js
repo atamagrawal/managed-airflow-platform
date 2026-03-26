@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Descriptions, Button, Space, Tag, message, Typography, Spin } from 'antd';
 import { ArrowLeftOutlined, EditOutlined, RocketOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -14,11 +14,7 @@ const DagDetails = () => {
   const [dag, setDag] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchDag();
-  }, [dagId]);
-
-  const fetchDag = async () => {
+  const fetchDag = useCallback(async () => {
     try {
       setLoading(true);
       const response = await dagAPI.getById(dagId);
@@ -29,7 +25,11 @@ const DagDetails = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dagId]);
+
+  useEffect(() => {
+    fetchDag();
+  }, [fetchDag]);
 
   const handleDeploy = async () => {
     try {

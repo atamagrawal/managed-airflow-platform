@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Space, Tag, Popconfirm, message, Typography, Select } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, RocketOutlined, EyeOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Tag, Popconfirm, message, Typography, Select } from 'antd';
+import { PlusOutlined, DeleteOutlined, EditOutlined, RocketOutlined, EyeOutlined, PlayCircleOutlined, CodeOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { dagAPI, deploymentAPI } from '../services/api';
 import dayjs from 'dayjs';
@@ -268,6 +268,9 @@ const Dags = () => {
               </Option>
             ))}
           </Select>
+          <Button icon={<CodeOutlined />} onClick={() => navigate('/code-editor')}>
+            Code Editor
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/dags/create')}>
             Create DAG
           </Button>

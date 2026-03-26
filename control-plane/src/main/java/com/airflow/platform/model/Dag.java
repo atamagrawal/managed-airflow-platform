@@ -27,7 +27,7 @@ public class Dag {
     private String dagId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "deployment_id", nullable = false)
+    @JoinColumn(name = "deployment_id", nullable = true)  // Allow null for DRAFT DAGs
     private AirflowDeployment deployment;
 
     @Column(nullable = false, length = 200)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Form, Input, Select, Button, Card, message, Space, Typography, Alert, Tag } from 'antd';
 import { SaveOutlined, ArrowLeftOutlined, RocketOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -20,17 +20,7 @@ const DagForm = () => {
   const [dagStatus, setDagStatus] = useState(null);
   const isEditMode = !!dagId;
 
-  useEffect(() => {
-    fetchDeployments();
-    if (isEditMode) {
-      fetchDag();
-    } else {
-      // Set default DAG code template for new DAGs
-      setDagCode(getDefaultDagTemplate());
-    }
-  }, [dagId]);
-
-  const fetchDeployments = async () => {
+  const fetchDeployments = useCallback(async () => {
     try {
       const response = await deploymentAPI.getAll();
       setDeployments(response.data.filter(d => d.status === 'RUNNING'));
@@ -38,9 +28,9 @@ const DagForm = () => {
       message.error('Failed to fetch deployments');
       console.error('Error fetching deployments:', error);
     }
-  };
+  }, []);
 
-  const fetchDag = async () => {
+  const fetchDag = useCallback(async () => {
     try {
       setLoading(true);
       const response = await dagAPI.getById(dagId);
@@ -68,7 +58,17 @@ const DagForm = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dagId, form]);
+
+  useEffect(() => {
+    fetchDeployments();
+    if (dagId) {
+      fetchDag();
+    } else {
+      // Set default DAG code template for new DAGs
+      setDagCode(getDefaultDagTemplate());
+    }
+  }, [dagId, fetchDeployments, fetchDag]);
 
   const handleSubmit = async (values) => {
     try {

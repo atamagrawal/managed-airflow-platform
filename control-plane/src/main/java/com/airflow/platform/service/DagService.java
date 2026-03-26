@@ -74,13 +74,16 @@ public class DagService {
     public DagResponse createDag(DagCreateRequest request) {
         log.info("Creating DAG: {} for deployment: {}", request.getName(), request.getDeploymentId());
 
-        // Get deployment
-        AirflowDeployment deployment = deploymentRepository.findByDeploymentId(request.getDeploymentId())
-                .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + request.getDeploymentId()));
+        // Get deployment if provided (optional for DRAFT DAGs)
+        AirflowDeployment deployment = null;
+        if (request.getDeploymentId() != null && !request.getDeploymentId().isBlank()) {
+            deployment = deploymentRepository.findByDeploymentId(request.getDeploymentId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + request.getDeploymentId()));
 
-        // Check if DAG with same filename already exists for this deployment
-        if (dagRepository.findByDeploymentAndFileName(deployment, request.getFileName()).isPresent()) {
-            throw new DeploymentException("DAG with filename '" + request.getFileName() + "' already exists for this deployment");
+            // Check if DAG with same filename already exists for this deployment
+            if (dagRepository.findByDeploymentAndFileName(deployment, request.getFileName()).isPresent()) {
+                throw new DeploymentException("DAG with filename '" + request.getFileName() + "' already exists for this deployment");
+            }
         }
 
         // Generate DAG ID
@@ -92,7 +95,7 @@ public class DagService {
         // Create DAG entity
         Dag dag = new Dag();
         dag.setDagId(dagId);
-        dag.setDeployment(deployment);
+        dag.setDeployment(deployment);  // Can be null for DRAFT DAGs
         dag.setName(request.getName());
         dag.setDescription(request.getDescription());
         dag.setDagCode(request.getDagCode());
@@ -106,15 +109,18 @@ public class DagService {
         dag.setTags(request.getTags());
         dag.setValidationErrors(validationErrors);
 
-        // Set status based on validation
-        if (validationErrors == null || validationErrors.isEmpty()) {
+        // Set status: DRAFT if no deployment, otherwise based on validation
+        if (deployment == null) {
+            dag.setStatus(Dag.DagStatus.DRAFT);
+            log.info("Creating DAG as DRAFT (no deployment assigned): {}", dagId);
+        } else if (validationErrors == null || validationErrors.isEmpty()) {
             dag.setStatus(Dag.DagStatus.VALID);
         } else {
             dag.setStatus(Dag.DagStatus.INVALID);
         }
 
         dag = dagRepository.save(dag);
-        log.info("DAG created successfully: {}", dagId);
+        log.info("DAG created successfully: {} with status: {}", dagId, dag.getStatus());
 
         return DagResponse.fromEntity(dag);
     }
@@ -146,6 +152,24 @@ public class DagService {
 
         Dag dag = dagRepository.findByDagId(dagId)
                 .orElseThrow(() -> new ResourceNotFoundException("DAG not found: " + dagId));
+
+        // Update deployment if provided (e.g., assigning deployment to a DRAFT DAG)
+        if (request.getDeploymentId() != null) {
+            AirflowDeployment deployment = deploymentRepository.findByDeploymentId(request.getDeploymentId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + request.getDeploymentId()));
+            dag.setDeployment(deployment);
+            log.info("Assigned deployment {} to DAG {}", request.getDeploymentId(), dagId);
+
+            // If DAG was DRAFT and now has deployment, update status to VALID/INVALID based on validation
+            if (dag.getStatus() == Dag.DagStatus.DRAFT) {
+                String validationErrors = dag.getValidationErrors();
+                if (validationErrors == null || validationErrors.isEmpty()) {
+                    dag.setStatus(Dag.DagStatus.VALID);
+                } else {
+                    dag.setStatus(Dag.DagStatus.INVALID);
+                }
+            }
+        }
 
         // Update fields if provided
         if (request.getName() != null) {
@@ -282,6 +306,11 @@ public class DagService {
 
         Dag dag = dagRepository.findByDagId(dagId)
                 .orElseThrow(() -> new ResourceNotFoundException("DAG not found: " + dagId));
+
+        // Check if deployment is assigned
+        if (dag.getDeployment() == null) {
+            throw new DeploymentException("Cannot deploy DAG without a deployment. Please assign a deployment first.");
+        }
 
         // Validate before deployment
         if (dag.getValidationErrors() != null && !dag.getValidationErrors().isEmpty()) {
