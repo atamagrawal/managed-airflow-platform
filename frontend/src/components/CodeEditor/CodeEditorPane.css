@@ -1,0 +1,73 @@
+.code-editor-pane {
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.monaco-editor-wrapper {
+  height: 100%;
+  width: 100%;
+  /* Monaco wrapper sometimes gets a tiny height; absolute fill stabilizes it. */
+  position: absolute;
+  inset: 0;
+}
+
+.code-editor-fallback {
+  /* Use absolute fill so fallback doesn't collapse when parent height is tricky. */
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.code-editor-fallback-banner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.code-editor-fallback-textarea {
+  height: 100%;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+.code-editor-fallback-textarea:focus {
+  outline: none;
+  background: #1e1e1e;
+}
+
+/* When Monaco warning is shown, add padding for the banner */
+.code-editor-fallback:has(.code-editor-fallback-banner) .code-editor-fallback-textarea {
+  padding-top: 44px;
+}
+
+.code-editor-pane .ant-spin {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+}

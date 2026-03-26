@@ -6,11 +6,12 @@ import lombok.Data;
 
 /**
  * DTO for creating a new DAG
+ * Note: deploymentId is optional for DRAFT status DAGs
  */
 @Data
 public class DagCreateRequest {
 
-    @NotBlank(message = "Deployment ID is required")
+    // Optional - can be null for DRAFT DAGs, required for deploying
     private String deploymentId;
 
     @NotBlank(message = "DAG name is required")

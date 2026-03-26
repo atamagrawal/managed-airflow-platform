@@ -1,0 +1,42 @@
+.editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e8e8e8;
+  min-height: 48px;
+}
+
+.toolbar-section {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-center {
+  flex: 1;
+  justify-content: center;
+}
+
+.toolbar-right {
+  justify-content: flex-end;
+}
+
+.toolbar-settings-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-width: 180px;
+  padding: 4px 0;
+}
+
+.editor-toolbar .ant-btn-sm {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.editor-toolbar .ant-divider-vertical {
+  height: 20px;
+  margin: 0 8px;
+}

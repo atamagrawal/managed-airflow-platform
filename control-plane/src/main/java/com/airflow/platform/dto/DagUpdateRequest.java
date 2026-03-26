@@ -9,6 +9,8 @@ import lombok.Data;
 @Data
 public class DagUpdateRequest {
 
+    private String deploymentId;  // Allow updating deployment assignment
+
     @Size(max = 200, message = "Name must not exceed 200 characters")
     private String name;
 
