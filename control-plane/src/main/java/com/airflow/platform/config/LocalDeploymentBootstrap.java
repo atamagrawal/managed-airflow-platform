@@ -1,0 +1,81 @@
+package com.airflow.platform.config;
+
+import com.airflow.platform.dto.DeploymentCreateRequest;
+import com.airflow.platform.repository.AirflowDeploymentRepository;
+import com.airflow.platform.repository.TenantRepository;
+import com.airflow.platform.service.AirflowDeploymentService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Creates a default Airflow deployment automatically for local development.
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+@ConditionalOnProperty(name = "deployment.provider", havingValue = "local")
+public class LocalDeploymentBootstrap {
+
+    private final TenantRepository tenantRepository;
+    private final AirflowDeploymentRepository deploymentRepository;
+    private final AirflowDeploymentService airflowDeploymentService;
+
+    @Value("${bootstrap.default-deployment.enabled:true}")
+    private boolean enabled;
+
+    @Value("${bootstrap.default-tenant.tenant-id:local-default}")
+    private String defaultTenantId;
+
+    @Value("${bootstrap.default-deployment.name:Local Default Deployment}")
+    private String defaultDeploymentName;
+
+    @Value("${bootstrap.default-deployment.description:Auto-created for local development}")
+    private String defaultDeploymentDescription;
+
+    @Value("${bootstrap.default-deployment.airflow-version:3.1.8}")
+    private String defaultAirflowVersion;
+
+    @Value("${bootstrap.default-deployment.executor-type:LOCAL}")
+    private String defaultExecutorType;
+
+    @EventListener(ApplicationReadyEvent.class)
+    @Order(20)
+    @Transactional
+    public void ensureDefaultDeployment() {
+        if (!enabled) {
+            log.info("Default local deployment bootstrap is disabled");
+            return;
+        }
+
+        if (!tenantRepository.existsByTenantId(defaultTenantId)) {
+            log.warn("Default tenant {} not found; skipping default deployment bootstrap", defaultTenantId);
+            return;
+        }
+
+        if (deploymentRepository.existsByTenantTenantIdAndName(defaultTenantId, defaultDeploymentName)) {
+            log.info("Default deployment already exists for tenant {}: {}", defaultTenantId, defaultDeploymentName);
+            return;
+        }
+
+        DeploymentCreateRequest request = new DeploymentCreateRequest();
+        request.setTenantId(defaultTenantId);
+        request.setName(defaultDeploymentName);
+        request.setDescription(defaultDeploymentDescription);
+        request.setAirflowVersion(defaultAirflowVersion);
+        request.setExecutorType(defaultExecutorType);
+
+        try {
+            airflowDeploymentService.createDeployment(request);
+            log.info("Default local deployment created: {} for tenant {}", defaultDeploymentName, defaultTenantId);
+        } catch (Exception e) {
+            log.error("Failed to initialize default local deployment for tenant {}", defaultTenantId, e);
+        }
+    }
+}

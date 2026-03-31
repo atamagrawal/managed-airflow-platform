@@ -1,5 +1,6 @@
 package com.airflow.platform.service;
 
+import com.airflow.platform.config.DagDeploymentConfig;
 import com.airflow.platform.dto.DagCreateRequest;
 import com.airflow.platform.dto.DagResponse;
 import com.airflow.platform.dto.DagUpdateRequest;
@@ -11,6 +12,7 @@ import com.airflow.platform.repository.AirflowDeploymentRepository;
 import com.airflow.platform.repository.DagRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +48,7 @@ public class DagService {
     private final DagRepository dagRepository;
     private final AirflowDeploymentRepository deploymentRepository;
     private final RestTemplate restTemplate;
+    private final DagDeploymentConfig dagDeploymentConfig;
 
     @Value("${deployment.provider:local}")
     private String deploymentProvider;
@@ -64,10 +67,12 @@ public class DagService {
 
     public DagService(DagRepository dagRepository,
                       AirflowDeploymentRepository deploymentRepository,
-                      RestTemplate restTemplate) {
+                      RestTemplate restTemplate,
+                      DagDeploymentConfig dagDeploymentConfig) {
         this.dagRepository = dagRepository;
         this.deploymentRepository = deploymentRepository;
         this.restTemplate = restTemplate;
+        this.dagDeploymentConfig = dagDeploymentConfig;
     }
 
     @Transactional
@@ -260,13 +265,32 @@ public class DagService {
 
     /**
      * Delete DAG from local filesystem
+     * Supports both UNIFIED and SEPARATED strategies
      */
     private void deleteDagFromLocal(Dag dag) throws IOException {
         AirflowDeployment deployment = dag.getDeployment();
         String tenantId = deployment.getTenant().getTenantId();
         String deploymentId = deployment.getDeploymentId();
+        Path dagFilePath;
+        String fileName = dag.getFileName();
 
-        Path dagFilePath = Paths.get(localBaseDirectory, tenantId, deploymentId, "dags", dag.getFileName());
+        // Determine file path based on strategy
+        if (dagDeploymentConfig.isUnified()) {
+            // UNIFIED: Check if filename was prefixed
+            if (dag.getProject() != null && dagDeploymentConfig.isPrefixProjectName()) {
+                String projectId = dag.getProject().getProjectId();
+                fileName = projectId + "__" + dag.getFileName();
+            }
+            dagFilePath = Paths.get(localBaseDirectory, tenantId, deploymentId, "dags", fileName);
+        } else {
+            // SEPARATED: Check project-specific or standalone location
+            if (dag.getProject() != null) {
+                String projectId = dag.getProject().getProjectId();
+                dagFilePath = Paths.get(localBaseDirectory, tenantId, deploymentId, "projects", projectId, "dags", fileName);
+            } else {
+                dagFilePath = Paths.get(localBaseDirectory, tenantId, deploymentId, "dags", fileName);
+            }
+        }
 
         if (Files.exists(dagFilePath)) {
             Files.delete(dagFilePath);
@@ -391,39 +415,56 @@ public class DagService {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-
+        String patchUrl;
         if (isAirflow3OrLater(deployment.getAirflowVersion())) {
             String token = obtainAirflowAccessToken(baseUrl);
             headers.setBearerAuth(token);
-            String patchUrl = baseUrl + "/api/v2/dags/" + encodedDagId;
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("is_paused", isPaused);
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-            restTemplate.exchange(patchUrl, HttpMethod.PATCH, request, Map.class);
+            patchUrl = baseUrl + "/api/v2/dags/" + encodedDagId;
         } else {
             headers.setBasicAuth(airflowApiUsername, airflowApiPassword);
-            String patchUrl = baseUrl + "/api/v1/dags/" + encodedDagId;
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("is_paused", isPaused);
-
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-            restTemplate.exchange(patchUrl, HttpMethod.PATCH, request, Map.class);
+            patchUrl = baseUrl + "/api/v1/dags/" + encodedDagId;
         }
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("is_paused", isPaused);
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+        restTemplate.exchange(patchUrl, HttpMethod.PATCH, request, Map.class);
     }
 
     /**
      * Deploy DAG to local filesystem (Docker Compose deployment)
+     * Supports both UNIFIED and SEPARATED strategies based on configuration
      */
     private void deployDagToLocal(Dag dag) throws IOException {
         AirflowDeployment deployment = dag.getDeployment();
         String tenantId = deployment.getTenant().getTenantId();
         String deploymentId = deployment.getDeploymentId();
+        Path dagsDirectory;
+        String fileName = dag.getFileName();
 
-        // Construct path: ~/airflow-deployments/{tenant-id}/{deployment-id}/dags/
-        Path dagsDirectory = Paths.get(localBaseDirectory, tenantId, deploymentId, "dags");
+        // Determine directory path based on strategy
+        if (dagDeploymentConfig.isUnified()) {
+            // UNIFIED: All DAGs go to {deployment}/dags/
+            dagsDirectory = Paths.get(localBaseDirectory, tenantId, deploymentId, "dags");
+
+            // Optionally prefix project name to avoid conflicts
+            if (dag.getProject() != null && dagDeploymentConfig.isPrefixProjectName()) {
+                String projectId = dag.getProject().getProjectId();
+                fileName = projectId + "__" + dag.getFileName();
+                log.info("Using prefixed filename for project DAG: {}", fileName);
+            }
+        } else {
+            // SEPARATED: Project DAGs go to projects/{project}/dags/, standalone to dags/
+            if (dag.getProject() != null) {
+                String projectId = dag.getProject().getProjectId();
+                dagsDirectory = Paths.get(localBaseDirectory, tenantId, deploymentId, "projects", projectId, "dags");
+                log.info("Using separated strategy - project DAG path: {}", dagsDirectory);
+            } else {
+                dagsDirectory = Paths.get(localBaseDirectory, tenantId, deploymentId, "dags");
+                log.info("Using separated strategy - standalone DAG path: {}", dagsDirectory);
+            }
+        }
 
         // Create directory if it doesn't exist
         if (!Files.exists(dagsDirectory)) {
@@ -432,10 +473,10 @@ public class DagService {
         }
 
         // Write DAG file
-        Path dagFilePath = dagsDirectory.resolve(dag.getFileName());
+        Path dagFilePath = dagsDirectory.resolve(fileName);
         Files.writeString(dagFilePath, dag.getDagCode(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-        log.info("DAG file written to: {}", dagFilePath);
+        log.info("DAG file written to: {} (strategy: {})", dagFilePath, dagDeploymentConfig.getStrategy());
     }
 
     /**
@@ -498,15 +539,10 @@ public class DagService {
 
         try {
             String baseUrl = normalizeBaseUrl(webserverUrl);
-            ResponseEntity<Map> response;
-            if (isAirflow3OrLater(deployment.getAirflowVersion())) {
-                String token = obtainAirflowAccessToken(baseUrl);
-                response = postTriggerDagRunAirflow3(baseUrl, airflowDagId, token);
-            } else {
-                response = postTriggerDagRunAirflow2(baseUrl, airflowDagId);
-            }
+            ResponseEntity<Map<String, Object>> response = postTriggerDagRun(baseUrl, airflowDagId, deployment.getAirflowVersion());
 
-            log.info("DAG run triggered successfully: {}", airflowDagId);
+            log.info("DAG run triggered successfully for {} (Airflow version: {})",
+                airflowDagId, deployment.getAirflowVersion());
 
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
@@ -533,9 +569,6 @@ public class DagService {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
-    /**
-     * Airflow 3+ uses stable REST API under /api/v2 and JWT from POST /auth/token.
-     */
     private boolean isAirflow3OrLater(String airflowVersion) {
         if (airflowVersion == null || airflowVersion.isBlank()) {
             return true;
@@ -564,47 +597,55 @@ public class DagService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
 
-        ResponseEntity<Map> response = restTemplate.postForEntity(tokenUrl, request, Map.class);
-        Map<?, ?> respBody = response.getBody();
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                tokenUrl, HttpMethod.POST, request, new ParameterizedTypeReference<>() {});
+        Map<String, Object> respBody = response.getBody();
         if (respBody == null || respBody.get("access_token") == null) {
             throw new DeploymentException("Airflow auth response missing access_token");
         }
         return respBody.get("access_token").toString();
     }
 
-    private ResponseEntity<Map> postTriggerDagRunAirflow3(String baseUrl, String airflowDagId, String accessToken) {
+    private ResponseEntity<Map<String, Object>> postTriggerDagRun(String baseUrl, String airflowDagId, String airflowVersion) {
+        if (isAirflow3OrLater(airflowVersion)) {
+            return postTriggerDagRunAirflow3(baseUrl, airflowDagId);
+        }
+        return postTriggerDagRunAirflow2(baseUrl, airflowDagId);
+    }
+
+    private ResponseEntity<Map<String, Object>> postTriggerDagRunAirflow3(String baseUrl, String airflowDagId) {
         String encodedDagId = UriUtils.encodePathSegment(airflowDagId, StandardCharsets.UTF_8);
         String triggerUrl = baseUrl + "/api/v2/dags/" + encodedDagId + "/dagRuns";
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("conf", new HashMap<>());
-        // Airflow 3 stable API requires `logical_date` for creating a DAG run.
-        // Use current time in UTC; Airflow will treat it as the run's logical date.
         requestBody.put("logical_date", DateTimeFormatter.ISO_INSTANT.format(Instant.now().atOffset(ZoneOffset.UTC)));
         requestBody.put("dag_run_id", "manual_" + System.currentTimeMillis());
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(accessToken);
+        headers.setBearerAuth(obtainAirflowAccessToken(baseUrl));
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-        return restTemplate.exchange(triggerUrl, HttpMethod.POST, request, Map.class);
+        log.info("Triggering DAG run for {} at {} (Airflow 3+) ", airflowDagId, triggerUrl);
+        return restTemplate.exchange(triggerUrl, HttpMethod.POST, request, new ParameterizedTypeReference<>() {});
     }
 
-    private ResponseEntity<Map> postTriggerDagRunAirflow2(String baseUrl, String airflowDagId) {
+    private ResponseEntity<Map<String, Object>> postTriggerDagRunAirflow2(String baseUrl, String airflowDagId) {
         String encodedDagId = UriUtils.encodePathSegment(airflowDagId, StandardCharsets.UTF_8);
         String triggerUrl = baseUrl + "/api/v1/dags/" + encodedDagId + "/dagRuns";
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("conf", new HashMap<>());
-        requestBody.put("dag_run_id", "manual_" + System.currentTimeMillis());
+        requestBody.put("dag_run_id", "manual__" + Instant.now().toEpochMilli());
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBasicAuth(airflowApiUsername, airflowApiPassword);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-        return restTemplate.exchange(triggerUrl, HttpMethod.POST, request, Map.class);
+        log.info("Triggering DAG run for {} at {} (Airflow 2.x)", airflowDagId, triggerUrl);
+        return restTemplate.exchange(triggerUrl, HttpMethod.POST, request, new ParameterizedTypeReference<>() {});
     }
 
     /**

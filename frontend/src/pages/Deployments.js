@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Typography, Space, Tag, Popconfirm, Alert } from 'antd';
 import { PlusOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { deploymentAPI, tenantAPI } from '../services/api';
 import dayjs from 'dayjs';
 
@@ -9,6 +10,7 @@ const { Option } = Select;
 const { TextArea } = Input;
 
 const Deployments = () => {
+  const navigate = useNavigate();
   const [deployments, setDeployments] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -192,6 +194,12 @@ const Deployments = () => {
               Open
             </Button>
           )}
+          <Button
+            type="link"
+            onClick={() => navigate(`/deployed-projects?deploymentId=${record.deploymentId}`)}
+          >
+            Deployed projects
+          </Button>
           <Popconfirm
             title="Are you sure you want to delete this deployment?"
             onConfirm={() => handleDeleteDeployment(record.deploymentId)}
