@@ -11,13 +11,17 @@ import DeploymentDetails from './pages/DeploymentDetails';
 import Dags from './pages/Dags';
 import DagForm from './pages/DagForm';
 import DagDetails from './pages/DagDetails';
+import Projects from './pages/Projects';
+import DeployedProjects from './pages/DeployedProjects';
+import ProjectDetails from './pages/ProjectDetails';
+import ProjectCodeEditor from './pages/ProjectCodeEditor';
 import CodeEditor from './pages/CodeEditor';
 
 const { Content } = Layout;
 
 function AppContent() {
   const location = useLocation();
-  const isCodeEditor = location.pathname.startsWith('/code-editor');
+  const isCodeEditor = location.pathname.startsWith('/code-editor') || location.pathname.includes('/editor');
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -37,12 +41,17 @@ function AppContent() {
             <Route path="/tenants" element={<Tenants />} />
             <Route path="/deployments" element={<Deployments />} />
             <Route path="/deployments/:deploymentId" element={<DeploymentDetails />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/deployed-projects" element={<DeployedProjects />} />
+            <Route path="/projects/:projectId" element={<ProjectDetails />} />
+            <Route path="/projects/:projectId/editor" element={<ProjectCodeEditor />} />
             <Route path="/dags" element={<Dags />} />
             <Route path="/dags/new" element={<DagForm />} />
             <Route path="/dags/create" element={<DagForm />} />
             <Route path="/dags/:dagId" element={<DagDetails />} />
             <Route path="/dags/:dagId/edit" element={<DagForm />} />
             <Route path="/code-editor" element={<CodeEditor />} />
+            <Route path="/dag-editor" element={<CodeEditor />} />
           </Routes>
         </Content>
       </Layout>

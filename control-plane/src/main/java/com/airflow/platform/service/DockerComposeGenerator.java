@@ -6,6 +6,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
 /**
  * Generates Docker Compose files for Airflow 3.x (api-server, dag-processor, init ordering).
  * Supports both EC2 and local deployments.
@@ -17,6 +21,9 @@ public class DockerComposeGenerator {
 
     @Value("${deployment.provider}")
     private String deploymentProvider;
+
+    @Value("${local.base-directory:${user.home}/airflow-deployments}")
+    private String localBaseDirectory;
 
     public String generateDockerCompose(AirflowDeployment deployment) {
         log.info("Generating docker-compose.yml for deployment: {}", deployment.getDeploymentId());
@@ -53,7 +60,14 @@ public class DockerComposeGenerator {
         compose.append("\n");
         compose.append("x-airflow-common:\n");
         compose.append("  &airflow-common\n");
-        compose.append("  image: apache/airflow:").append(deployment.getAirflowVersion()).append("\n");
+        if (useCustomBuild(deployment)) {
+            compose.append("  build:\n");
+            compose.append("    context: .\n");
+            compose.append("    dockerfile: Dockerfile\n");
+            compose.append("  image: airflow-custom-").append(deployment.getDeploymentId()).append(":latest\n");
+        } else {
+            compose.append("  image: apache/airflow:").append(deployment.getAirflowVersion()).append("\n");
+        }
         compose.append("  environment:\n");
         compose.append("    <<: *airflow-common-env\n");
         compose.append("  volumes:\n");
@@ -295,5 +309,17 @@ public class DockerComposeGenerator {
             return 5555 + (hash % 100);
         }
         return 5555;
+    }
+
+    private boolean useCustomBuild(AirflowDeployment deployment) {
+        if (!"local".equals(deploymentProvider)) {
+            return false;
+        }
+        Path deploymentPath = Paths.get(
+                localBaseDirectory,
+                deployment.getTenant().getTenantId(),
+                deployment.getDeploymentId()
+        );
+        return Files.exists(deploymentPath.resolve("Dockerfile"));
     }
 }

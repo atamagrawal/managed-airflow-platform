@@ -61,6 +61,10 @@ public class LocalDeploymentProvider implements DeploymentProvider {
 
             log.info("Docker Compose file generated: {}", composePath);
 
+            // Build images first (if compose has build directives), then start.
+            // This avoids parallel same-tag build collisions during `up --build`.
+            executeDockerCompose(deploymentDir, "build");
+
             // Run docker-compose up
             executeDockerCompose(deploymentDir, "up", "-d");
 
@@ -86,7 +90,8 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             // Stop and remove existing containers
             executeDockerCompose(deploymentDir, "down");
 
-            // Start with new configuration
+            // Rebuild once, then start containers.
+            executeDockerCompose(deploymentDir, "build");
             executeDockerCompose(deploymentDir, "up", "-d");
 
             log.info("Airflow upgraded successfully: {}", deployment.getDeploymentId());
@@ -253,15 +258,29 @@ public class LocalDeploymentProvider implements DeploymentProvider {
 
         if (!completed) {
             process.destroyForcibly();
-            throw new DeploymentException("Docker Compose command timed out after " + timeout + " seconds");
+            throw new DeploymentException("Docker Compose command timed out after " + timeout +
+                    " seconds. Last output:\n" + trimOutput(output.toString()));
         }
 
         int exitCode = process.exitValue();
         if (exitCode != 0 && !args[0].equals("down")) {
-            throw new DeploymentException("Docker Compose command failed with exit code: " + exitCode);
+            throw new DeploymentException("Docker Compose command failed with exit code: " + exitCode +
+                    ". Command: " + String.join(" ", command) +
+                    ". Output:\n" + trimOutput(output.toString()));
         }
 
         return output.toString();
+    }
+
+    private String trimOutput(String output) {
+        if (output == null || output.isBlank()) {
+            return "[no output]";
+        }
+        int max = 5000;
+        if (output.length() <= max) {
+            return output;
+        }
+        return output.substring(output.length() - max);
     }
 
     private void deleteDirectory(File directory) {

@@ -268,8 +268,8 @@ const Dags = () => {
               </Option>
             ))}
           </Select>
-          <Button icon={<CodeOutlined />} onClick={() => navigate('/code-editor')}>
-            Code Editor
+          <Button icon={<CodeOutlined />} onClick={() => navigate('/dag-editor')}>
+            DAG Editor
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/dags/create')}>
             Create DAG

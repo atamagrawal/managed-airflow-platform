@@ -22,5 +22,7 @@ public interface AirflowDeploymentRepository extends JpaRepository<AirflowDeploy
 
     boolean existsByDeploymentId(String deploymentId);
 
+    boolean existsByTenantTenantIdAndName(String tenantId, String name);
+
     List<AirflowDeployment> findByStatus(AirflowDeployment.DeploymentStatus status);
 }
