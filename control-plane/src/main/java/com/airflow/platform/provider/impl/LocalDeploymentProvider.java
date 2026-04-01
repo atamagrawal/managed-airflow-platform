@@ -14,10 +14,14 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -30,6 +34,8 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 @Slf4j
 public class LocalDeploymentProvider implements DeploymentProvider {
+
+    private static final String BUILD_INPUTS_STAMP = ".managed-airflow-build-inputs.sha256";
 
     private static volatile List<String> composeBaseCommand;
 
@@ -99,6 +105,66 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             log.error("Failed to upgrade Airflow: {}", deployment.getDeploymentId(), e);
             throw new DeploymentException("Local upgrade failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Keeps compose in sync and rebuilds images only when Dockerfile / requirements / packages or core
+     * deployment settings change. DAGs and plugins are bind-mounted, so typical project deploys skip
+     * {@link #upgrade}'s {@code down} + full rebuild.
+     */
+    @Override
+    public void syncAfterProjectDeploy(AirflowDeployment deployment) {
+        log.info("Syncing local stack after project deploy: {}", deployment.getDeploymentId());
+
+        try {
+            String deploymentDir = getDeploymentDirectory(deployment);
+            Path deploymentPath = Paths.get(deploymentDir);
+            Path composePath = deploymentPath.resolve("docker-compose.yml");
+            if (!Files.exists(composePath)) {
+                log.warn("No docker-compose.yml at {}; deploy Airflow before deploying projects", deploymentDir);
+                return;
+            }
+
+            String dockerCompose = composeGenerator.generateDockerCompose(deployment);
+            Files.writeString(composePath, dockerCompose);
+
+            Path stampPath = deploymentPath.resolve(BUILD_INPUTS_STAMP);
+            String fingerprint = fingerprintBuildInputs(deployment, deploymentPath);
+            String previous = Files.exists(stampPath) ? Files.readString(stampPath).trim() : "";
+
+            if (!fingerprint.equals(previous)) {
+                log.info("Build inputs changed for {}; running compose build", deployment.getDeploymentId());
+                executeDockerCompose(deploymentDir, "build");
+                Files.writeString(stampPath, fingerprint);
+            } else {
+                log.info("Build inputs unchanged for {}; bind-mounted files are visible without rebuild",
+                        deployment.getDeploymentId());
+            }
+
+            executeDockerCompose(deploymentDir, "up", "-d");
+        } catch (Exception e) {
+            log.error("Failed to sync local stack after project deploy: {}", deployment.getDeploymentId(), e);
+            throw new DeploymentException("Local project sync failed: " + e.getMessage(), e);
+        }
+    }
+
+    private String fingerprintBuildInputs(AirflowDeployment deployment, Path deploymentRoot)
+            throws IOException, NoSuchAlgorithmException {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        String version = deployment.getAirflowVersion() != null ? deployment.getAirflowVersion() : "";
+        md.update(version.getBytes(StandardCharsets.UTF_8));
+        md.update((byte) 0);
+        md.update(String.valueOf(deployment.getExecutorType()).getBytes(StandardCharsets.UTF_8));
+        md.update((byte) 0);
+        for (String name : List.of("Dockerfile", "requirements.txt", "packages.txt")) {
+            Path p = deploymentRoot.resolve(name);
+            md.update(name.getBytes(StandardCharsets.UTF_8));
+            if (Files.exists(p)) {
+                md.update(Files.readAllBytes(p));
+            }
+            md.update((byte) 0);
+        }
+        return HexFormat.of().formatHex(md.digest());
     }
 
     @Override

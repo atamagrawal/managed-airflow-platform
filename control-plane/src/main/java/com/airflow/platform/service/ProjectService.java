@@ -504,8 +504,9 @@ public class ProjectService {
             return;
         }
         try {
-            log.info("Refreshing local Airflow runtime for deployment {}", project.getDeployment().getDeploymentId());
-            deploymentProviderImpl.upgrade(project.getDeployment());
+            log.info("Syncing local Airflow stack for deployment {} after project deploy",
+                    project.getDeployment().getDeploymentId());
+            deploymentProviderImpl.syncAfterProjectDeploy(project.getDeployment());
         } catch (Exception e) {
             throw new DeploymentException("Project files were synced but failed to refresh local runtime: " + e.getMessage(), e);
         }
