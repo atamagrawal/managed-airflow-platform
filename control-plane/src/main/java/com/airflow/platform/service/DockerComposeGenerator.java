@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,6 +25,15 @@ public class DockerComposeGenerator {
 
     @Value("${local.base-directory:${user.home}/airflow-deployments}")
     private String localBaseDirectory;
+
+    /**
+     * Optional override via {@code deployment.compose.airflow-image} or env {@code DEPLOYMENT_COMPOSE_AIRFLOW_IMAGE}.
+     * Example YAML under {@code deployment}: {@code compose.airflow-image: apache/airflow:3.1.8}
+     * Example env: {@code DEPLOYMENT_COMPOSE_AIRFLOW_IMAGE=apache/airflow:3.1.8}
+     * When unset, blank, or whitespace, generated compose uses {@code apache/airflow:{deployment.airflowVersion}}.
+     */
+    @Value("${deployment.compose.airflow-image:}")
+    private String composeAirflowImage;
 
     public String generateDockerCompose(AirflowDeployment deployment) {
         log.info("Generating docker-compose.yml for deployment: {}", deployment.getDeploymentId());
@@ -66,7 +76,7 @@ public class DockerComposeGenerator {
             compose.append("    dockerfile: Dockerfile\n");
             compose.append("  image: airflow-custom-").append(deployment.getDeploymentId()).append(":latest\n");
         } else {
-            compose.append("  image: apache/airflow:").append(deployment.getAirflowVersion()).append("\n");
+            compose.append("  image: ").append(resolveAirflowImageForCompose(deployment)).append("\n");
         }
         compose.append("  environment:\n");
         compose.append("    <<: *airflow-common-env\n");
@@ -272,8 +282,18 @@ public class DockerComposeGenerator {
         env.append("AIRFLOW_GID=0\n");
         env.append("DEPLOYMENT_ID=").append(deployment.getDeploymentId()).append("\n");
         env.append("AIRFLOW_VERSION=").append(deployment.getAirflowVersion()).append("\n");
+        if (StringUtils.hasText(composeAirflowImage)) {
+            env.append("AIRFLOW_IMAGE=").append(composeAirflowImage.trim()).append("\n");
+        }
 
         return env.toString();
+    }
+
+    private String resolveAirflowImageForCompose(AirflowDeployment deployment) {
+        if (StringUtils.hasText(composeAirflowImage)) {
+            return composeAirflowImage.trim();
+        }
+        return "apache/airflow:" + deployment.getAirflowVersion();
     }
 
     private String getExecutorType(AirflowDeployment.ExecutorType executorType) {

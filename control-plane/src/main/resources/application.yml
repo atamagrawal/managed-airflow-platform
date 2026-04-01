@@ -172,6 +172,7 @@ spring:
 # Deployment provider configuration
 deployment:
   provider: ec2
+  # Optional: same compose.airflow-image override as the local profile (see that block for examples).
 
 # AWS configuration
 aws:
@@ -211,6 +212,15 @@ spring:
 # Deployment provider configuration
 deployment:
   provider: local
+  # Optional: override the Airflow image in generated docker-compose (scheduler, api-server, workers, …).
+  # If omitted, the image is apache/airflow:{airflowVersion} from the deployment (e.g. apache/airflow:3.1.8).
+  # Example in YAML:
+  #   compose:
+  #     airflow-image: apache/airflow:3.1.8
+  # Or a private registry:
+  #   compose:
+  #     airflow-image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-airflow:3.1.8-custom
+  # Or via environment: DEPLOYMENT_COMPOSE_AIRFLOW_IMAGE=apache/airflow:3.1.8
 
 # Local deployment configuration
 local:
