@@ -19,6 +19,13 @@ public interface DeploymentProvider {
     void upgrade(AirflowDeployment deployment);
 
     /**
+     * Apply changes after project code was synced to the deployment directory.
+     * Default no-op: providers that bind-mount DAGs/plugins may override to avoid a full {@link #upgrade}.
+     */
+    default void syncAfterProjectDeploy(AirflowDeployment deployment) {
+    }
+
+    /**
      * Uninstall an Airflow deployment
      */
     void uninstall(AirflowDeployment deployment);
