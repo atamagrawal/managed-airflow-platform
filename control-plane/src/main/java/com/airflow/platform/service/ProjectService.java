@@ -138,7 +138,8 @@ public class ProjectService {
 
         Project savedProject = projectRepository.save(project);
         createSampleDagFile(savedProject);
-        log.info("Project created successfully with sample DAG: {}", savedProject.getProjectId());
+        createSampleContractFile(savedProject);
+        log.info("Project created successfully with sample DAG and contract: {}", savedProject.getProjectId());
 
         return ProjectResponse.fromEntity(savedProject);
     }
@@ -448,6 +449,7 @@ public class ProjectService {
             ? projectPath.resolve("dags")
             : projectPath.resolve("dags");
         Files.createDirectories(dagsDir);
+        Files.createDirectories(projectPath.resolve("contracts"));
         Files.createDirectories(projectPath.resolve("plugins"));
         Files.createDirectories(projectPath.resolve("include"));
         Files.createDirectories(projectPath.resolve("tests"));
@@ -543,43 +545,100 @@ public class ProjectService {
 
     private String getDefaultRequirements() {
         return """
-                # Default dependency used by the sample DAG
                 requests==2.32.3
+                # Data contracts (AIP-07) are not shipped with Apache Airflow. Install your provider here
+                # (e.g. git+https://... or a wheel) or use an Airflow image that already includes it
+                # (see deployment.compose.airflow-image in application.yml).
                 """;
     }
 
     private void createSampleDagFile(Project project) {
         ProjectFile file = new ProjectFile();
         file.setProject(project);
-        file.setFilePath("dags/sample_project_dag.py");
-        file.setFileName("sample_project_dag.py");
+        file.setFilePath("dags/sample_data_contract_dag.py");
+        file.setFileName("sample_data_contract_dag.py");
         file.setFileType(ProjectFile.FileType.DAG);
-        file.setDescription("Sample DAG created with project");
+        file.setDescription("Sample DAG: local YAML data contract validation (AIP-07)");
         file.setContent("""
+                from __future__ import annotations
+
+                # Data contracts provider is custom / not in stock Airflow — same import path as your build.
+                import os
                 from datetime import datetime
-                import requests
-                from airflow import DAG
-                from airflow.operators.python import PythonOperator
-                
-                
-                def call_httpbin():
-                    # requests comes from requirements.txt
-                    response = requests.get("https://httpbin.org/get", timeout=10)
-                    response.raise_for_status()
-                    print("httpbin status:", response.status_code)
-                
-                
+
+                from airflow.providers.data.contracts.operators.contract_validate import ContractValidateOperator
+                from airflow.sdk import DAG, task
+
+                _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                CONTRACT_YAML = os.path.join(_PROJECT_ROOT, "contracts", "sample_dataset.yaml")
+                DATASET_URN = "urn:example:sample_dataset"
+
+
+                @task
+                def build_contract_stats() -> dict:
+                    # Simulate pipeline output stats for ContractValidateOperator (row_count, schema).
+                    return {
+                        "row_count": 3,
+                        "schema": [
+                            {"name": "id", "type": "STRING", "nullable": False},
+                            {"name": "amount", "type": "FLOAT", "nullable": False},
+                        ],
+                    }
+
+
                 with DAG(
-                    dag_id="sample_project_dag",
-                    start_date=datetime(2024, 1, 1),
+                    dag_id="simple_data_contract_validation",
                     schedule=None,
+                    start_date=datetime(2025, 1, 1),
                     catchup=False,
-                    tags=["sample", "project"],
+                    tags=["data-contracts", "sample", "project"],
                 ) as dag:
-                    PythonOperator(
-                        task_id="call_httpbin",
-                        python_callable=call_httpbin,
+                    stats = build_contract_stats()
+
+                    validate = ContractValidateOperator(
+                        task_id="validate_contract",
+                        catalog_conn_id="unused_local_yaml_only",
+                        dataset_urn=DATASET_URN,
+                        stats_xcom_task_id="build_contract_stats",
+                        contract_yaml_path=CONTRACT_YAML,
+                        validate_schema=True,
+                        validate_completeness=True,
+                        validate_freshness=False,
+                        validate_sla=False,
+                        report_breach_to_catalog=False,
                     )
+
+                    stats >> validate
+                """);
+        file.setFileSize((long) file.getContent().length());
+        projectFileRepository.save(file);
+    }
+
+    private void createSampleContractFile(Project project) {
+        ProjectFile file = new ProjectFile();
+        file.setProject(project);
+        file.setFilePath("contracts/sample_dataset.yaml");
+        file.setFileName("sample_dataset.yaml");
+        file.setFileType(ProjectFile.FileType.CONTRACT);
+        file.setDescription("Sample data contract YAML (AIP-07)");
+        file.setContent("""
+                contract_id: sample-dataset-v1
+                dataset_urn: "urn:example:sample_dataset"
+                dataset_name: sample_dataset
+                version: 1
+                status: ACTIVE
+
+                schema:
+                  - name: id
+                    type: STRING
+                    nullable: false
+                  - name: amount
+                    type: FLOAT
+                    nullable: false
+
+                min_row_count: 1
+
+                schema_compatibility: BACKWARD
                 """);
         file.setFileSize((long) file.getContent().length());
         projectFileRepository.save(file);

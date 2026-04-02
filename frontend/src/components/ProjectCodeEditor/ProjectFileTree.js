@@ -17,6 +17,7 @@ const { Search } = Input;
 const getFileColor = (fileType) => {
   const colors = {
     DAG: '#1890ff',
+    CONTRACT: '#eb2f96',
     PLUGIN: '#52c41a',
     INCLUDE: '#faad14',
     TEST: '#722ed1',
@@ -29,6 +30,7 @@ const getFileColor = (fileType) => {
 /** Display labels and ordering aligned with typical Astro / Airflow project layout */
 const STANDARD_DIRS = [
   { path: 'dags/', label: 'dags', key: 'dags' },
+  { path: 'contracts/', label: 'contracts', key: 'contracts' },
   { path: 'plugins/', label: 'plugins', key: 'plugins' },
   { path: 'include/', label: 'include', key: 'include' },
   { path: 'tests/', label: 'tests', key: 'tests' },
@@ -64,6 +66,7 @@ const buildFolderTreeNodes = (files) => {
 
   const directories = {
     'dags/': [],
+    'contracts/': [],
     'plugins/': [],
     'include/': [],
     'tests/': [],

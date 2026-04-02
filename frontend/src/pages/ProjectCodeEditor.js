@@ -421,6 +421,22 @@ task = PythonOperator(
 class MyCustomPlugin(AirflowPlugin):
     name = "my_custom_plugin"
 `;
+      case 'CONTRACT':
+        return `contract_id: my-dataset-v1
+dataset_urn: "urn:example:my_dataset"
+dataset_name: my_dataset
+version: 1
+status: ACTIVE
+
+schema:
+  - name: id
+    type: STRING
+    nullable: false
+
+min_row_count: 1
+
+schema_compatibility: BACKWARD
+`;
       default:
         return '';
     }
@@ -538,6 +554,7 @@ class MyCustomPlugin(AirflowPlugin):
           >
             <Select>
               <Option value="dags/">dags/</Option>
+              <Option value="contracts/">contracts/</Option>
               <Option value="plugins/">plugins/</Option>
               <Option value="include/">include/</Option>
               <Option value="tests/">tests/</Option>
@@ -557,6 +574,7 @@ class MyCustomPlugin(AirflowPlugin):
           >
             <Select>
               <Option value="DAG">DAG</Option>
+              <Option value="CONTRACT">Data contract (YAML)</Option>
               <Option value="PLUGIN">Plugin</Option>
               <Option value="INCLUDE">Include</Option>
               <Option value="TEST">Test</Option>
