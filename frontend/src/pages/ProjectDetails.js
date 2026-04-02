@@ -314,7 +314,7 @@ const ProjectDetails = () => {
             label="File Path"
             name="filePath"
             rules={[{ required: true, message: 'Please enter file path' }]}
-            tooltip="e.g., dags/my_dag.py or plugins/my_plugin.py"
+            tooltip="e.g., dags/my_dag.py, contracts/my_dataset.yaml, or plugins/my_plugin.py"
           >
             <Input placeholder="dags/my_dag.py" />
           </Form.Item>
@@ -334,6 +334,7 @@ const ProjectDetails = () => {
           >
             <Select placeholder="Select file type">
               <Option value="DAG">DAG</Option>
+              <Option value="CONTRACT">Data contract (YAML)</Option>
               <Option value="PLUGIN">Plugin</Option>
               <Option value="INCLUDE">Include</Option>
               <Option value="TEST">Test</Option>

@@ -81,6 +81,7 @@ public class DockerComposeGenerator {
         compose.append("    <<: *airflow-common-env\n");
         compose.append("  volumes:\n");
         compose.append("    - ./dags:/opt/airflow/dags\n");
+        compose.append("    - ./contracts:/opt/airflow/contracts\n");
         compose.append("    - ./logs:/opt/airflow/logs\n");
         compose.append("    - ./config:/opt/airflow/config\n");
         compose.append("    - ./plugins:/opt/airflow/plugins\n");
@@ -130,8 +131,8 @@ public class DockerComposeGenerator {
         compose.append("    command:\n");
         compose.append("      - -c\n");
         compose.append("      - |\n");
-        compose.append("        mkdir -p /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins /opt/airflow/config\n");
-        compose.append("        chown -R 50000:0 /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins /opt/airflow/config\n");
+        compose.append("        mkdir -p /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins /opt/airflow/config /opt/airflow/contracts\n");
+        compose.append("        chown -R 50000:0 /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins /opt/airflow/config /opt/airflow/contracts\n");
         compose.append("        /entrypoint airflow db migrate\n");
         compose.append("        /entrypoint airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com "
                     + "--password admin || true\n");

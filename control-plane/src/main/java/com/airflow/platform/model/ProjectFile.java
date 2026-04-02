@@ -58,6 +58,7 @@ public class ProjectFile {
 
     public enum FileType {
         DAG,        // Files in dags/ directory
+        CONTRACT,   // Data contract YAML under contracts/ (AIP-07)
         PLUGIN,     // Files in plugins/ directory
         INCLUDE,    // Files in include/ directory
         TEST,       // Files in tests/ directory

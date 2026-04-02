@@ -19,7 +19,7 @@ public class ProjectFileRequest {
     private String fileName;
 
     @NotBlank(message = "File type is required")
-    private String fileType;  // DAG, PLUGIN, INCLUDE, TEST, UTIL, OTHER
+    private String fileType;  // DAG, CONTRACT, PLUGIN, INCLUDE, TEST, UTIL, OTHER
 
     @NotBlank(message = "Content is required")
     private String content;
