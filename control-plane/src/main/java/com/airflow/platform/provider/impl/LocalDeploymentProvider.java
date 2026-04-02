@@ -22,7 +22,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -36,6 +39,9 @@ import java.util.concurrent.TimeUnit;
 public class LocalDeploymentProvider implements DeploymentProvider {
 
     private static final String BUILD_INPUTS_STAMP = ".managed-airflow-build-inputs.sha256";
+
+    /** Multi-line stamp; first line must match for {@link #readBuildInputsStamp(Path)}. */
+    private static final String BUILD_INPUTS_STAMP_HEADER = "# map-build-inputs-v2";
 
     private static volatile List<String> composeBaseCommand;
 
@@ -129,16 +135,35 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             Files.writeString(composePath, dockerCompose);
 
             Path stampPath = deploymentPath.resolve(BUILD_INPUTS_STAMP);
-            String fingerprint = fingerprintBuildInputs(deployment, deploymentPath);
-            String previous = Files.exists(stampPath) ? Files.readString(stampPath).trim() : "";
+            BuildInputsSnapshot current = BuildInputsSnapshot.capture(deployment, deploymentPath);
+            String combinedFingerprint = current.combinedFingerprint(deploymentPath).toLowerCase();
+            Optional<BuildInputsSnapshot> previousSnap = readBuildInputsStamp(stampPath);
+            String legacyCombined = readLegacyCombinedStamp(stampPath, previousSnap);
 
-            if (!fingerprint.equals(previous)) {
-                log.info("Build inputs changed for {}; running compose build", deployment.getDeploymentId());
+            boolean needsBuild = previousSnap
+                    .map(prev -> !prev.equals(current))
+                    .orElseGet(() -> !combinedFingerprint.equals(legacyCombined));
+
+            if (needsBuild) {
+                if (previousSnap.isPresent()) {
+                    logBuildInputChanges(previousSnap.get(), current, deployment.getDeploymentId());
+                } else if (legacyCombined.isEmpty()) {
+                    log.info("Compose build for {}: no previous build-input stamp (first project sync or new deployment)",
+                            deployment.getDeploymentId());
+                } else if (!combinedFingerprint.equals(legacyCombined)) {
+                    log.info("Compose build for {}: build inputs changed (legacy single-hash stamp; no per-field diff). "
+                            + "previousCombinedDigest={} currentCombinedDigest={}",
+                            deployment.getDeploymentId(), legacyCombined, combinedFingerprint);
+                }
                 executeDockerCompose(deploymentDir, "build");
-                Files.writeString(stampPath, fingerprint);
+                writeBuildInputsStamp(stampPath, current);
             } else {
                 log.info("Build inputs unchanged for {}; bind-mounted files are visible without rebuild",
                         deployment.getDeploymentId());
+                if (previousSnap.isEmpty() && !legacyCombined.isEmpty()
+                        && combinedFingerprint.equals(legacyCombined)) {
+                    writeBuildInputsStamp(stampPath, current);
+                }
             }
 
             executeDockerCompose(deploymentDir, "up", "-d");
@@ -148,23 +173,141 @@ public class LocalDeploymentProvider implements DeploymentProvider {
         }
     }
 
-    private String fingerprintBuildInputs(AirflowDeployment deployment, Path deploymentRoot)
-            throws IOException, NoSuchAlgorithmException {
-        MessageDigest md = MessageDigest.getInstance("SHA-256");
-        String version = deployment.getAirflowVersion() != null ? deployment.getAirflowVersion() : "";
-        md.update(version.getBytes(StandardCharsets.UTF_8));
-        md.update((byte) 0);
-        md.update(String.valueOf(deployment.getExecutorType()).getBytes(StandardCharsets.UTF_8));
-        md.update((byte) 0);
-        for (String name : List.of("Dockerfile", "requirements.txt", "packages.txt")) {
-            Path p = deploymentRoot.resolve(name);
-            md.update(name.getBytes(StandardCharsets.UTF_8));
-            if (Files.exists(p)) {
-                md.update(Files.readAllBytes(p));
-            }
-            md.update((byte) 0);
+    private static Optional<BuildInputsSnapshot> readBuildInputsStamp(Path stampPath) throws IOException {
+        if (!Files.exists(stampPath)) {
+            return Optional.empty();
         }
-        return HexFormat.of().formatHex(md.digest());
+        List<String> lines = Files.readAllLines(stampPath, StandardCharsets.UTF_8);
+        if (lines.isEmpty() || !lines.get(0).trim().equals(BUILD_INPUTS_STAMP_HEADER)) {
+            return Optional.empty();
+        }
+        Map<String, String> map = new LinkedHashMap<>();
+        for (int i = 1; i < lines.size(); i++) {
+            String line = lines.get(i).trim();
+            if (line.isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+            int eq = line.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            map.put(line.substring(0, eq).trim(), line.substring(eq + 1).trim());
+        }
+        return Optional.of(new BuildInputsSnapshot(
+                map.getOrDefault("airflowVersion", ""),
+                map.getOrDefault("executor", ""),
+                map.getOrDefault("Dockerfile", "absent"),
+                map.getOrDefault("requirements.txt", "absent"),
+                map.getOrDefault("packages.txt", "absent")
+        ));
+    }
+
+    /**
+     * If file is legacy format (single hex line), returns that digest; otherwise empty string.
+     */
+    private static String readLegacyCombinedStamp(Path stampPath, Optional<BuildInputsSnapshot> parsedV2)
+            throws IOException {
+        if (parsedV2.isPresent() || !Files.exists(stampPath)) {
+            return "";
+        }
+        String raw = Files.readString(stampPath, StandardCharsets.UTF_8).trim();
+        if (raw.contains("\n") || raw.contains("\r")) {
+            return "";
+        }
+        if (raw.length() == 64 && raw.chars().allMatch(c -> Character.digit(c, 16) >= 0)) {
+            return raw.toLowerCase();
+        }
+        return "";
+    }
+
+    private static void writeBuildInputsStamp(Path stampPath, BuildInputsSnapshot snap) throws IOException {
+        String body = BUILD_INPUTS_STAMP_HEADER + "\n"
+                + "airflowVersion=" + snap.airflowVersion() + "\n"
+                + "executor=" + snap.executor() + "\n"
+                + "Dockerfile=" + snap.dockerfileDigest() + "\n"
+                + "requirements.txt=" + snap.requirementsDigest() + "\n"
+                + "packages.txt=" + snap.packagesDigest() + "\n";
+        Files.writeString(stampPath, body, StandardCharsets.UTF_8);
+    }
+
+    private static void logBuildInputChanges(BuildInputsSnapshot previous, BuildInputsSnapshot current, String deploymentId) {
+        List<String> changes = new ArrayList<>();
+        if (!previous.airflowVersion().equals(current.airflowVersion())) {
+            changes.add("airflowVersion: '%s' -> '%s'".formatted(previous.airflowVersion(), current.airflowVersion()));
+        }
+        if (!previous.executor().equals(current.executor())) {
+            changes.add("executor: '%s' -> '%s'".formatted(previous.executor(), current.executor()));
+        }
+        appendFileDigestChange(changes, "Dockerfile", previous.dockerfileDigest(), current.dockerfileDigest());
+        appendFileDigestChange(changes, "requirements.txt", previous.requirementsDigest(), current.requirementsDigest());
+        appendFileDigestChange(changes, "packages.txt", previous.packagesDigest(), current.packagesDigest());
+        if (changes.isEmpty()) {
+            log.info("Compose build for {}: stamp mismatch without field-level diff (unexpected); rebuilding", deploymentId);
+            return;
+        }
+        log.info("Compose build for {}: changed build inputs - {}", deploymentId, String.join("; ", changes));
+    }
+
+    private static void appendFileDigestChange(List<String> changes, String label, String prev, String cur) {
+        if (prev.equals(cur)) {
+            return;
+        }
+        if ("absent".equals(prev)) {
+            changes.add(label + ": added (digest " + cur + ")");
+        } else if ("absent".equals(cur)) {
+            changes.add(label + ": removed (was " + prev + ")");
+        } else {
+            changes.add(label + ": content changed (" + prev + " -> " + cur + ")");
+        }
+    }
+
+    private record BuildInputsSnapshot(
+            String airflowVersion,
+            String executor,
+            String dockerfileDigest,
+            String requirementsDigest,
+            String packagesDigest
+    ) {
+        static BuildInputsSnapshot capture(AirflowDeployment deployment, Path deploymentRoot)
+                throws IOException, NoSuchAlgorithmException {
+            String version = deployment.getAirflowVersion() != null ? deployment.getAirflowVersion() : "";
+            String ex = String.valueOf(deployment.getExecutorType());
+            return new BuildInputsSnapshot(
+                    version,
+                    ex,
+                    sha256FileOrAbsent(deploymentRoot.resolve("Dockerfile")),
+                    sha256FileOrAbsent(deploymentRoot.resolve("requirements.txt")),
+                    sha256FileOrAbsent(deploymentRoot.resolve("packages.txt"))
+            );
+        }
+
+        /**
+         * Same digest as pre–v2 stamps: version, executor, then raw bytes of each optional build file.
+         */
+        String combinedFingerprint(Path deploymentRoot) throws IOException, NoSuchAlgorithmException {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            md.update(airflowVersion.getBytes(StandardCharsets.UTF_8));
+            md.update((byte) 0);
+            md.update(executor.getBytes(StandardCharsets.UTF_8));
+            md.update((byte) 0);
+            for (String name : List.of("Dockerfile", "requirements.txt", "packages.txt")) {
+                Path p = deploymentRoot.resolve(name);
+                md.update(name.getBytes(StandardCharsets.UTF_8));
+                if (Files.exists(p)) {
+                    md.update(Files.readAllBytes(p));
+                }
+                md.update((byte) 0);
+            }
+            return HexFormat.of().formatHex(md.digest());
+        }
+
+        private static String sha256FileOrAbsent(Path path) throws IOException, NoSuchAlgorithmException {
+            if (!Files.exists(path)) {
+                return "absent";
+            }
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path));
+            return HexFormat.of().formatHex(digest);
+        }
     }
 
     @Override
