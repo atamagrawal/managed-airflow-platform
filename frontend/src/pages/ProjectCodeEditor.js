@@ -8,6 +8,7 @@ import EditorTabs from '../components/CodeEditor/EditorTabs';
 import ProjectToolbar from '../components/ProjectCodeEditor/ProjectToolbar';
 import CodeEditorPane from '../components/CodeEditor/CodeEditorPane';
 import { projectAPI, deploymentAPI } from '../services/api';
+import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import './CodeEditor.css';
 
 const { Option } = Select;
@@ -342,18 +343,13 @@ const ProjectCodeEditor = () => {
   const handleTrigger = async () => {
     try {
       setTriggering(true);
-      const response = await projectAPI.trigger(projectId);
-      const { triggeredCount, failedCount, totalDagFiles, results } = response.data;
-      if (triggeredCount > 0) {
-        message.success(`Triggered ${triggeredCount}/${totalDagFiles} DAG run(s) successfully`);
-      }
-      if (failedCount > 0) {
-        const failedDetails = results
-          .filter(r => !r.success)
-          .map(r => `${r.fileName}: ${r.message}`)
-          .join('\n');
-        message.warning({ content: `${failedCount} DAG(s) failed:\n${failedDetails}`, duration: 8 });
-      }
+      await triggerProjectWithDagSelection({
+        projectId,
+        projectName: project?.name,
+        files,
+        onAwaitingUserChoice: () => setTriggering(false),
+        onTriggerStart: () => setTriggering(true),
+      });
     } catch (error) {
       const errorMsg = error.response?.data?.message || 'Failed to trigger DAG runs';
       message.error(errorMsg);

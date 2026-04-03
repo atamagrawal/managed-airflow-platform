@@ -1,6 +1,7 @@
 package com.airflow.platform.service;
 
 import com.airflow.platform.config.DagDeploymentConfig;
+import com.airflow.platform.util.AirflowApiUrlUtils;
 import com.airflow.platform.dto.DagCreateRequest;
 import com.airflow.platform.dto.DagResponse;
 import com.airflow.platform.dto.DagUpdateRequest;
@@ -410,7 +411,7 @@ public class DagService {
     }
 
     private void setAirflowDagPaused(AirflowDeployment deployment, String airflowDagId, boolean isPaused) {
-        String baseUrl = normalizeBaseUrl(deployment.getWebserverUrl());
+        String baseUrl = AirflowApiUrlUtils.normalizeAirflowBaseUrl(deployment.getWebserverUrl());
         String encodedDagId = UriUtils.encodePathSegment(airflowDagId, StandardCharsets.UTF_8);
 
         HttpHeaders headers = new HttpHeaders();
@@ -538,7 +539,7 @@ public class DagService {
         }
 
         try {
-            String baseUrl = normalizeBaseUrl(webserverUrl);
+            String baseUrl = AirflowApiUrlUtils.normalizeAirflowBaseUrl(webserverUrl);
             ResponseEntity<Map<String, Object>> response = postTriggerDagRun(baseUrl, airflowDagId, deployment.getAirflowVersion());
 
             log.info("DAG run triggered successfully for {} (Airflow version: {})",
@@ -560,13 +561,6 @@ public class DagService {
             result.put("error", e.getMessage());
             return result;
         }
-    }
-
-    private static String normalizeBaseUrl(String url) {
-        if (url == null || url.isEmpty()) {
-            return url;
-        }
-        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
     private boolean isAirflow3OrLater(String airflowVersion) {

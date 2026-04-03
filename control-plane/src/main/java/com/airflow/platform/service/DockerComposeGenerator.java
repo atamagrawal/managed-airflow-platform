@@ -31,6 +31,7 @@ public class DockerComposeGenerator {
      * Example YAML under {@code deployment}: {@code compose.airflow-image: apache/airflow:3.1.8}
      * Example env: {@code DEPLOYMENT_COMPOSE_AIRFLOW_IMAGE=apache/airflow:3.1.8}
      * When unset, blank, or whitespace, generated compose uses {@code apache/airflow:{deployment.airflowVersion}}.
+     * The same value is used as the {@code FROM} image for the default Dockerfile on newly created projects.
      */
     @Value("${deployment.compose.airflow-image:}")
     private String composeAirflowImage;
@@ -43,8 +44,6 @@ public class DockerComposeGenerator {
                              deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY_KUBERNETES;
 
         StringBuilder compose = new StringBuilder();
-
-        compose.append("version: '3.9'\n\n");
 
         compose.append("x-airflow-common-env:\n");
         compose.append("  &airflow-common-env\n");

@@ -3,6 +3,7 @@ import { Table, Button, Space, Tag, message, Typography, Select } from 'antd';
 import { RocketOutlined, PlayCircleOutlined, EyeOutlined, CodeOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { projectAPI, deploymentAPI } from '../services/api';
+import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import dayjs from 'dayjs';
 
 const { Title, Paragraph } = Typography;
@@ -71,21 +72,12 @@ const DeployedProjects = () => {
   const handleTriggerProject = async (projectId, projectName) => {
     try {
       setTriggeringProjectId(projectId);
-      const response = await projectAPI.trigger(projectId);
-      const { triggeredCount, failedCount, totalDagFiles, results } = response.data;
-      if (triggeredCount > 0) {
-        message.success(`"${projectName}": triggered ${triggeredCount}/${totalDagFiles} DAG run(s)`);
-      }
-      if (failedCount > 0) {
-        const failedDetails = results
-          .filter((r) => !r.success)
-          .map((r) => `• ${r.fileName || r.airflowDagId}: ${r.message}`)
-          .join('\n');
-        message.warning({ content: `"${projectName}": ${failedCount} DAG(s) failed:\n${failedDetails}`, duration: 8 });
-      }
-      if (totalDagFiles === 0) {
-        message.warning(`"${projectName}": no DAG files found in project`);
-      }
+      await triggerProjectWithDagSelection({
+        projectId,
+        projectName,
+        onAwaitingUserChoice: () => setTriggeringProjectId(null),
+        onTriggerStart: () => setTriggeringProjectId(projectId),
+      });
     } catch (error) {
       const errorMsg = error.response?.data?.message || 'Failed to trigger DAG runs';
       message.error(errorMsg);

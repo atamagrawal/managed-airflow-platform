@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Select, Button, message, Tabs, Space } from 'antd';
+import { Form, Input, Button, message, Tabs, Space } from 'antd';
 import { projectAPI } from '../services/api';
 
-const { Option } = Select;
 const { TextArea } = Input;
 const { TabPane } = Tabs;
 
@@ -29,15 +28,24 @@ const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
         tags: project.tags,
       });
     } else {
-      // Set default values for new project
+      // Set default values for new project (Dockerfile left empty so the API applies server default FROM,
+      // including deployment.compose.airflow-image when configured)
       form.setFieldsValue({
         airflowVersion: '3.1.8',
         requirementsTxt: '# Default dependency used by sample DAG\nrequests==2.32.3',
-        dockerfile: 'FROM apache/airflow:3.1.8\n\n# Copy requirements and install\nCOPY requirements.txt /requirements.txt\nRUN pip install --no-cache-dir -r /requirements.txt\n\n# Copy project files\nCOPY . /opt/airflow/',
         airflowIgnore: '# Ignore Python cache files\n__pycache__/\n*.py[cod]\n*$py.class\n\n# Ignore virtual environment\nvenv/\nenv/\n\n# Ignore IDE files\n.vscode/\n.idea/\n\n# Ignore test files\ntests/',
       });
     }
   }, [project, form]);
+
+  const buildCreatePayload = (values) => {
+    const payload = { ...values };
+    const df = payload.dockerfile;
+    if (df === undefined || df === null || String(df).trim() === '') {
+      delete payload.dockerfile;
+    }
+    return payload;
+  };
 
   const handleSubmit = async (values) => {
     try {
@@ -46,7 +54,7 @@ const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
         await projectAPI.update(project.projectId, values);
         message.success('Project updated successfully');
       } else {
-        await projectAPI.create(values);
+        await projectAPI.create(buildCreatePayload(values));
         message.success('Project created successfully');
       }
       onSuccess();
@@ -123,9 +131,9 @@ const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
           <Form.Item
             label="Dockerfile"
             name="dockerfile"
-            tooltip="Custom Dockerfile configuration"
+            tooltip="Leave empty to use the control plane default FROM (apache/airflow:version, or deployment.compose.airflow-image when set)"
           >
-            <TextArea rows={8} placeholder="FROM apache/airflow:3.1.8" />
+            <TextArea rows={8} placeholder="Leave empty for platform default base image, or set FROM …" />
           </Form.Item>
 
           <Form.Item
