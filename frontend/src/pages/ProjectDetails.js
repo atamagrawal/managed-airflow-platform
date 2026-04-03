@@ -4,6 +4,9 @@ import { Card, Descriptions, Button, Space, Tag, Tabs, Table, Modal, Form, Input
 import { ArrowLeftOutlined, EditOutlined, RocketOutlined, PlayCircleOutlined, PlusOutlined, FolderOutlined, CodeOutlined } from '@ant-design/icons';
 import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
+import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../utils/projectDeployments';
+import { pickDeploymentId } from '../utils/pickDeploymentModal';
+import { getApiErrorMessage } from '../utils/apiError';
 import dayjs from 'dayjs';
 
 const { TabPane } = Tabs;
@@ -42,7 +45,8 @@ const ProjectDetails = () => {
       const response = await projectAPI.getById(projectId);
       setProject(response.data);
     } catch (error) {
-      message.error('Failed to fetch project details');
+      const msg = getApiErrorMessage(error, 'Failed to fetch project details');
+      if (msg) message.error(msg);
       console.error('Error fetching project:', error);
     } finally {
       setLoading(false);
@@ -54,79 +58,57 @@ const ProjectDetails = () => {
       const response = await projectAPI.getFiles(projectId);
       setFiles(response.data);
     } catch (error) {
-      message.error('Failed to fetch project files');
+      const msg = getApiErrorMessage(error, 'Failed to fetch project files');
+      if (msg) message.error(msg);
       console.error('Error fetching files:', error);
     }
   };
 
   const handleDeploy = async () => {
-    // Check if project has a deployment
-    if (!project.deploymentId && !project.deploymentName) {
-      // Show modal to select deployment
-      let selectedDeploymentId = null;
-
-      Modal.confirm({
-        title: 'Select Deployment',
-        content: (
-          <div>
-            <p style={{ marginBottom: 12 }}>Select which Airflow deployment to deploy this project to:</p>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Select deployment"
-              onChange={(value) => { selectedDeploymentId = value; }}
-              options={deployments.map(d => ({ label: d.name, value: d.deploymentId }))}
-            />
-          </div>
-        ),
-        okText: 'Deploy',
-        cancelText: 'Cancel',
-        onOk: async () => {
-          if (!selectedDeploymentId) {
-            message.error('Please select a deployment');
-            return Promise.reject();
-          }
-
-          try {
-            // First update the project with the deployment
-            await projectAPI.update(projectId, { deploymentId: selectedDeploymentId });
-            // Then deploy
-            await projectAPI.deploy(projectId);
-            message.success('Project deployed successfully');
-            fetchProjectDetails();
-          } catch (error) {
-            const errorMsg = error.response?.data?.message || 'Failed to deploy project';
-            message.error(errorMsg);
-            console.error('Error deploying project:', error);
-          }
-        },
-      });
-      return;
-    }
-
     try {
-      await projectAPI.deploy(projectId);
+      const resolved = resolveDeploymentForDeploy(project, deployments);
+      if (!resolved.ok) {
+        message.error('No deployments available. Create an Airflow deployment first.');
+        return;
+      }
+      let deploymentId = resolved.deploymentId;
+      if (resolved.needsPicker) {
+        deploymentId = await pickDeploymentId(`Deploy — ${project?.name}`, resolved.options);
+      }
+      await projectAPI.deploy(projectId, deploymentId);
       message.success('Project deployed successfully');
       fetchProjectDetails();
     } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Failed to deploy project';
-      message.error(errorMsg);
+      if (error?.message === 'no deployments') return;
+      const msg = getApiErrorMessage(error, 'Failed to deploy project');
+      if (msg) message.error(msg);
       console.error('Error deploying project:', error);
     }
   };
 
   const handleTrigger = async () => {
     try {
+      const resolved = resolveDeploymentForTrigger(project, deployments);
+      if (!resolved.ok) {
+        message.warning('Deploy this project to a deployment before triggering DAGs.');
+        return;
+      }
+      let deploymentId = resolved.deploymentId;
+      if (resolved.needsPicker) {
+        deploymentId = await pickDeploymentId(`Trigger DAGs — ${project?.name}`, resolved.options);
+      }
       setTriggerLoading(true);
       await triggerProjectWithDagSelection({
         projectId,
         projectName: project?.name,
+        deploymentId,
         files,
         onAwaitingUserChoice: () => setTriggerLoading(false),
         onTriggerStart: () => setTriggerLoading(true),
       });
     } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Failed to trigger DAG runs';
-      message.error(errorMsg);
+      const msg = getApiErrorMessage(error, 'Failed to trigger DAG runs');
+      if (msg) message.error(msg);
       console.error('Error triggering project:', error);
     } finally {
       setTriggerLoading(false);
@@ -146,7 +128,8 @@ const ProjectDetails = () => {
       fetchProjectFiles();
       fetchProjectDetails(); // Refresh to update DAG/plugin counts
     } catch (error) {
-      message.error('Failed to add file');
+      const msg = getApiErrorMessage(error, 'Failed to add file');
+      if (msg) message.error(msg);
       console.error('Error adding file:', error);
     }
   };
@@ -220,7 +203,7 @@ const ProjectDetails = () => {
         >
           Deploy
         </Button>
-        {project.status === 'DEPLOYED' && (
+        {project.linkedDeploymentIds?.length > 0 && (
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
@@ -237,7 +220,11 @@ const ProjectDetails = () => {
 
       <Card title={<><FolderOutlined /> {project.name}</>} loading={loading}>
         <Descriptions bordered column={2}>
-          <Descriptions.Item label="Deployment">{project.deploymentName || 'Not assigned'}</Descriptions.Item>
+          <Descriptions.Item label="Linked deployments">
+            {(project.linkedDeploymentIds && project.linkedDeploymentIds.length > 0)
+              ? project.linkedDeploymentIds.join(', ')
+              : 'None (deploy to link)'}
+          </Descriptions.Item>
           <Descriptions.Item label="Status">
             <Tag color={getStatusColor(project.status)}>{project.status}</Tag>
           </Descriptions.Item>

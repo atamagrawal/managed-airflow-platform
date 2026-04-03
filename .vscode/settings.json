@@ -1,6 +1,6 @@
 {
     "java.compile.nullAnalysis.mode": "automatic",
-    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.configuration.updateBuildConfiguration": "automatic",
     "workbench.colorTheme": "Cursor Light",
     "explorer.compactFolders": false,
     "workbench.tree.indent": 16,
@@ -14,6 +14,7 @@
     "outline.showVariables": true,
     "java.import.maven.enabled": true,
     "java.import.gradle.enabled": true,
+    "java.import.maven.offline.enabled": false,
     "java.maven.downloadSources": true,
     "java.referencesCodeLens.enabled": true,
     "java.implementationsCodeLens.enabled": true,

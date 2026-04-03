@@ -73,19 +73,39 @@ public class ProjectController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{projectId}/deployments/{deploymentId}")
+    @Operation(summary = "Link a project to a deployment (optional; deploy also creates the link)")
+    public ResponseEntity<ProjectResponse> linkProjectDeployment(
+            @PathVariable String projectId,
+            @PathVariable String deploymentId) {
+        return ResponseEntity.ok(projectService.linkProjectToDeployment(projectId, deploymentId));
+    }
+
+    @DeleteMapping("/{projectId}/deployments/{deploymentId}")
+    @Operation(summary = "Remove link between a project and a deployment")
+    public ResponseEntity<Void> unlinkProjectDeployment(
+            @PathVariable String projectId,
+            @PathVariable String deploymentId) {
+        projectService.unlinkProjectFromDeployment(projectId, deploymentId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{projectId}/deploy")
-    @Operation(summary = "Deploy a project to Airflow")
-    public ResponseEntity<ProjectResponse> deployProject(@PathVariable String projectId) {
-        ProjectResponse response = projectService.deployProject(projectId);
+    @Operation(summary = "Deploy a project to a specific Airflow deployment")
+    public ResponseEntity<ProjectResponse> deployProject(
+            @PathVariable String projectId,
+            @RequestParam String deploymentId) {
+        ProjectResponse response = projectService.deployProject(projectId, deploymentId);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{projectId}/trigger")
-    @Operation(summary = "Trigger DAG runs for all DAG files in a project")
+    @Operation(summary = "Trigger DAG runs for DAG files in a project on a specific deployment")
     public ResponseEntity<Map<String, Object>> triggerProject(
             @PathVariable String projectId,
+            @RequestParam String deploymentId,
             @RequestParam(required = false) String fileName) {
-        Map<String, Object> response = projectService.triggerProject(projectId, fileName);
+        Map<String, Object> response = projectService.triggerProject(projectId, deploymentId, fileName);
         return ResponseEntity.ok(response);
     }
 

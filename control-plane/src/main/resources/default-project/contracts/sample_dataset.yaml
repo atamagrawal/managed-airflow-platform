@@ -1,0 +1,18 @@
+# Local file only (URN mapped by connection local_dummy_data_contract_catalog). Try status: BREACHED for guard/sensor demos.
+contract_id: sample-dataset-v1
+dataset_urn: "urn:example:sample_dataset"
+dataset_name: sample_dataset
+version: 1
+status: ACTIVE
+
+schema:
+  - name: id
+    type: STRING
+    nullable: false
+  - name: amount
+    type: FLOAT
+    nullable: false
+
+min_row_count: 1
+
+schema_compatibility: BACKWARD

@@ -169,7 +169,7 @@ const ProjectToolbar = ({
         >
           Deploy
         </Button>
-        {project?.status === 'DEPLOYED' && (
+        {project?.linkedDeploymentIds?.length > 0 && (
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}

@@ -48,8 +48,16 @@ export const projectAPI = {
   create: (data) => api.post('/projects', data),
   update: (projectId, data) => api.put(`/projects/${projectId}`, data),
   delete: (projectId) => api.delete(`/projects/${projectId}`),
-  deploy: (projectId) => api.post(`/projects/${projectId}/deploy`),
-  trigger: (projectId, fileName) => api.post(`/projects/${projectId}/trigger`, null, { params: fileName ? { fileName } : {} }),
+  linkDeployment: (projectId, deploymentId) =>
+    api.post(`/projects/${projectId}/deployments/${deploymentId}`),
+  unlinkDeployment: (projectId, deploymentId) =>
+    api.delete(`/projects/${projectId}/deployments/${deploymentId}`),
+  deploy: (projectId, deploymentId) =>
+    api.post(`/projects/${projectId}/deploy`, null, { params: { deploymentId } }),
+  trigger: (projectId, deploymentId, fileName) =>
+    api.post(`/projects/${projectId}/trigger`, null, {
+      params: fileName ? { deploymentId, fileName } : { deploymentId },
+    }),
   getFiles: (projectId) => api.get(`/projects/${projectId}/files`),
   addFile: (projectId, data) => api.post(`/projects/${projectId}/files`, data),
   updateFile: (projectId, fileId, data) => api.put(`/projects/${projectId}/files/${fileId}`, data),

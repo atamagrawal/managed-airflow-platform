@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, message, Tabs, Space, Select } from 'antd';
 import { projectAPI } from '../services/api';
+import { getApiErrorMessage } from '../utils/apiError';
 import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
 
 const { TextArea } = Input;
@@ -15,7 +16,6 @@ const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
       form.setFieldsValue({
         name: project.name,
         description: project.description,
-        deploymentId: project.deploymentId,
         airflowVersion: project.airflowVersion,
         requirementsTxt: project.requirementsTxt,
         packagesTxt: project.packagesTxt,
@@ -60,7 +60,11 @@ const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
       }
       onSuccess();
     } catch (error) {
-      message.error(project ? 'Failed to update project' : 'Failed to create project');
+      const msg = getApiErrorMessage(
+        error,
+        project ? 'Failed to update project' : 'Failed to create project'
+      );
+      if (msg) message.error(msg);
       console.error('Error saving project:', error);
     } finally {
       setLoading(false);

@@ -7,6 +7,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * DTO for Project responses
@@ -19,8 +21,12 @@ public class ProjectResponse {
 
     private Long id;
     private String projectId;
+    /** @deprecated Prefer {@link #linkedDeploymentIds}. Set to the first linked deployment for backward compatibility. */
     private String deploymentId;
+    /** @deprecated Prefer {@link #linkedDeploymentIds}. */
     private String deploymentName;
+    /** Deployments this project is linked to (can deploy / trigger per deployment). */
+    private List<String> linkedDeploymentIds;
     private String name;
     private String description;
     private String status;
@@ -44,11 +50,18 @@ public class ProjectResponse {
     private LocalDateTime lastDeployedAt;
 
     public static ProjectResponse fromEntity(Project project) {
+        return fromEntity(project, List.of());
+    }
+
+    public static ProjectResponse fromEntity(Project project, List<String> linkedDeploymentIds) {
+        List<String> ids = linkedDeploymentIds != null ? new ArrayList<>(linkedDeploymentIds) : new ArrayList<>();
+        String firstId = ids.isEmpty() ? null : ids.get(0);
         return ProjectResponse.builder()
                 .id(project.getId())
                 .projectId(project.getProjectId())
-                .deploymentId(project.getDeployment() != null ? project.getDeployment().getDeploymentId() : null)
-                .deploymentName(project.getDeployment() != null ? project.getDeployment().getName() : null)
+                .linkedDeploymentIds(ids)
+                .deploymentId(firstId)
+                .deploymentName(null)
                 .name(project.getName())
                 .description(project.getDescription())
                 .status(project.getStatus().name())

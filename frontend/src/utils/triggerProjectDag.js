@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, Select, message } from 'antd';
 import { projectAPI } from '../services/api';
+import { getApiErrorMessage } from './apiError';
 
 export function getDagFilesFromList(files) {
   return (files || []).filter((f) => f.fileType === 'DAG');
@@ -46,20 +47,28 @@ function showTriggerResult(response, projectName) {
  * If the project has multiple DAG files, prompts for which file to trigger.
  * Pass `files` when already loaded to avoid an extra request.
  * When a choice modal opens, `onAwaitingUserChoice` runs so callers can clear loading state; `onTriggerStart` runs when the user confirms before the API call.
+ *
+ * @param {string} deploymentId - Airflow deployment to send DAG triggers to (required).
  */
 export async function triggerProjectWithDagSelection({
   projectId,
   projectName,
+  deploymentId,
   files: existingFiles,
   onAwaitingUserChoice,
   onTriggerStart,
 }) {
+  if (!deploymentId) {
+    message.error('deploymentId is required to trigger DAGs');
+    return;
+  }
   let dagFiles;
   try {
     dagFiles = await resolveDagFiles(projectId, existingFiles);
   } catch (error) {
-    message.error('Failed to load project files');
-    console.error(error);
+    const msg = getApiErrorMessage(error, 'Failed to load project files');
+    if (msg) message.error(msg);
+    console.error('Failed to load project files:', error);
     throw error;
   }
 
@@ -71,7 +80,7 @@ export async function triggerProjectWithDagSelection({
   }
 
   const execTrigger = async (fileName) => {
-    const response = await projectAPI.trigger(projectId, fileName);
+    const response = await projectAPI.trigger(projectId, deploymentId, fileName);
     showTriggerResult(response, projectName);
     return response;
   };

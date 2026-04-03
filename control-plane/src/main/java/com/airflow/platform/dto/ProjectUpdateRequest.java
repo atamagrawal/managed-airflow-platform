@@ -9,8 +9,6 @@ import lombok.Data;
 @Data
 public class ProjectUpdateRequest {
 
-    private String deploymentId;
-
     @Size(max = 200, message = "Name must not exceed 200 characters")
     private String name;
 

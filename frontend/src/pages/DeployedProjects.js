@@ -4,6 +4,9 @@ import { RocketOutlined, PlayCircleOutlined, EyeOutlined, CodeOutlined } from '@
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
+import { resolveDeploymentForTrigger } from '../utils/projectDeployments';
+import { pickDeploymentId } from '../utils/pickDeploymentModal';
+import { getApiErrorMessage } from '../utils/apiError';
 import dayjs from 'dayjs';
 
 const { Title, Paragraph } = Typography;
@@ -36,7 +39,8 @@ const DeployedProjects = () => {
       const response = await projectAPI.getAll();
       setProjects(response.data);
     } catch (error) {
-      message.error('Failed to fetch projects');
+      const msg = getApiErrorMessage(error, 'Failed to fetch projects');
+      if (msg) message.error(msg);
       console.error('Error fetching projects:', error);
     } finally {
       setLoading(false);
@@ -57,30 +61,51 @@ const DeployedProjects = () => {
       projects.filter(
         (p) =>
           p.status === 'DEPLOYED' &&
-          (p.deploymentId || p.deploymentName)
+          Array.isArray(p.linkedDeploymentIds) &&
+          p.linkedDeploymentIds.length > 0
       ),
     [projects]
   );
 
   const tableData = useMemo(() => {
     if (selectedDeployment === 'all') return deployedList;
-    return deployedList.filter(
-      (p) => String(p.deploymentId) === String(selectedDeployment)
+    return deployedList.filter((p) =>
+      (p.linkedDeploymentIds || []).includes(selectedDeployment)
     );
   }, [deployedList, selectedDeployment]);
 
-  const handleTriggerProject = async (projectId, projectName) => {
+  const handleTriggerProject = async (record) => {
+    const { projectId, name: projectName } = record;
     try {
       setTriggeringProjectId(projectId);
+      let deploymentId =
+        selectedDeployment !== 'all' ? selectedDeployment : null;
+      if (deploymentId) {
+        if (!(record.linkedDeploymentIds || []).includes(deploymentId)) {
+          message.error('This project is not linked to the selected deployment.');
+          return;
+        }
+      } else {
+        const resolved = resolveDeploymentForTrigger(record, deployments);
+        if (!resolved.ok) {
+          message.warning('No linked deployment to trigger against.');
+          return;
+        }
+        deploymentId = resolved.deploymentId;
+        if (resolved.needsPicker) {
+          deploymentId = await pickDeploymentId(`Trigger — ${projectName}`, resolved.options);
+        }
+      }
       await triggerProjectWithDagSelection({
         projectId,
         projectName,
+        deploymentId,
         onAwaitingUserChoice: () => setTriggeringProjectId(null),
         onTriggerStart: () => setTriggeringProjectId(projectId),
       });
     } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Failed to trigger DAG runs';
-      message.error(errorMsg);
+      const msg = getApiErrorMessage(error, 'Failed to trigger DAG runs');
+      if (msg) message.error(msg);
       console.error('Error triggering project:', error);
     } finally {
       setTriggeringProjectId(null);
@@ -111,11 +136,13 @@ const DeployedProjects = () => {
       width: 220,
     },
     {
-      title: 'Deployment',
-      dataIndex: 'deploymentName',
-      key: 'deploymentName',
-      width: 180,
-      render: (name, record) => name || record.deploymentId || '—',
+      title: 'Deployments',
+      key: 'linkedDeploymentIds',
+      width: 220,
+      render: (_, record) =>
+        record.linkedDeploymentIds?.length
+          ? record.linkedDeploymentIds.join(', ')
+          : '—',
     },
     {
       title: 'Status',
@@ -164,7 +191,7 @@ const DeployedProjects = () => {
           <Button
             type="link"
             icon={<PlayCircleOutlined />}
-            onClick={() => handleTriggerProject(record.projectId, record.name)}
+            onClick={() => handleTriggerProject(record)}
             loading={triggeringProjectId === record.projectId}
             size="small"
             style={{ color: '#52c41a' }}
