@@ -1,6 +1,7 @@
 package com.airflow.platform.service;
 
 import com.airflow.platform.config.DagDeploymentConfig;
+import com.airflow.platform.config.SupportedAirflowVersions;
 import com.airflow.platform.util.AirflowApiUrlUtils;
 import com.airflow.platform.dto.*;
 import com.airflow.platform.exception.DeploymentException;
@@ -94,6 +95,8 @@ public class ProjectService {
     @Transactional
     public ProjectResponse createProject(ProjectCreateRequest request) {
         log.info("Creating project: {} for deployment: {}", request.getName(), request.getDeploymentId());
+
+        SupportedAirflowVersions.requireSupported(request.getAirflowVersion());
 
         // Get deployment if provided
         AirflowDeployment deployment = null;
@@ -211,6 +214,7 @@ public class ProjectService {
             project.setGitBranch(request.getGitBranch());
         }
         if (request.getAirflowVersion() != null) {
+            SupportedAirflowVersions.requireSupported(request.getAirflowVersion());
             project.setAirflowVersion(request.getAirflowVersion());
         }
         if (request.getOwner() != null) {

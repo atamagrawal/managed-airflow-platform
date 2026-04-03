@@ -177,9 +177,10 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             }
 
             if (needsBuild || composeChanged) {
-                log.info("Applying docker compose up for {} (composeChanged={}, needsBuild={})",
+                log.info("Applying docker compose up (Airflow services only) for {} (composeChanged={}, needsBuild={}); "
+                        + "postgres/redis are unchanged by project requirements.txt",
                         deployment.getDeploymentId(), composeChanged, needsBuild);
-                executeDockerCompose(deploymentDir, "up", "-d");
+                composeUpAirflowRuntimeServicesOnly(deploymentDir, deployment);
             } else {
                 log.info("Skipping docker compose up for {}; compose file and build inputs unchanged "
                         + "(bind-mounted DAGs/plugins are already visible to running containers)",
@@ -490,6 +491,36 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             Thread.currentThread().interrupt();
             return false;
         }
+    }
+
+    /**
+     * Runs {@code up -d} only for services that use the Airflow image (from Dockerfile / requirements).
+     * {@code postgres} and {@code redis} use fixed upstream images and are not derived from project
+     * {@code requirements.txt}; a bare project-wide {@code up -d} can still reconcile every service and
+     * cause unnecessary postgres/redis churn on some Compose versions.
+     */
+    private void composeUpAirflowRuntimeServicesOnly(String deploymentDir, AirflowDeployment deployment)
+            throws IOException, InterruptedException {
+        List<String> services = new ArrayList<>();
+        services.add("airflow-init");
+        services.add("airflow-apiserver");
+        services.add("airflow-scheduler");
+        services.add("airflow-dag-processor");
+        if (executorNeedsRedis(deployment)) {
+            services.add("airflow-worker");
+            services.add("airflow-flower");
+        }
+        List<String> cmd = new ArrayList<>();
+        cmd.add("up");
+        cmd.add("-d");
+        cmd.addAll(services);
+        executeDockerCompose(deploymentDir, cmd.toArray(new String[0]));
+    }
+
+    private static boolean executorNeedsRedis(AirflowDeployment deployment) {
+        AirflowDeployment.ExecutorType ex = deployment.getExecutorType();
+        return ex == AirflowDeployment.ExecutorType.CELERY
+                || ex == AirflowDeployment.ExecutorType.CELERY_KUBERNETES;
     }
 
     private String executeDockerCompose(String workingDir, String... args) throws IOException, InterruptedException {
