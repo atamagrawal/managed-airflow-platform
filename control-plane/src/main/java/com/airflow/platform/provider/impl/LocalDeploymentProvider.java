@@ -80,6 +80,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             // Run docker-compose up
             executeDockerCompose(deploymentDir, "up", "-d");
 
+            persistBuildInputsStampSafe(deployment, deploymentPath);
             log.info("Airflow deployed successfully: {}", deployment.getDeploymentId());
         } catch (Exception e) {
             log.error("Failed to deploy Airflow locally: {}", deployment.getDeploymentId(), e);
@@ -93,10 +94,11 @@ public class LocalDeploymentProvider implements DeploymentProvider {
 
         try {
             String deploymentDir = getDeploymentDirectory(deployment);
+            Path deploymentPath = Paths.get(deploymentDir);
 
             // Regenerate docker-compose.yml with updated configuration
             String dockerCompose = composeGenerator.generateDockerCompose(deployment);
-            Path composePath = Paths.get(deploymentDir, "docker-compose.yml");
+            Path composePath = deploymentPath.resolve("docker-compose.yml");
             Files.writeString(composePath, dockerCompose);
 
             // Stop and remove existing containers
@@ -106,6 +108,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             executeDockerCompose(deploymentDir, "build");
             executeDockerCompose(deploymentDir, "up", "-d");
 
+            persistBuildInputsStampSafe(deployment, deploymentPath);
             log.info("Airflow upgraded successfully: {}", deployment.getDeploymentId());
         } catch (Exception e) {
             log.error("Failed to upgrade Airflow: {}", deployment.getDeploymentId(), e);
@@ -116,7 +119,8 @@ public class LocalDeploymentProvider implements DeploymentProvider {
     /**
      * Keeps compose in sync and rebuilds images only when Dockerfile / requirements / packages or core
      * deployment settings change. DAGs and plugins are bind-mounted, so typical project deploys skip
-     * {@link #upgrade}'s {@code down} + full rebuild.
+     * {@link #upgrade}'s {@code down} + full rebuild, and skip {@code docker compose up -d} when neither
+     * compose.yml nor build inputs changed (avoids re-running one-shot services like {@code airflow-init}).
      */
     @Override
     public void syncAfterProjectDeploy(AirflowDeployment deployment) {
@@ -131,8 +135,12 @@ public class LocalDeploymentProvider implements DeploymentProvider {
                 return;
             }
 
-            String dockerCompose = composeGenerator.generateDockerCompose(deployment);
-            Files.writeString(composePath, dockerCompose);
+            String newCompose = composeGenerator.generateDockerCompose(deployment);
+            String oldCompose = Files.readString(composePath, StandardCharsets.UTF_8);
+            boolean composeChanged = !oldCompose.equals(newCompose);
+            if (composeChanged) {
+                Files.writeString(composePath, newCompose, StandardCharsets.UTF_8);
+            }
 
             Path stampPath = deploymentPath.resolve(BUILD_INPUTS_STAMP);
             BuildInputsSnapshot current = BuildInputsSnapshot.capture(deployment, deploymentPath);
@@ -148,8 +156,10 @@ public class LocalDeploymentProvider implements DeploymentProvider {
                 if (previousSnap.isPresent()) {
                     logBuildInputChanges(previousSnap.get(), current, deployment.getDeploymentId());
                 } else if (legacyCombined.isEmpty()) {
-                    log.info("Compose build for {}: no previous build-input stamp (first project sync or new deployment)",
+                    log.info("Compose build for {}: no build-input stamp (upgrade from older control-plane, stamp deleted, "
+                            + "or deploy path skipped persist); establishing stamp with compose build",
                             deployment.getDeploymentId());
+                    log.info("Compose build inputs for {}: {}", deployment.getDeploymentId(), current.describe());
                 } else if (!combinedFingerprint.equals(legacyCombined)) {
                     log.info("Compose build for {}: build inputs changed (legacy single-hash stamp; no per-field diff). "
                             + "previousCombinedDigest={} currentCombinedDigest={}",
@@ -166,10 +176,32 @@ public class LocalDeploymentProvider implements DeploymentProvider {
                 }
             }
 
-            executeDockerCompose(deploymentDir, "up", "-d");
+            if (needsBuild || composeChanged) {
+                log.info("Applying docker compose up for {} (composeChanged={}, needsBuild={})",
+                        deployment.getDeploymentId(), composeChanged, needsBuild);
+                executeDockerCompose(deploymentDir, "up", "-d");
+            } else {
+                log.info("Skipping docker compose up for {}; compose file and build inputs unchanged "
+                        + "(bind-mounted DAGs/plugins are already visible to running containers)",
+                        deployment.getDeploymentId());
+            }
         } catch (Exception e) {
             log.error("Failed to sync local stack after project deploy: {}", deployment.getDeploymentId(), e);
             throw new DeploymentException("Local project sync failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Records what the stack was last built from so {@link #syncAfterProjectDeploy} can skip {@code compose build}
+     * when project sync does not change those inputs.
+     */
+    private void persistBuildInputsStampSafe(AirflowDeployment deployment, Path deploymentPath) {
+        try {
+            BuildInputsSnapshot snap = BuildInputsSnapshot.capture(deployment, deploymentPath);
+            writeBuildInputsStamp(deploymentPath.resolve(BUILD_INPUTS_STAMP), snap);
+        } catch (Exception e) {
+            log.warn("Could not persist build-input stamp for {} (next project deploy may run an extra compose build): {}",
+                    deployment.getDeploymentId(), e.getMessage());
         }
     }
 
@@ -308,6 +340,23 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path));
             return HexFormat.of().formatHex(digest);
         }
+
+        String describe() {
+            return "airflowVersion=%s, executor=%s, Dockerfile=%s, requirements.txt=%s, packages.txt=%s".formatted(
+                    airflowVersion,
+                    executor,
+                    shortenDigest(dockerfileDigest),
+                    shortenDigest(requirementsDigest),
+                    shortenDigest(packagesDigest)
+            );
+        }
+
+        private static String shortenDigest(String digest) {
+            if ("absent".equals(digest) || digest.length() <= 12) {
+                return digest;
+            }
+            return digest.substring(0, 12);
+        }
     }
 
     @Override
@@ -362,7 +411,8 @@ public class LocalDeploymentProvider implements DeploymentProvider {
     @Override
     public String getWebserverUrl(AirflowDeployment deployment) {
         int port = getApiserverHostPort(deployment);
-        return "http://localhost:" + port;
+        // Use IPv4 loopback so JVM clients match Docker-published ports (see AirflowApiUrlUtils).
+        return "http://127.0.0.1:" + port;
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.airflow.platform.service;
 
 import com.airflow.platform.config.DagDeploymentConfig;
+import com.airflow.platform.util.AirflowApiUrlUtils;
 import com.airflow.platform.dto.*;
 import com.airflow.platform.exception.DeploymentException;
 import com.airflow.platform.exception.ResourceNotFoundException;
@@ -12,8 +13,8 @@ import com.airflow.platform.repository.AirflowDeploymentRepository;
 import com.airflow.platform.repository.ProjectFileRepository;
 import com.airflow.platform.repository.ProjectRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -21,6 +22,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriUtils;
@@ -63,6 +65,13 @@ public class ProjectService {
 
     @Value("${local.base-directory:${user.home}/airflow-deployments}")
     private String localBaseDirectory;
+
+    /**
+     * When set (e.g. {@code deployment.compose.airflow-image} in application.yml), default project Dockerfiles use this
+     * as the {@code FROM} image so they match the Airflow image used in generated docker-compose.
+     */
+    @Value("${deployment.compose.airflow-image:}")
+    private String composeAirflowImage;
 
     @Value("${airflow.api.username:admin}")
     private String airflowApiUsername;
@@ -110,7 +119,9 @@ public class ProjectService {
         project.setStatus(Project.ProjectStatus.DRAFT);
         project.setRequirementsTxt(request.getRequirementsTxt() != null ? request.getRequirementsTxt() : getDefaultRequirements());
         project.setPackagesTxt(request.getPackagesTxt());
-        project.setDockerfile(request.getDockerfile() != null ? request.getDockerfile() : getDefaultDockerfile(request.getAirflowVersion()));
+        project.setDockerfile(StringUtils.hasText(request.getDockerfile())
+                ? request.getDockerfile().trim()
+                : getDefaultDockerfile(request.getAirflowVersion()));
         project.setAirflowSettingsYaml(request.getAirflowSettingsYaml());
         project.setAirflowIgnore(request.getAirflowIgnore() != null ? request.getAirflowIgnore() : getDefaultAirflowIgnore());
         project.setEnvFile(request.getEnvFile());
@@ -360,7 +371,7 @@ public class ProjectService {
                     project.getDeployment().getDeploymentId());
         }
 
-        String baseUrl = normalizeBaseUrl(webserverUrl);
+        String baseUrl = AirflowApiUrlUtils.normalizeAirflowBaseUrl(webserverUrl);
         String airflowVersion = project.getDeployment().getAirflowVersion();
         log.info("Triggering project {} DAGs via {} (Airflow version: {})",
                 projectId, baseUrl, airflowVersion);
@@ -571,9 +582,15 @@ public class ProjectService {
     }
 
     private String getDefaultDockerfile(String airflowVersion) {
-        String version = airflowVersion != null ? airflowVersion : "3.1.8";
+        String baseImage;
+        if (StringUtils.hasText(composeAirflowImage)) {
+            baseImage = composeAirflowImage.trim();
+        } else {
+            String version = airflowVersion != null ? airflowVersion : "3.1.8";
+            baseImage = "apache/airflow:" + version;
+        }
         return """
-                FROM apache/airflow:%s
+                FROM %s
 
                 # Copy requirements and install
                 COPY requirements.txt /requirements.txt
@@ -581,7 +598,7 @@ public class ProjectService {
 
                 # Copy project files
                 COPY . /opt/airflow/
-                """.formatted(version);
+                """.formatted(baseImage);
     }
 
     private String getDefaultAirflowIgnore() {
@@ -602,13 +619,6 @@ public class ProjectService {
                 # Ignore test files
                 tests/
                 """;
-    }
-
-    private static String normalizeBaseUrl(String url) {
-        if (url == null || url.isEmpty()) {
-            return url;
-        }
-        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
     private ResponseEntity<Map<String, Object>> postTriggerDagRun(String baseUrl, String airflowDagId, String airflowVersion) {

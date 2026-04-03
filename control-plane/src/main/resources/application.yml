@@ -212,7 +212,11 @@ spring:
 # Deployment provider configuration
 deployment:
   provider: local
-  # Optional: override the Airflow image in generated docker-compose (scheduler, api-server, workers, …).
+  compose:
+      # Data contracts (AIP-07) are not in upstream Airflow; this image bundles the custom provider.
+      airflow-image: atamagrawal/airflow:aip07-data-contracts-3.1.8
+  # Optional: override the Airflow image in generated docker-compose (scheduler, api-server, workers, …)
+  # and the FROM line in the default Dockerfile for newly created projects (when the user does not supply one).
   # If omitted, the image is apache/airflow:{airflowVersion} from the deployment (e.g. apache/airflow:3.1.8).
   # Example in YAML:
   #   compose:

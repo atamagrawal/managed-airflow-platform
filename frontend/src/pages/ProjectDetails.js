@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Button, Space, Tag, Tabs, Table, Modal, Form, Input, Select, message } from 'antd';
 import { ArrowLeftOutlined, EditOutlined, RocketOutlined, PlayCircleOutlined, PlusOutlined, FolderOutlined, CodeOutlined } from '@ant-design/icons';
 import { projectAPI, deploymentAPI } from '../services/api';
+import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import dayjs from 'dayjs';
 
 const { TabPane } = Tabs;
@@ -116,18 +117,13 @@ const ProjectDetails = () => {
   const handleTrigger = async () => {
     try {
       setTriggerLoading(true);
-      const response = await projectAPI.trigger(projectId);
-      const { triggeredCount, failedCount, totalDagFiles, results } = response.data;
-      if (triggeredCount > 0) {
-        message.success(`Triggered ${triggeredCount}/${totalDagFiles} DAG run(s) successfully`);
-      }
-      if (failedCount > 0) {
-        const failedDetails = results
-          .filter(r => !r.success)
-          .map(r => `• ${r.fileName || r.airflowDagId}: ${r.message}`)
-          .join('\n');
-        message.warning({ content: `${failedCount} DAG(s) failed:\n${failedDetails}`, duration: 8 });
-      }
+      await triggerProjectWithDagSelection({
+        projectId,
+        projectName: project?.name,
+        files,
+        onAwaitingUserChoice: () => setTriggerLoading(false),
+        onTriggerStart: () => setTriggerLoading(true),
+      });
     } catch (error) {
       const errorMsg = error.response?.data?.message || 'Failed to trigger DAG runs';
       message.error(errorMsg);
