@@ -79,6 +79,12 @@ dag:
     # Example: "/opt/airflow/dags,/opt/airflow/projects/*/dags"
     additional-dag-folders:
 
+# Files copied into every new project (DAGs, contracts, etc.). Edit resources under default-project/ — not ProjectService.
+project:
+  default-template:
+    enabled: true
+    location: classpath:default-project/
+
 ---
 # Production profile configuration
 spring:

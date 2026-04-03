@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Table, Button, Space, Tag, Popconfirm, message, Typography, Input, Modal, Select } from 'antd';
+import { Table, Button, Space, Tag, Popconfirm, message, Typography, Input, Modal } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -14,6 +14,9 @@ import { useNavigate } from 'react-router-dom';
 import { projectAPI, deploymentAPI } from '../services/api';
 import ProjectForm from '../components/ProjectForm';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
+import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../utils/projectDeployments';
+import { pickDeploymentId } from '../utils/pickDeploymentModal';
+import { getApiErrorMessage } from '../utils/apiError';
 import dayjs from 'dayjs';
 
 const { Title, Paragraph } = Typography;
@@ -40,7 +43,8 @@ const Projects = () => {
       const response = await projectAPI.getAll();
       setProjects(response.data);
     } catch (error) {
-      message.error('Failed to fetch projects');
+      const msg = getApiErrorMessage(error, 'Failed to fetch projects');
+      if (msg) message.error(msg);
       console.error('Error fetching projects:', error);
     } finally {
       setLoading(false);
@@ -72,76 +76,56 @@ const Projects = () => {
       message.success('Project deleted successfully');
       fetchProjects();
     } catch (error) {
-      message.error('Failed to delete project');
+      const msg = getApiErrorMessage(error, 'Failed to delete project');
+      if (msg) message.error(msg);
       console.error('Error deleting project:', error);
     }
   };
 
   const handleDeployProject = async (projectId, projectName, record) => {
-    if (!record.deploymentId && !record.deploymentName) {
-      let selectedDeploymentId = null;
-
-      Modal.confirm({
-        title: 'Select deployment',
-        content: (
-          <div>
-            <p style={{ marginBottom: 12 }}>Choose the Airflow deployment for this project:</p>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Select deployment"
-              onChange={(value) => {
-                selectedDeploymentId = value;
-              }}
-              options={deployments.map((d) => ({ label: d.name, value: d.deploymentId }))}
-            />
-          </div>
-        ),
-        okText: 'Deploy',
-        cancelText: 'Cancel',
-        onOk: async () => {
-          if (!selectedDeploymentId) {
-            message.error('Please select a deployment');
-            return Promise.reject();
-          }
-
-          try {
-            await projectAPI.update(projectId, { deploymentId: selectedDeploymentId });
-            await projectAPI.deploy(projectId);
-            message.success(`Project "${projectName}" deployed successfully`);
-            fetchProjects();
-          } catch (error) {
-            const errorMsg = error.response?.data?.message || 'Failed to deploy project';
-            message.error(errorMsg);
-            console.error('Error deploying project:', error);
-          }
-        },
-      });
-      return;
-    }
-
     try {
-      await projectAPI.deploy(projectId);
+      const resolved = resolveDeploymentForDeploy(record, deployments);
+      if (!resolved.ok) {
+        message.error('No deployments available. Create an Airflow deployment first.');
+        return;
+      }
+      let deploymentId = resolved.deploymentId;
+      if (resolved.needsPicker) {
+        deploymentId = await pickDeploymentId(`Deploy — ${projectName}`, resolved.options);
+      }
+      await projectAPI.deploy(projectId, deploymentId);
       message.success(`Project "${projectName}" deployed successfully`);
       fetchProjects();
     } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Failed to deploy project';
-      message.error(errorMsg);
+      if (error?.message === 'no deployments') return;
+      const msg = getApiErrorMessage(error, 'Failed to deploy project');
+      if (msg) message.error(msg);
       console.error('Error deploying project:', error);
     }
   };
 
-  const handleTriggerProject = async (projectId, projectName) => {
+  const handleTriggerProject = async (projectId, projectName, record) => {
     try {
+      const resolved = resolveDeploymentForTrigger(record, deployments);
+      if (!resolved.ok) {
+        message.warning('Deploy this project to a deployment before triggering DAGs.');
+        return;
+      }
+      let deploymentId = resolved.deploymentId;
+      if (resolved.needsPicker) {
+        deploymentId = await pickDeploymentId(`Trigger DAGs — ${projectName}`, resolved.options);
+      }
       setTriggeringProjectId(projectId);
       await triggerProjectWithDagSelection({
         projectId,
         projectName,
+        deploymentId,
         onAwaitingUserChoice: () => setTriggeringProjectId(null),
         onTriggerStart: () => setTriggeringProjectId(projectId),
       });
     } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Failed to trigger DAG runs';
-      message.error(errorMsg);
+      const msg = getApiErrorMessage(error, 'Failed to trigger DAG runs');
+      if (msg) message.error(msg);
       console.error('Error triggering project:', error);
     } finally {
       setTriggeringProjectId(null);
@@ -273,11 +257,11 @@ const Projects = () => {
           >
             Deploy
           </Button>
-          {record.status === 'DEPLOYED' && (
+          {record.linkedDeploymentIds?.length > 0 && (
             <Button
               type="link"
               icon={<PlayCircleOutlined />}
-              onClick={() => handleTriggerProject(record.projectId, record.name)}
+              onClick={() => handleTriggerProject(record.projectId, record.name, record)}
               loading={triggeringProjectId === record.projectId}
               size="small"
               style={{ color: '#52c41a' }}

@@ -10,8 +10,6 @@ import lombok.Data;
 @Data
 public class ProjectCreateRequest {
 
-    private String deploymentId;
-
     @NotBlank(message = "Project name is required")
     @Size(max = 200, message = "Name must not exceed 200 characters")
     private String name;

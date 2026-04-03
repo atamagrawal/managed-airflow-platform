@@ -27,10 +27,6 @@ public class Project {
     @Column(nullable = false, unique = true, length = 100)
     private String projectId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "deployment_id", nullable = true)
-    private AirflowDeployment deployment;
-
     @Column(nullable = false, length = 200)
     private String name;
 

@@ -9,6 +9,9 @@ import ProjectToolbar from '../components/ProjectCodeEditor/ProjectToolbar';
 import CodeEditorPane from '../components/CodeEditor/CodeEditorPane';
 import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
+import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../utils/projectDeployments';
+import { pickDeploymentId } from '../utils/pickDeploymentModal';
+import { getApiErrorMessage } from '../utils/apiError';
 import './CodeEditor.css';
 
 const { Option } = Select;
@@ -272,87 +275,53 @@ const ProjectCodeEditor = () => {
   };
 
   const handleDeploy = async () => {
-    // Check if project has a deployment
-    if (!project.deploymentId && !project.deploymentName) {
-      // Show modal to select deployment
-      let selectedDeploymentId = null;
-
-      Modal.confirm({
-        title: 'Select Deployment',
-        content: (
-          <div>
-            <p style={{ marginBottom: 12 }}>Select which Airflow deployment to deploy this project to:</p>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Select deployment"
-              onChange={(value) => { selectedDeploymentId = value; }}
-              options={deployments.map(d => ({ label: d.name, value: d.deploymentId }))}
-            />
-          </div>
-        ),
-        okText: 'Deploy',
-        cancelText: 'Cancel',
-        onOk: async () => {
-          if (!selectedDeploymentId) {
-            message.error('Please select a deployment');
-            return Promise.reject();
-          }
-
-          try {
-            setDeploying(true);
-            // First update the project with the deployment
-            await projectAPI.update(projectId, { deploymentId: selectedDeploymentId });
-            // Then deploy
-            await projectAPI.deploy(projectId);
-            message.success('Project deployed successfully');
-            await fetchProject();
-          } catch (error) {
-            const errorMsg = error.response?.data?.message || 'Failed to deploy project';
-            message.error(errorMsg);
-            console.error('Error:', error);
-          } finally {
-            setDeploying(false);
-          }
-        },
-      });
-      return;
+    try {
+      const resolved = resolveDeploymentForDeploy(project, deployments);
+      if (!resolved.ok) {
+        message.error('No deployments available. Create an Airflow deployment first.');
+        return;
+      }
+      let deploymentId = resolved.deploymentId;
+      if (resolved.needsPicker) {
+        deploymentId = await pickDeploymentId(`Deploy — ${project?.name}`, resolved.options);
+      }
+      setDeploying(true);
+      await projectAPI.deploy(projectId, deploymentId);
+      message.success('Project deployed successfully');
+      await fetchProject();
+    } catch (error) {
+      if (error?.message === 'no deployments') return;
+      const msg = getApiErrorMessage(error, 'Failed to deploy project');
+      if (msg) message.error(msg);
+      console.error('Error:', error);
+    } finally {
+      setDeploying(false);
     }
-
-    Modal.confirm({
-      title: 'Deploy Project',
-      content: `Deploy project "${project?.name}" to Airflow?`,
-      okText: 'Deploy',
-      cancelText: 'Cancel',
-      onOk: async () => {
-        try {
-          setDeploying(true);
-          await projectAPI.deploy(projectId);
-          message.success('Project deployed successfully');
-          await fetchProject();
-        } catch (error) {
-          const errorMsg = error.response?.data?.message || 'Failed to deploy project';
-          message.error(errorMsg);
-          console.error('Error:', error);
-        } finally {
-          setDeploying(false);
-        }
-      },
-    });
   };
 
   const handleTrigger = async () => {
     try {
+      const resolved = resolveDeploymentForTrigger(project, deployments);
+      if (!resolved.ok) {
+        message.warning('Deploy this project to a deployment before triggering DAGs.');
+        return;
+      }
+      let deploymentId = resolved.deploymentId;
+      if (resolved.needsPicker) {
+        deploymentId = await pickDeploymentId(`Trigger DAGs — ${project?.name}`, resolved.options);
+      }
       setTriggering(true);
       await triggerProjectWithDagSelection({
         projectId,
         projectName: project?.name,
+        deploymentId,
         files,
         onAwaitingUserChoice: () => setTriggering(false),
         onTriggerStart: () => setTriggering(true),
       });
     } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Failed to trigger DAG runs';
-      message.error(errorMsg);
+      const msg = getApiErrorMessage(error, 'Failed to trigger DAG runs');
+      if (msg) message.error(msg);
       console.error('Error triggering project:', error);
     } finally {
       setTriggering(false);

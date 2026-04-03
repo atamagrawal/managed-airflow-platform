@@ -136,6 +136,10 @@ public class DockerComposeGenerator {
         compose.append("        /entrypoint airflow db migrate\n");
         compose.append("        /entrypoint airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com "
                     + "--password admin || true\n");
+        compose.append("        /entrypoint airflow connections delete local_dummy_data_contract_catalog || true\n");
+        compose.append("        /entrypoint airflow connections add local_dummy_data_contract_catalog ");
+        compose.append("--conn-type data_contract_yaml --conn-host /opt/airflow ");
+        compose.append("--conn-extra '{\"contracts\":{\"urn:example:sample_dataset\":\"contracts/sample_dataset.yaml\"}}' || true\n");
         compose.append("    user: \"0:0\"\n");
         compose.append("    restart: \"no\"\n");
         compose.append("    depends_on:\n");

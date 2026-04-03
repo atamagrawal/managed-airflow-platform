@@ -8,9 +8,11 @@ import com.airflow.platform.exception.DeploymentException;
 import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.AirflowDeployment;
 import com.airflow.platform.model.Project;
+import com.airflow.platform.model.ProjectDeployment;
 import com.airflow.platform.model.ProjectFile;
 import com.airflow.platform.provider.DeploymentProvider;
 import com.airflow.platform.repository.AirflowDeploymentRepository;
+import com.airflow.platform.repository.ProjectDeploymentRepository;
 import com.airflow.platform.repository.ProjectFileRepository;
 import com.airflow.platform.repository.ProjectRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -46,7 +48,8 @@ import java.util.stream.Collectors;
 
 /**
  * Service for managing Airflow projects (Astronomer-style)
- * Supports project creation, file management, and deployment
+ * Supports project creation, file management, and deployment.
+ * Projects are not owned by a single deployment; use {@link ProjectDeployment} to link a project to one or more deployments.
  */
 @Service
 @Slf4j
@@ -54,8 +57,10 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final ProjectFileRepository projectFileRepository;
+    private final ProjectDeploymentRepository projectDeploymentRepository;
     private final AirflowDeploymentRepository deploymentRepository;
     private final DagDeploymentConfig dagDeploymentConfig;
+    private final DefaultProjectTemplateSeeder defaultProjectTemplateSeeder;
     private final RestTemplate restTemplate;
 
     @Autowired(required = false)
@@ -82,33 +87,25 @@ public class ProjectService {
 
     public ProjectService(ProjectRepository projectRepository,
                           ProjectFileRepository projectFileRepository,
+                          ProjectDeploymentRepository projectDeploymentRepository,
                           AirflowDeploymentRepository deploymentRepository,
                           DagDeploymentConfig dagDeploymentConfig,
+                          DefaultProjectTemplateSeeder defaultProjectTemplateSeeder,
                           RestTemplate restTemplate) {
         this.projectRepository = projectRepository;
         this.projectFileRepository = projectFileRepository;
+        this.projectDeploymentRepository = projectDeploymentRepository;
         this.deploymentRepository = deploymentRepository;
         this.dagDeploymentConfig = dagDeploymentConfig;
+        this.defaultProjectTemplateSeeder = defaultProjectTemplateSeeder;
         this.restTemplate = restTemplate;
     }
 
     @Transactional
     public ProjectResponse createProject(ProjectCreateRequest request) {
-        log.info("Creating project: {} for deployment: {}", request.getName(), request.getDeploymentId());
+        log.info("Creating project: {}", request.getName());
 
         SupportedAirflowVersions.requireSupported(request.getAirflowVersion());
-
-        // Get deployment if provided
-        AirflowDeployment deployment = null;
-        if (request.getDeploymentId() != null && !request.getDeploymentId().isBlank()) {
-            deployment = deploymentRepository.findByDeploymentId(request.getDeploymentId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + request.getDeploymentId()));
-
-            // Check if project with same name already exists for this deployment
-            if (projectRepository.findByDeploymentAndName(deployment, request.getName()).isPresent()) {
-                throw new DeploymentException("Project with name '" + request.getName() + "' already exists for this deployment");
-            }
-        }
 
         // Generate project ID
         String projectId = generateProjectId(request.getName());
@@ -116,7 +113,6 @@ public class ProjectService {
         // Create project entity
         Project project = new Project();
         project.setProjectId(projectId);
-        project.setDeployment(deployment);
         project.setName(request.getName());
         project.setDescription(request.getDescription());
         project.setStatus(Project.ProjectStatus.DRAFT);
@@ -133,36 +129,79 @@ public class ProjectService {
         project.setAirflowVersion(request.getAirflowVersion() != null ? request.getAirflowVersion() : "3.1.8");
         project.setOwner(request.getOwner());
         project.setTags(request.getTags());
-        project.setDagCount(1);
+        project.setDagCount(0);
         project.setPluginCount(0);
 
         Project savedProject = projectRepository.save(project);
-        createSampleDagFile(savedProject);
-        createSampleContractFile(savedProject);
-        log.info("Project created successfully with sample DAG and contract: {}", savedProject.getProjectId());
+        try {
+            defaultProjectTemplateSeeder.seed(savedProject);
+        } catch (IOException e) {
+            throw new DeploymentException("Failed to seed default project files from template: " + e.getMessage(), e);
+        }
+        projectRepository.save(savedProject);
+        log.info("Project created successfully: {}", savedProject.getProjectId());
 
-        return ProjectResponse.fromEntity(savedProject);
+        return toResponse(savedProject);
     }
 
     @Transactional(readOnly = true)
     public ProjectResponse getProject(String projectId) {
         Project project = projectRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
-        return ProjectResponse.fromEntity(project);
+        return toResponse(project);
     }
 
     @Transactional(readOnly = true)
     public List<ProjectResponse> getAllProjects() {
         return projectRepository.findAll().stream()
-                .map(ProjectResponse::fromEntity)
+                .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public List<ProjectResponse> getProjectsByDeployment(String deploymentId) {
-        return projectRepository.findByDeploymentDeploymentId(deploymentId).stream()
-                .map(ProjectResponse::fromEntity)
+        return projectDeploymentRepository.findByDeployment_DeploymentId(deploymentId).stream()
+                .map(ProjectDeployment::getProject)
+                .distinct()
+                .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public ProjectResponse linkProjectToDeployment(String projectId, String deploymentId) {
+        Project project = projectRepository.findByProjectId(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        if (projectDeploymentRepository.existsByProject_ProjectIdAndDeployment_DeploymentId(projectId, deploymentId)) {
+            return toResponse(project);
+        }
+        ProjectDeployment link = new ProjectDeployment();
+        link.setProject(project);
+        link.setDeployment(deployment);
+        projectDeploymentRepository.save(link);
+        log.info("Linked project {} to deployment {}", projectId, deploymentId);
+        return toResponse(projectRepository.findByProjectId(projectId).orElseThrow());
+    }
+
+    @Transactional
+    public void unlinkProjectFromDeployment(String projectId, String deploymentId) {
+        if (!projectRepository.existsByProjectId(projectId)) {
+            throw new ResourceNotFoundException("Project not found: " + projectId);
+        }
+        if (!deploymentRepository.existsByDeploymentId(deploymentId)) {
+            throw new ResourceNotFoundException("Deployment not found: " + deploymentId);
+        }
+        projectDeploymentRepository.deleteByProject_ProjectIdAndDeployment_DeploymentId(projectId, deploymentId);
+        log.info("Unlinked project {} from deployment {}", projectId, deploymentId);
+    }
+
+    private ProjectResponse toResponse(Project project) {
+        List<String> ids = projectDeploymentRepository.findByProject_ProjectId(project.getProjectId()).stream()
+                .map(pd -> pd.getDeployment().getDeploymentId())
+                .sorted()
+                .collect(Collectors.toList());
+        return ProjectResponse.fromEntity(project, ids);
     }
 
     @Transactional
@@ -171,18 +210,6 @@ public class ProjectService {
 
         Project project = projectRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
-
-        if (request.getDeploymentId() != null) {
-            if (request.getDeploymentId().isBlank()) {
-                project.setDeployment(null);
-                log.info("Removed deployment assignment from project {}", projectId);
-            } else {
-                AirflowDeployment deployment = deploymentRepository.findByDeploymentId(request.getDeploymentId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + request.getDeploymentId()));
-                project.setDeployment(deployment);
-                log.info("Assigned deployment {} to project {}", request.getDeploymentId(), projectId);
-            }
-        }
 
         if (request.getName() != null) {
             project.setName(request.getName());
@@ -229,7 +256,7 @@ public class ProjectService {
         Project updatedProject = projectRepository.save(project);
         log.info("Project updated successfully: {}", updatedProject.getProjectId());
 
-        return ProjectResponse.fromEntity(updatedProject);
+        return toResponse(updatedProject);
     }
 
     @Transactional
@@ -241,6 +268,8 @@ public class ProjectService {
 
         // Delete all associated files
         projectFileRepository.deleteByProject(project);
+
+        projectDeploymentRepository.deleteByProject_ProjectId(projectId);
 
         // Delete project
         projectRepository.delete(project);
@@ -307,28 +336,36 @@ public class ProjectService {
     }
 
     @Transactional
-    public ProjectResponse deployProject(String projectId) {
-        log.info("Deploying project: {}", projectId);
+    public ProjectResponse deployProject(String projectId, String deploymentId) {
+        log.info("Deploying project: {} to deployment: {}", projectId, deploymentId);
 
         Project project = projectRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
 
-        if (project.getDeployment() == null) {
-            throw new DeploymentException("Cannot deploy project without associated deployment");
-        }
+        ProjectDeployment link = projectDeploymentRepository
+                .findByProject_ProjectIdAndDeployment_DeploymentId(projectId, deploymentId)
+                .orElseGet(() -> {
+                    ProjectDeployment n = new ProjectDeployment();
+                    n.setProject(project);
+                    n.setDeployment(deployment);
+                    return projectDeploymentRepository.save(n);
+                });
 
         project.setStatus(Project.ProjectStatus.DEPLOYING);
         projectRepository.save(project);
 
         try {
-            // Deploy based on provider type
             if ("local".equalsIgnoreCase(deploymentProvider)) {
-                deployProjectLocally(project);
-                refreshLocalDeploymentRuntime(project);
+                deployProjectLocally(project, deployment);
+                refreshLocalDeploymentRuntime(deployment);
             } else {
                 throw new DeploymentException("Deployment provider not supported: " + deploymentProvider);
             }
 
+            link.setLastDeployedAt(LocalDateTime.now());
+            projectDeploymentRepository.save(link);
             project.setStatus(Project.ProjectStatus.DEPLOYED);
             project.setLastDeployedAt(LocalDateTime.now());
         } catch (Exception e) {
@@ -339,22 +376,27 @@ public class ProjectService {
             projectRepository.save(project);
         }
 
-        return ProjectResponse.fromEntity(project);
+        return toResponse(project);
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> triggerProject(String projectId, String fileName) {
-        log.info("Triggering project DAG runs: {}", projectId);
+    public Map<String, Object> triggerProject(String projectId, String deploymentId, String fileName) {
+        log.info("Triggering project DAG runs: {} on deployment {}", projectId, deploymentId);
 
         Project project = projectRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
 
-        if (project.getDeployment() == null) {
-            throw new DeploymentException("Cannot trigger project without associated deployment");
+        ProjectDeployment link = projectDeploymentRepository
+                .findByProject_ProjectIdAndDeployment_DeploymentId(projectId, deploymentId)
+                .orElseThrow(() -> new DeploymentException(
+                        "Project is not linked to deployment " + deploymentId
+                                + ". Link the project to this deployment or deploy to it first."));
+        if (link.getLastDeployedAt() == null) {
+            throw new DeploymentException(
+                    "Project has not been successfully deployed to deployment " + deploymentId + " yet.");
         }
-        if (project.getStatus() != Project.ProjectStatus.DEPLOYED) {
-            throw new DeploymentException("Cannot trigger project. Project must be deployed first. Current status: " + project.getStatus());
-        }
+
+        AirflowDeployment deployment = link.getDeployment();
 
         List<ProjectFile> dagFiles = projectFileRepository.findByProjectAndFileType(project, ProjectFile.FileType.DAG);
         if (dagFiles.isEmpty()) {
@@ -370,14 +412,13 @@ public class ProjectService {
             }
         }
 
-        String webserverUrl = project.getDeployment().getWebserverUrl();
+        String webserverUrl = deployment.getWebserverUrl();
         if (webserverUrl == null || webserverUrl.isBlank()) {
-            throw new DeploymentException("Airflow webserver URL not found for deployment: " +
-                    project.getDeployment().getDeploymentId());
+            throw new DeploymentException("Airflow webserver URL not found for deployment: " + deployment.getDeploymentId());
         }
 
         String baseUrl = AirflowApiUrlUtils.normalizeAirflowBaseUrl(webserverUrl);
-        String airflowVersion = project.getDeployment().getAirflowVersion();
+        String airflowVersion = deployment.getAirflowVersion();
         log.info("Triggering project {} DAGs via {} (Airflow version: {})",
                 projectId, baseUrl, airflowVersion);
         int successCount = 0;
@@ -416,6 +457,7 @@ public class ProjectService {
 
         Map<String, Object> summary = new HashMap<>();
         summary.put("projectId", projectId);
+        summary.put("deploymentId", deploymentId);
         summary.put("requestedFileName", (fileName == null || fileName.isBlank()) ? null : fileName);
         summary.put("totalDagFiles", dagFiles.size());
         summary.put("triggeredCount", successCount);
@@ -425,8 +467,7 @@ public class ProjectService {
         return summary;
     }
 
-    private void deployProjectLocally(Project project) throws IOException {
-        AirflowDeployment deployment = project.getDeployment();
+    private void deployProjectLocally(Project project, AirflowDeployment deployment) throws IOException {
         String tenantId = deployment.getTenant().getTenantId();
         String deploymentId = deployment.getDeploymentId();
         Path deploymentRoot = Paths.get(localBaseDirectory, tenantId, deploymentId);
@@ -511,9 +552,9 @@ public class ProjectService {
         log.info("Project deployed locally at: {} (strategy: {})", projectPath, dagDeploymentConfig.getStrategy());
     }
 
-    private void refreshLocalDeploymentRuntime(Project project) {
-        if (deploymentProviderImpl == null || project.getDeployment() == null) {
-            log.warn("Skipping runtime refresh for project {} because deployment provider is unavailable", project.getProjectId());
+    private void refreshLocalDeploymentRuntime(AirflowDeployment deployment) {
+        if (deploymentProviderImpl == null) {
+            log.warn("Skipping runtime refresh because deployment provider is unavailable");
             return;
         }
         if (!"local".equalsIgnoreCase(deploymentProviderImpl.getProviderType())) {
@@ -521,9 +562,8 @@ public class ProjectService {
             return;
         }
         try {
-            log.info("Syncing local Airflow stack for deployment {} after project deploy",
-                    project.getDeployment().getDeploymentId());
-            deploymentProviderImpl.syncAfterProjectDeploy(project.getDeployment());
+            log.info("Syncing local Airflow stack for deployment {} after project deploy", deployment.getDeploymentId());
+            deploymentProviderImpl.syncAfterProjectDeploy(deployment);
         } catch (Exception e) {
             throw new DeploymentException("Project files were synced but failed to refresh local runtime: " + e.getMessage(), e);
         }
@@ -550,98 +590,6 @@ public class ProjectService {
                 # (e.g. git+https://... or a wheel) or use an Airflow image that already includes it
                 # (see deployment.compose.airflow-image in application.yml).
                 """;
-    }
-
-    private void createSampleDagFile(Project project) {
-        ProjectFile file = new ProjectFile();
-        file.setProject(project);
-        file.setFilePath("dags/sample_data_contract_dag.py");
-        file.setFileName("sample_data_contract_dag.py");
-        file.setFileType(ProjectFile.FileType.DAG);
-        file.setDescription("Sample DAG: local YAML data contract validation (AIP-07)");
-        file.setContent("""
-                from __future__ import annotations
-
-                # Data contracts provider is custom / not in stock Airflow — same import path as your build.
-                import os
-                from datetime import datetime
-
-                from airflow.providers.data.contracts.operators.contract_validate import ContractValidateOperator
-                from airflow.sdk import DAG, task
-
-                _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                CONTRACT_YAML = os.path.join(_PROJECT_ROOT, "contracts", "sample_dataset.yaml")
-                DATASET_URN = "urn:example:sample_dataset"
-
-
-                @task
-                def build_contract_stats() -> dict:
-                    # Simulate pipeline output stats for ContractValidateOperator (row_count, schema).
-                    return {
-                        "row_count": 3,
-                        "schema": [
-                            {"name": "id", "type": "STRING", "nullable": False},
-                            {"name": "amount", "type": "FLOAT", "nullable": False},
-                        ],
-                    }
-
-
-                with DAG(
-                    dag_id="simple_data_contract_validation",
-                    schedule=None,
-                    start_date=datetime(2025, 1, 1),
-                    catchup=False,
-                    tags=["data-contracts", "sample", "project"],
-                ) as dag:
-                    stats = build_contract_stats()
-
-                    validate = ContractValidateOperator(
-                        task_id="validate_contract",
-                        catalog_conn_id="unused_local_yaml_only",
-                        dataset_urn=DATASET_URN,
-                        stats_xcom_task_id="build_contract_stats",
-                        contract_yaml_path=CONTRACT_YAML,
-                        validate_schema=True,
-                        validate_completeness=True,
-                        validate_freshness=False,
-                        validate_sla=False,
-                        report_breach_to_catalog=False,
-                    )
-
-                    stats >> validate
-                """);
-        file.setFileSize((long) file.getContent().length());
-        projectFileRepository.save(file);
-    }
-
-    private void createSampleContractFile(Project project) {
-        ProjectFile file = new ProjectFile();
-        file.setProject(project);
-        file.setFilePath("contracts/sample_dataset.yaml");
-        file.setFileName("sample_dataset.yaml");
-        file.setFileType(ProjectFile.FileType.CONTRACT);
-        file.setDescription("Sample data contract YAML (AIP-07)");
-        file.setContent("""
-                contract_id: sample-dataset-v1
-                dataset_urn: "urn:example:sample_dataset"
-                dataset_name: sample_dataset
-                version: 1
-                status: ACTIVE
-
-                schema:
-                  - name: id
-                    type: STRING
-                    nullable: false
-                  - name: amount
-                    type: FLOAT
-                    nullable: false
-
-                min_row_count: 1
-
-                schema_compatibility: BACKWARD
-                """);
-        file.setFileSize((long) file.getContent().length());
-        projectFileRepository.save(file);
     }
 
     private String getDefaultDockerfile(String airflowVersion) {
