@@ -3,6 +3,7 @@ import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Typogr
 import { PlusOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { deploymentAPI, tenantAPI } from '../services/api';
+import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -256,7 +257,7 @@ const Deployments = () => {
           layout="vertical"
           onFinish={handleCreateDeployment}
           initialValues={{
-            airflowVersion: '3.1.8',
+            airflowVersion: DEFAULT_AIRFLOW_VERSION,
             executorType: 'LOCAL',
             minWorkers: 1,
             maxWorkers: 3,
@@ -307,10 +308,13 @@ const Deployments = () => {
           <Form.Item
             name="airflowVersion"
             label="Airflow Version"
-            rules={[{ required: true, message: 'Please enter Airflow version' }]}
-            tooltip="Apache Airflow version to deploy (e.g., 3.1.8, 2.8.1)"
+            rules={[{ required: true, message: 'Please select Airflow version' }]}
+            tooltip="Supported Airflow releases for new deployments. Additional versions will be added as the platform validates them."
           >
-            <Input placeholder="e.g., 3.1.8" />
+            <Select
+              placeholder="Select Airflow version"
+              options={getAirflowVersionSelectOptions()}
+            />
           </Form.Item>
 
           <Form.Item

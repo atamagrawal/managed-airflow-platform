@@ -2,6 +2,7 @@ package com.airflow.platform.service;
 
 import com.airflow.platform.dto.DeploymentCreateRequest;
 import com.airflow.platform.dto.DeploymentResponse;
+import com.airflow.platform.config.SupportedAirflowVersions;
 import com.airflow.platform.exception.DeploymentException;
 import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.AirflowDeployment;
@@ -40,6 +41,8 @@ public class AirflowDeploymentService {
     @Transactional
     public DeploymentResponse createDeployment(DeploymentCreateRequest request) {
         log.info("Creating Airflow deployment: {} for tenant: {}", request.getName(), request.getTenantId());
+
+        SupportedAirflowVersions.requireSupported(request.getAirflowVersion());
 
         // Get tenant
         Tenant tenant = tenantService.getTenantEntity(request.getTenantId());

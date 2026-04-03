@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, message, Tabs, Space } from 'antd';
+import { Form, Input, Button, message, Tabs, Space, Select } from 'antd';
 import { projectAPI } from '../services/api';
+import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
 
 const { TextArea } = Input;
 const { TabPane } = Tabs;
@@ -31,7 +32,7 @@ const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
       // Set default values for new project (Dockerfile left empty so the API applies server default FROM,
       // including deployment.compose.airflow-image when configured)
       form.setFieldsValue({
-        airflowVersion: '3.1.8',
+        airflowVersion: DEFAULT_AIRFLOW_VERSION,
         requirementsTxt: '# Default dependency used by sample DAG\nrequests==2.32.3',
         airflowIgnore: '# Ignore Python cache files\n__pycache__/\n*.py[cod]\n*$py.class\n\n# Ignore virtual environment\nvenv/\nenv/\n\n# Ignore IDE files\n.vscode/\n.idea/\n\n# Ignore test files\ntests/',
       });
@@ -92,8 +93,13 @@ const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
           <Form.Item
             label="Airflow Version"
             name="airflowVersion"
+            rules={[{ required: true, message: 'Please select Airflow version' }]}
+            tooltip="Versions offered here are what the platform supports today; more will appear over time."
           >
-            <Input placeholder="3.1.8" />
+            <Select
+              placeholder="Select Airflow version"
+              options={getAirflowVersionSelectOptions(project?.airflowVersion)}
+            />
           </Form.Item>
 
           <Form.Item
