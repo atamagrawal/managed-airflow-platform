@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Button, Space, Tag, Tabs, Table, Modal, Form, Input, Select, message } from 'antd';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Card, Descriptions, Button, Space, Tag, Tabs, Table, Modal, Form, Input, Select, message, Breadcrumb } from 'antd';
+import { getBreadcrumbItems } from '../utils/breadcrumbs';
 import { ArrowLeftOutlined, EditOutlined, RocketOutlined, PlayCircleOutlined, PlusOutlined, FolderOutlined, CodeOutlined } from '@ant-design/icons';
 import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
@@ -16,6 +17,7 @@ const { Option } = Select;
 const ProjectDetails = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [project, setProject] = useState(null);
   const [files, setFiles] = useState([]);
   const [deployments, setDeployments] = useState([]);
@@ -184,10 +186,11 @@ const ProjectDetails = () => {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Space style={{ marginBottom: 16 }}>
+    <div>
+      <Breadcrumb items={getBreadcrumbItems(location.pathname)} style={{ marginBottom: 12 }} />
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/projects')}>
-          Back to Projects
+          Back to projects
         </Button>
         <Button
           type="primary"
@@ -213,8 +216,8 @@ const ProjectDetails = () => {
             Trigger DAGs
           </Button>
         )}
-        <Button icon={<EditOutlined />} onClick={() => navigate(`/projects/${projectId}/edit`)}>
-          Edit
+        <Button icon={<EditOutlined />} onClick={() => navigate(`/projects/${projectId}/editor`)}>
+          Edit in editor
         </Button>
       </Space>
 

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, message, Typography, Space, Tag, Popconfirm, Alert } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, message, Space, Tag, Popconfirm, Alert, Empty } from 'antd';
+import { PlusOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { tenantAPI } from '../services/api';
+import PageHeader from '../components/PageHeader';
+import { getApiErrorMessage } from '../utils/apiError';
 import dayjs from 'dayjs';
-
-const { Title } = Typography;
 const { Option } = Select;
 
 const Tenants = () => {
@@ -23,7 +23,8 @@ const Tenants = () => {
       const response = await tenantAPI.getAll();
       setTenants(response.data);
     } catch (error) {
-      message.error('Failed to fetch tenants');
+      const msg = getApiErrorMessage(error, 'Failed to fetch tenants');
+      if (msg) message.error(msg);
       console.error('Error fetching tenants:', error);
     } finally {
       setLoading(false);
@@ -124,14 +125,36 @@ const Tenants = () => {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={2}>Tenants</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
-          Create Tenant
-        </Button>
-      </div>
+      <PageHeader
+        title="Tenants"
+        description="Customer / isolation boundaries. Non-admin users are scoped to a tenant; deployments and projects belong to tenants."
+        extra={
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} onClick={fetchTenants} loading={loading}>
+              Refresh
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
+              Create tenant
+            </Button>
+          </Space>
+        }
+      />
 
-      <Table columns={columns} dataSource={tenants} loading={loading} rowKey="id" />
+      <Table
+        columns={columns}
+        dataSource={tenants}
+        loading={loading}
+        rowKey="id"
+        locale={{
+          emptyText: (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tenants yet">
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
+                Create tenant
+              </Button>
+            </Empty>
+          ),
+        }}
+      />
 
       <Modal
         title="Create New Tenant"

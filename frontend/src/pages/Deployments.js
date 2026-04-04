@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Typography, Space, Tag, Popconfirm, Alert } from 'antd';
-import { PlusOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Space, Tag, Popconfirm, Alert, Empty } from 'antd';
+import { PlusOutlined, DeleteOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { deploymentAPI, tenantAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
+import PageHeader from '../components/PageHeader';
+import { getApiErrorMessage } from '../utils/apiError';
 import dayjs from 'dayjs';
-
-const { Title } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 
@@ -36,7 +36,8 @@ const Deployments = () => {
       const response = await deploymentAPI.getAll();
       setDeployments(response.data);
     } catch (error) {
-      message.error('Failed to fetch deployments');
+      const msg = getApiErrorMessage(error, 'Failed to fetch deployments');
+      if (msg) message.error(msg);
       console.error('Error fetching deployments:', error);
     } finally {
       setLoading(false);
@@ -222,23 +223,54 @@ const Deployments = () => {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={2}>Deployments</Title>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => {
-            setModalVisible(true);
-            if (!isAdmin && tenantScope) {
-              form.setFieldsValue({ tenantId: tenantScope });
-            }
-          }}
-        >
-          Create Deployment
-        </Button>
-      </div>
+      <PageHeader
+        title="Deployments"
+        description="Airflow environments in your tenant (or all tenants as admin). Create a deployment before linking and syncing projects."
+        extra={
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} onClick={fetchDeployments} loading={loading}>
+              Refresh
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setModalVisible(true);
+                if (!isAdmin && tenantScope) {
+                  form.setFieldsValue({ tenantId: tenantScope });
+                }
+              }}
+            >
+              Create deployment
+            </Button>
+          </Space>
+        }
+      />
 
-      <Table columns={columns} dataSource={deployments} loading={loading} rowKey="id" />
+      <Table
+        columns={columns}
+        dataSource={deployments}
+        loading={loading}
+        rowKey="id"
+        locale={{
+          emptyText: (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No deployments yet">
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  setModalVisible(true);
+                  if (!isAdmin && tenantScope) {
+                    form.setFieldsValue({ tenantId: tenantScope });
+                  }
+                }}
+              >
+                Create your first deployment
+              </Button>
+            </Empty>
+          ),
+        }}
+      />
 
       <Modal
         title="Create New Deployment"

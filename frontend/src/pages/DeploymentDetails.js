@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Button, Tag, Spin, Alert, Typography, Space } from 'antd';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Card, Descriptions, Button, Tag, Spin, Alert, Typography, Space, Breadcrumb } from 'antd';
+import { getBreadcrumbItems } from '../utils/breadcrumbs';
+import { getApiErrorMessage } from '../utils/apiError';
 import { ArrowLeftOutlined, LinkOutlined } from '@ant-design/icons';
 import { deploymentAPI } from '../services/api';
 import dayjs from 'dayjs';
@@ -10,6 +12,7 @@ const { Title } = Typography;
 const DeploymentDetails = () => {
   const { deploymentId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [deployment, setDeployment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -23,7 +26,7 @@ const DeploymentDetails = () => {
         setError(null);
       } catch (err) {
         console.error('Error fetching deployment details:', err);
-        setError('Failed to load deployment details');
+        setError(getApiErrorMessage(err, 'Failed to load deployment details'));
       } finally {
         setLoading(false);
       }
@@ -63,13 +66,16 @@ const DeploymentDetails = () => {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Breadcrumb items={getBreadcrumbItems(location.pathname)} style={{ marginBottom: 12 }} />
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/deployments')}>
-          Back
+          Back to deployments
         </Button>
       </Space>
 
-      <Title level={2}>Deployment Details</Title>
+      <Title level={2} style={{ marginTop: 0 }}>
+        Deployment details
+      </Title>
 
       <Card title="Basic Information" style={{ marginBottom: 16 }}>
         <Descriptions column={2} bordered>

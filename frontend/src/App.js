@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
-import { Layout } from 'antd';
+import { ConfigProvider, Layout } from 'antd';
 import './App.css';
 import { AuthProvider } from './context/AuthContext';
 import RequireAuth from './components/RequireAuth';
@@ -18,6 +18,7 @@ import Projects from './pages/Projects';
 import DeployedProjects from './pages/DeployedProjects';
 import ProjectDetails from './pages/ProjectDetails';
 import ProjectCodeEditor from './pages/ProjectCodeEditor';
+import NotFound from './pages/NotFound';
 
 const { Content } = Layout;
 
@@ -29,13 +30,24 @@ function AppLayout() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sidebar />
-      <Layout>
+      <Layout style={{ background: '#f0f2f5' }}>
         <Header />
         <Content
+          className={isProjectEditor ? undefined : 'app-main-content'}
           style={
             isProjectEditor
               ? { padding: 0, background: '#fff' }
-              : { margin: '24px 16px', padding: 24, background: '#fff' }
+              : {
+                  margin: '20px 16px 32px',
+                  padding: '24px 24px 32px',
+                  background: '#fff',
+                  borderRadius: 12,
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                  maxWidth: 1440,
+                  width: '100%',
+                  marginLeft: 'auto',
+                  marginRight: 'auto',
+                }
           }
         >
           <Outlet />
@@ -83,7 +95,7 @@ function AppRoutes() {
         <Route path="/projects/:projectId" element={<ProjectDetails />} />
         <Route path="/projects/:projectId/editor" element={<ProjectCodeEditor />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
   );
@@ -91,11 +103,20 @@ function AppRoutes() {
 
 function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
-    </Router>
+    <ConfigProvider
+      theme={{
+        token: {
+          borderRadiusLG: 10,
+          fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif",
+        },
+      }}
+    >
+      <Router>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </Router>
+    </ConfigProvider>
   );
 }
 

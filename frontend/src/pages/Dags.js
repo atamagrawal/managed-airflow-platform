@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Space, Tag, Typography, Select, message, Tooltip } from 'antd';
+import { Table, Button, Space, Tag, Select, message, Tooltip, Empty } from 'antd';
 import {
   PlayCircleOutlined,
   FolderOpenOutlined,
@@ -9,9 +9,8 @@ import { useNavigate } from 'react-router-dom';
 import { deployedDagsAPI, deploymentAPI } from '../services/api';
 import { triggerProjectDagFile } from '../utils/triggerProjectDag';
 import { getApiErrorMessage } from '../utils/apiError';
+import PageHeader from '../components/PageHeader';
 import dayjs from 'dayjs';
-
-const { Title } = Typography;
 const { Option } = Select;
 
 const Dags = () => {
@@ -232,43 +231,30 @@ const Dags = () => {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
-      >
-        <Title level={2} style={{ margin: 0 }}>
-          DAGs
-        </Title>
-        <Space wrap>
-          <Select
-            style={{ width: 300 }}
-            placeholder="Filter by deployment"
-            value={selectedDeployment}
-            onChange={setSelectedDeployment}
-          >
-            <Option value="all">All deployments</Option>
-            {deployments.map((d) => (
-              <Option key={d.deploymentId} value={d.deploymentId}>
-                {d.name} ({d.deploymentId})
-              </Option>
-            ))}
-          </Select>
-          <Button icon={<ReloadOutlined />} onClick={fetchDags}>
-            Refresh
-          </Button>
-        </Space>
-      </div>
-
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        DAG files from projects that have been successfully deployed to an Airflow deployment. Deploy or redeploy a
-        project to appear here.
-      </Typography.Paragraph>
+      <PageHeader
+        title="DAGs"
+        description="DAG files from projects that have been successfully deployed. Deploy or redeploy a project to see its DAGs here."
+        extra={
+          <Space wrap>
+            <Select
+              style={{ width: 280, maxWidth: '100%' }}
+              placeholder="Filter by deployment"
+              value={selectedDeployment}
+              onChange={setSelectedDeployment}
+            >
+              <Option value="all">All deployments</Option>
+              {deployments.map((d) => (
+                <Option key={d.deploymentId} value={d.deploymentId}>
+                  {d.name} ({d.deploymentId})
+                </Option>
+              ))}
+            </Select>
+            <Button icon={<ReloadOutlined />} onClick={fetchDags} loading={loading}>
+              Refresh
+            </Button>
+          </Space>
+        }
+      />
 
       <Table
         tableLayout="fixed"
@@ -277,6 +263,14 @@ const Dags = () => {
         loading={loading}
         rowKey={(r) => `${r.deploymentId}-${r.projectId}-${r.fileId}`}
         scroll={{ x: 1100 }}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No deployed DAGs in view. Deploy a project to an environment first."
+            />
+          ),
+        }}
         pagination={{
           pageSize: 20,
           showSizeChanger: true,
