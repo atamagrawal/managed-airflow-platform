@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Table, Button, Space, Tag, message, Typography, Select } from 'antd';
-import { RocketOutlined, PlayCircleOutlined, EyeOutlined, CodeOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Tag, message, Select, Empty } from 'antd';
+import { RocketOutlined, PlayCircleOutlined, EyeOutlined, CodeOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import { resolveDeploymentForTrigger } from '../utils/projectDeployments';
 import { pickDeploymentId } from '../utils/pickDeploymentModal';
 import { getApiErrorMessage } from '../utils/apiError';
+import PageHeader from '../components/PageHeader';
 import dayjs from 'dayjs';
-
-const { Title, Paragraph } = Typography;
 const { Option } = Select;
 
 const DeployedProjects = () => {
@@ -204,23 +203,33 @@ const DeployedProjects = () => {
   ];
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '16px' }}>
-        <Title level={2}>
-          <RocketOutlined /> Deployed projects
-        </Title>
-        <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          Projects currently deployed to an Airflow environment. Assign or deploy projects from the{' '}
-          <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => navigate('/projects')}>
-            project browser
+    <div>
+      <PageHeader
+        title={
+          <span>
+            <RocketOutlined style={{ marginRight: 10 }} />
+            Deployed projects
+          </span>
+        }
+        description={
+          <span>
+            Projects with a successful deploy to an environment. Manage and deploy from the{' '}
+            <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => navigate('/projects')}>
+              project browser
+            </Button>
+            .
+          </span>
+        }
+        extra={
+          <Button icon={<ReloadOutlined />} onClick={fetchProjects} loading={loading}>
+            Refresh
           </Button>
-          .
-        </Paragraph>
-      </div>
+        }
+      />
 
       <div style={{ marginBottom: 16 }}>
         <Select
-          style={{ width: 280 }}
+          style={{ width: 280, maxWidth: '100%' }}
           placeholder="Filter by deployment"
           value={selectedDeployment}
           onChange={setSelectedDeployment}
@@ -241,7 +250,16 @@ const DeployedProjects = () => {
         loading={loading}
         scroll={{ x: 1100 }}
         locale={{
-          emptyText: 'No deployed projects yet. Deploy a project from the project browser.',
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No deployed projects in this view. Deploy a project from the project browser."
+            >
+              <Button type="primary" onClick={() => navigate('/projects')}>
+                Open project browser
+              </Button>
+            </Empty>
+          ),
         }}
         pagination={{
           pageSize: 10,

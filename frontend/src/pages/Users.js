@@ -1,30 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Typography, Alert, Tag, message } from 'antd';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Table, Alert, Tag, message, Button } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import { adminUserAPI } from '../services/api';
 import { getApiErrorMessage } from '../utils/apiError';
-
-const { Title, Paragraph } = Typography;
+import PageHeader from '../components/PageHeader';
 
 const Users = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const { data } = await adminUserAPI.list();
-        setUsers(data || []);
-      } catch (error) {
-        const msg = getApiErrorMessage(error, 'Failed to load users');
-        if (msg) message.error(msg);
-        console.error('Error loading users:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const loadUsers = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data } = await adminUserAPI.list();
+      setUsers(data || []);
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Failed to load users');
+      if (msg) message.error(msg);
+      console.error('Error loading users:', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const columns = [
     {
@@ -78,19 +79,28 @@ const Users = () => {
   ];
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Title level={2}>Users</Title>
-      <Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        Each <strong>non-admin</strong> user has a <strong>home tenant</strong> (<code>tenant-id</code> under their
-        entry, or <code>default-tenant-id-for-users</code> when omitted). That tenant must exist under{' '}
-        <strong>Tenants</strong>. <strong>Admins</strong> are not limited to one tenant in the JWT. Edit{' '}
-        <code>platform.security.users</code> and restart the control plane to change accounts.
-      </Paragraph>
+    <div>
+      <PageHeader
+        title="Users"
+        description={
+          <>
+            Each <strong>non-admin</strong> has a <strong>home tenant</strong> (<code>tenant-id</code> in config or{' '}
+            <code>default-tenant-id-for-users</code>). That tenant must exist under Tenants. Admins are not JWT-scoped
+            to one tenant. Accounts are defined in <code>platform.security.users</code>; restart the control plane after
+            changes.
+          </>
+        }
+        extra={
+          <Button icon={<ReloadOutlined />} onClick={loadUsers} loading={loading}>
+            Refresh
+          </Button>
+        }
+      />
       <Alert
         type="info"
         showIcon
-        message="This list is read-only"
-        description="Future versions may add database-backed users and self-service management."
+        message="Read-only directory"
+        description="This list reflects configuration, not a live user database."
         style={{ marginBottom: 16 }}
       />
       <Table

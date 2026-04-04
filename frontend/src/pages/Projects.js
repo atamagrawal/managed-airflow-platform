@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Table, Button, Space, Tag, Popconfirm, message, Typography, Input, Modal } from 'antd';
+import { Table, Button, Space, Tag, Popconfirm, message, Input, Modal, Empty } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -9,6 +9,7 @@ import {
   EyeOutlined,
   FolderOpenOutlined,
   CodeOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { projectAPI, deploymentAPI } from '../services/api';
@@ -18,9 +19,9 @@ import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../util
 import { pickDeploymentId } from '../utils/pickDeploymentModal';
 import { getApiErrorMessage } from '../utils/apiError';
 import { useAuth } from '../context/AuthContext';
+import PageHeader from '../components/PageHeader';
 import dayjs from 'dayjs';
 
-const { Title, Paragraph } = Typography;
 const { Search } = Input;
 
 const Projects = () => {
@@ -300,30 +301,43 @@ const Projects = () => {
   ];
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '16px' }}>
-        <Title level={2}>
-          <FolderOpenOutlined /> Project browser
-        </Title>
-        <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          Search and manage projects. Deployment targeting is chosen when you deploy; see{' '}
-          <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => navigate('/deployed-projects')}>
-            deployed projects
-          </Button>{' '}
-          for what is live on each environment.
-        </Paragraph>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-          <Search
-            placeholder="Search by name or description"
-            allowClear
-            style={{ width: 360, maxWidth: '100%' }}
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-          />
-          <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
-            Create project
-          </Button>
-        </div>
+    <div>
+      <PageHeader
+        title={
+          <span>
+            <FolderOpenOutlined style={{ marginRight: 10 }} />
+            Project browser
+          </span>
+        }
+        description={
+          <span>
+            Search and manage projects. Pick a deployment when you deploy. See{' '}
+            <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => navigate('/deployed-projects')}>
+              deployed projects
+            </Button>{' '}
+            for what is live on each environment.
+          </span>
+        }
+        extra={
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} onClick={fetchProjects} loading={loading}>
+              Refresh
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
+              Create project
+            </Button>
+          </Space>
+        }
+      />
+
+      <div style={{ marginBottom: 16 }}>
+        <Search
+          placeholder="Search by name or description"
+          allowClear
+          style={{ width: 360, maxWidth: '100%' }}
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+        />
       </div>
 
       <Table
@@ -332,6 +346,15 @@ const Projects = () => {
         rowKey={(r) => r.id ?? r.projectId}
         loading={loading}
         scroll={{ x: 1400 }}
+        locale={{
+          emptyText: (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No projects match your search (or none exist yet).">
+              <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
+                Create project
+              </Button>
+            </Empty>
+          ),
+        }}
         pagination={{
           pageSize: 10,
           showSizeChanger: true,

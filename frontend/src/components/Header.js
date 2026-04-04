@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Typography, Space, Button } from 'antd';
+import { Layout, Typography, Button } from 'antd';
 import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
