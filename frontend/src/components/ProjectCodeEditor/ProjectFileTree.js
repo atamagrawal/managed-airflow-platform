@@ -27,7 +27,7 @@ const getFileColor = (fileType) => {
   return colors[fileType] || '#8c8c8c';
 };
 
-/** Display labels and ordering aligned with typical Astro / Airflow project layout */
+/** Display labels and ordering aligned with typical Airflow project layout */
 const STANDARD_DIRS = [
   { path: 'dags/', label: 'dags', key: 'dags' },
   { path: 'contracts/', label: 'contracts', key: 'contracts' },

@@ -8,9 +8,7 @@ const TAB_ITEMS = [
   { key: '/environment/variables', label: 'Variables' },
 ];
 
-/**
- * Workspace-style environment surface (connections, variables) similar to Astro Environment Manager.
- */
+/** Environment area: connections and variables pushed to Airflow deployments. */
 const EnvironmentLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -21,8 +19,8 @@ const EnvironmentLayout = () => {
   return (
     <div>
       <PageHeader
-        title="Environment manager"
-        description="Manage Airflow connections and variables from one place, then push them to the deployments you choose—similar to Astronomer's Environment Manager (workspace-level resources linked to Deployments)."
+        title="Environment"
+        description="Configure Airflow connections and variables in one place, then push them to the deployments you choose."
       />
       <Tabs
         activeKey={activeKey}

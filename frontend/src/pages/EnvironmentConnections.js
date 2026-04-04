@@ -128,22 +128,22 @@ const EnvironmentConnections = () => {
         Connections
       </Title>
       <Paragraph type="secondary" style={{ marginBottom: 20, maxWidth: 800 }}>
-        Create or update an Airflow connection here, then choose which deployments receive it—similar to defining a
-        connection in Astro's Environment Manager and linking it to one or more Deployments.
+        Define or update an Airflow connection here, then push it to the deployments you choose—either every running
+        deployment you can reach, or only the ones you select.
       </Paragraph>
 
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 20, maxWidth: 900 }}
-        message="How this maps to Astro"
+        message="How deployment targeting works"
         description={
           <Paragraph style={{ marginBottom: 0 }} type="secondary">
-            <strong>All running deployments</strong> pushes the connection to every deployment you can access that is{' '}
-            <Text code>RUNNING</Text> and has a stored API URL (bulk link).{' '}
-            <strong>Selected deployments</strong> lets you pick exactly which deployments get this connection (like
-            linking a workspace connection to specific Deployments). The control plane calls each Airflow REST API using{' '}
-            <Text code>airflow.api.username</Text> / <Text code>airflow.api.password</Text>.
+            <strong>All running deployments</strong> pushes the connection to each deployment you can access that is{' '}
+            <Text code>RUNNING</Text> and has a stored API URL.{' '}
+            <strong>Selected deployments</strong> limits the push to the deployments you pick in the list below. The
+            control plane calls each Airflow instance using <Text code>airflow.api.username</Text> /{' '}
+            <Text code>airflow.api.password</Text>.
           </Paragraph>
         }
       />
@@ -157,7 +157,8 @@ const EnvironmentConnections = () => {
         >
           <Title level={5}>Link to deployments</Title>
           <Paragraph type="secondary" style={{ marginTop: -8, marginBottom: 12 }}>
-            Choose where this connection should exist in Airflow (same idea as Astro’s “link to deployments”).
+            Choose whether this connection is created on every eligible running deployment or only on the deployments you
+            select.
           </Paragraph>
           <Form.Item
             name="syncScope"

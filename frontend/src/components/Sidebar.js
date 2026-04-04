@@ -78,7 +78,7 @@ const Sidebar = () => {
       {
         key: 'environment',
         icon: <ExperimentOutlined />,
-        label: 'Environment manager',
+        label: 'Environment',
         children: [
           {
             key: '/environment/connections',
