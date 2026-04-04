@@ -40,6 +40,7 @@ public class DeploymentResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime deployedAt;
+    private LocalDateTime localStackLastActivityAt;
 
     public static DeploymentResponse fromEntity(AirflowDeployment deployment) {
         return DeploymentResponse.builder()
@@ -66,6 +67,7 @@ public class DeploymentResponse {
                 .createdAt(deployment.getCreatedAt())
                 .updatedAt(deployment.getUpdatedAt())
                 .deployedAt(deployment.getDeployedAt())
+                .localStackLastActivityAt(deployment.getLocalStackLastActivityAt())
                 .build();
     }
 }

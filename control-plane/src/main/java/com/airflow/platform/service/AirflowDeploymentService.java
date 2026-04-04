@@ -8,11 +8,13 @@ import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.AirflowDeployment;
 import com.airflow.platform.model.Tenant;
 import com.airflow.platform.provider.DeploymentProvider;
+import com.airflow.platform.provider.impl.LocalDeploymentProvider;
 import com.airflow.platform.repository.AirflowDeploymentRepository;
 import com.airflow.platform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +49,12 @@ public class AirflowDeploymentService {
 
     @Autowired(required = false)
     private LocalDeploymentStatusReconciler localDeploymentStatusReconciler;
+
+    @Autowired(required = false)
+    private LocalDeploymentProvider localDeploymentProvider;
+
+    @Value("${local.auto-start-docker-on-create:true}")
+    private boolean localAutoStartDockerOnCreate;
 
     @Transactional
     public DeploymentResponse createDeployment(DeploymentCreateRequest request) {
@@ -92,8 +100,25 @@ public class AirflowDeploymentService {
 
         deployment = deploymentRepository.save(deployment);
 
-        // Deploy via deployment provider (Helm/Kubernetes or ECS)
         final AirflowDeployment finalDeployment = deployment;
+        boolean deferLocalDocker = shouldDeferLocalDockerStart(request);
+        if (deferLocalDocker) {
+            try {
+                localDeploymentProvider.provisionComposeArtifactsOnly(deployment);
+                deployment.setStatus(AirflowDeployment.DeploymentStatus.STOPPED);
+                deployment.setWebserverUrl(null);
+                deployment = deploymentRepository.save(deployment);
+                log.info("Airflow deployment registered locally without starting Docker: {}", deploymentId);
+            } catch (Exception e) {
+                log.error("Failed to provision local deployment artifacts: {}", deploymentId, e);
+                finalDeployment.setStatus(AirflowDeployment.DeploymentStatus.FAILED);
+                deploymentRepository.save(finalDeployment);
+                throw new DeploymentException("Failed to provision local deployment: " + e.getMessage(), e);
+            }
+            return DeploymentResponse.fromEntity(deployment);
+        }
+
+        // Deploy via deployment provider (Helm/Kubernetes or ECS)
         try {
             deployment.setStatus(AirflowDeployment.DeploymentStatus.DEPLOYING);
             deploymentRepository.save(deployment);
@@ -139,6 +164,19 @@ public class AirflowDeploymentService {
         }
 
         return DeploymentResponse.fromEntity(deployment);
+    }
+
+    private boolean shouldDeferLocalDockerStart(DeploymentCreateRequest request) {
+        if (deploymentProvider == null || localDeploymentProvider == null) {
+            return false;
+        }
+        if (!"local".equals(deploymentProvider.getProviderType())) {
+            return false;
+        }
+        if (request.getDeferDockerStart() != null) {
+            return Boolean.TRUE.equals(request.getDeferDockerStart());
+        }
+        return !localAutoStartDockerOnCreate;
     }
 
     @Transactional(readOnly = true)

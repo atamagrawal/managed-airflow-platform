@@ -42,4 +42,10 @@ public class DeploymentCreateRequest {
 
     private String ingressHost;
     private String customConfig;
+
+    /**
+     * When {@code true} and {@code deployment.provider} is {@code local}, only writes compose artifacts — no
+     * {@code docker compose up}. When {@code null}, {@code local.auto-start-docker-on-create} applies.
+     */
+    private Boolean deferDockerStart;
 }

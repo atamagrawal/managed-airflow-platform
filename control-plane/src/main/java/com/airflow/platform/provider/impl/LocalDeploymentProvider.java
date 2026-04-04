@@ -60,36 +60,74 @@ public class LocalDeploymentProvider implements DeploymentProvider {
     @Override
     public void deploy(AirflowDeployment deployment) {
         log.info("Deploying Airflow locally: {}", deployment.getDeploymentId());
-
         try {
-            String deploymentDir = getDeploymentDirectory(deployment);
-
-            // Create deployment directory
-            Path deploymentPath = Paths.get(deploymentDir);
-            if (!Files.exists(deploymentPath)) {
-                Files.createDirectories(deploymentPath);
-            }
-
-            // Generate docker-compose.yml
-            String dockerCompose = composeGenerator.generateDockerCompose(deployment);
-            Path composePath = deploymentPath.resolve("docker-compose.yml");
-            Files.writeString(composePath, dockerCompose);
-            persistAirflowLocalSettingsPy(deploymentPath);
-
-            log.info("Docker Compose file generated: {}", composePath);
-
-            // Build images first (if compose has build directives), then start.
-            // This avoids parallel same-tag build collisions during `up --build`.
-            executeDockerCompose(deploymentDir, "build");
-
-            // Run docker-compose up
-            executeDockerCompose(deploymentDir, "up", "-d");
-
-            persistBuildInputsStampSafe(deployment, deploymentPath);
+            provisionComposeArtifactsOnly(deployment);
+            startComposeStack(deployment);
             log.info("Airflow deployed successfully: {}", deployment.getDeploymentId());
         } catch (Exception e) {
             log.error("Failed to deploy Airflow locally: {}", deployment.getDeploymentId(), e);
             throw new DeploymentException("Local deployment failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Writes {@code docker-compose.yml} and {@code config/airflow_local_settings.py} without starting containers.
+     */
+    public void provisionComposeArtifactsOnly(AirflowDeployment deployment) {
+        try {
+            String deploymentDir = getDeploymentDirectory(deployment);
+            Path deploymentPath = Paths.get(deploymentDir);
+            if (!Files.exists(deploymentPath)) {
+                Files.createDirectories(deploymentPath);
+            }
+            String dockerCompose = composeGenerator.generateDockerCompose(deployment);
+            Path composePath = deploymentPath.resolve("docker-compose.yml");
+            Files.writeString(composePath, dockerCompose);
+            persistAirflowLocalSettingsPy(deploymentPath);
+            log.info("Docker Compose file generated (not started): {}", composePath);
+        } catch (Exception e) {
+            log.error("Failed to provision compose artifacts: {}", deployment.getDeploymentId(), e);
+            throw new DeploymentException("Local compose provisioning failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * {@code docker compose build} then {@code up -d}. Always regenerates compose first so {@code build:} vs
+     * {@code image:} matches the current {@code Dockerfile} on disk (e.g. after syncing a project Dockerfile).
+     */
+    public void startComposeStack(AirflowDeployment deployment) {
+        try {
+            String deploymentDir = getDeploymentDirectory(deployment);
+            Path deploymentPath = Paths.get(deploymentDir);
+            if (!Files.exists(deploymentPath)) {
+                Files.createDirectories(deploymentPath);
+            }
+            provisionComposeArtifactsOnly(deployment);
+            executeDockerCompose(deploymentDir, "build");
+            executeDockerCompose(deploymentDir, "up", "-d");
+            persistBuildInputsStampSafe(deployment, deploymentPath);
+            log.info("Local compose stack started: {}", deployment.getDeploymentId());
+        } catch (Exception e) {
+            log.error("Failed to start local compose stack: {}", deployment.getDeploymentId(), e);
+            throw new DeploymentException("Local stack start failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Stops containers without removing volumes (unlike {@link #uninstall}).
+     */
+    public void stopComposeStack(AirflowDeployment deployment) {
+        try {
+            String deploymentDir = getDeploymentDirectory(deployment);
+            if (!Files.exists(Paths.get(deploymentDir, "docker-compose.yml"))) {
+                log.debug("No compose file for {}; nothing to stop", deployment.getDeploymentId());
+                return;
+            }
+            executeDockerCompose(deploymentDir, "down");
+            log.info("Local compose stack stopped: {}", deployment.getDeploymentId());
+        } catch (Exception e) {
+            log.error("Failed to stop local compose stack: {}", deployment.getDeploymentId(), e);
+            throw new DeploymentException("Local stack stop failed: " + e.getMessage(), e);
         }
     }
 

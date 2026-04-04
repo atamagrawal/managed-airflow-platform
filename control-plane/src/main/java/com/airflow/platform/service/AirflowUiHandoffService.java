@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -104,6 +105,9 @@ public class AirflowUiHandoffService {
     private final AuthService authService;
     private final ObjectMapper objectMapper;
 
+    @Autowired(required = false)
+    private LocalDockerStackLifecycleService localDockerStackLifecycleService;
+
     private final ConcurrentHashMap<String, StoredHandoff> tickets = new ConcurrentHashMap<>();
 
     private record StoredHandoff(String username, String password, String browserBaseUrl, String airflowVersion,
@@ -128,6 +132,9 @@ public class AirflowUiHandoffService {
         tickets.put(id, new StoredHandoff(username, password, browserBase,
                 d.getAirflowVersion(), Instant.now().plus(2, ChronoUnit.MINUTES)));
         log.info("Created Airflow UI handoff ticket for user {} deployment {}", username, deploymentId);
+        if (localDockerStackLifecycleService != null) {
+            localDockerStackLifecycleService.recordUserActivity(deploymentId);
+        }
         return id;
     }
 

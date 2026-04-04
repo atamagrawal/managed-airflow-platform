@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, Descriptions, Button, Space, Tag, Tabs, Table, Modal, Form, Input, Select, message, Breadcrumb } from 'antd';
 import { getBreadcrumbItems } from '../utils/breadcrumbs';
-import { ArrowLeftOutlined, EditOutlined, RocketOutlined, PlayCircleOutlined, PlusOutlined, FolderOutlined, CodeOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, RocketOutlined, PlayCircleOutlined, PlusOutlined, FolderOutlined, CodeOutlined } from '@ant-design/icons';
 import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../utils/projectDeployments';
 import { pickDeploymentId } from '../utils/pickDeploymentModal';
 import { getApiErrorMessage } from '../utils/apiError';
 import dayjs from 'dayjs';
+import { BRAND } from '../brand';
 
 const { TabPane } = Tabs;
 const { TextArea } = Input;
@@ -187,17 +188,20 @@ const ProjectDetails = () => {
 
   return (
     <div>
-      <Breadcrumb items={getBreadcrumbItems(location.pathname)} style={{ marginBottom: 12 }} />
+      <Breadcrumb
+        items={getBreadcrumbItems(location.pathname, { projectName: project.name })}
+        style={{ marginBottom: 12 }}
+      />
       <Space style={{ marginBottom: 16 }} wrap>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/projects')}>
-          Back to projects
+          Back to {BRAND.navProjects}
         </Button>
         <Button
           type="primary"
           icon={<CodeOutlined />}
           onClick={() => navigate(`/projects/${projectId}/editor`)}
         >
-          Open in Project Editor
+          Open {BRAND.ideName}
         </Button>
         <Button
           icon={<RocketOutlined />}
@@ -216,9 +220,6 @@ const ProjectDetails = () => {
             Trigger DAGs
           </Button>
         )}
-        <Button icon={<EditOutlined />} onClick={() => navigate(`/projects/${projectId}/editor`)}>
-          Edit in editor
-        </Button>
       </Space>
 
       <Card title={<><FolderOutlined /> {project.name}</>} loading={loading}>

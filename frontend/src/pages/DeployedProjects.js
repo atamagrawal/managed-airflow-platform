@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Table, Button, Space, Tag, message, Select, Empty } from 'antd';
-import { RocketOutlined, PlayCircleOutlined, EyeOutlined, CodeOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Table, Button, Tag, message, Select, Empty, Dropdown } from 'antd';
+import {
+  RocketOutlined,
+  PlayCircleOutlined,
+  EyeOutlined,
+  ReloadOutlined,
+  MoreOutlined,
+} from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
@@ -8,6 +14,7 @@ import { resolveDeploymentForTrigger } from '../utils/projectDeployments';
 import { pickDeploymentId } from '../utils/pickDeploymentModal';
 import { getApiErrorMessage } from '../utils/apiError';
 import PageHeader from '../components/PageHeader';
+import { BRAND } from '../brand';
 import dayjs from 'dayjs';
 const { Option } = Select;
 
@@ -168,37 +175,32 @@ const DeployedProjects = () => {
       title: 'Actions',
       key: 'actions',
       fixed: 'right',
-      width: 260,
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="primary"
-            icon={<CodeOutlined />}
-            onClick={() => navigate(`/projects/${record.projectId}/editor`)}
-            size="small"
-          >
-            Project Editor
-          </Button>
-          <Button
-            type="link"
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/projects/${record.projectId}`)}
-            size="small"
-          >
-            View
-          </Button>
-          <Button
-            type="link"
-            icon={<PlayCircleOutlined />}
-            onClick={() => handleTriggerProject(record)}
-            loading={triggeringProjectId === record.projectId}
-            size="small"
-            style={{ color: '#52c41a' }}
-          >
-            Trigger
-          </Button>
-        </Space>
-      ),
+      width: 72,
+      align: 'center',
+      render: (_, record) => {
+        const items = [
+          {
+            key: 'view',
+            label: 'View details',
+            icon: <EyeOutlined />,
+            onClick: () => navigate(`/projects/${record.projectId}`),
+          },
+          {
+            key: 'trigger',
+            label: 'Trigger DAGs',
+            icon: <PlayCircleOutlined />,
+            disabled: triggeringProjectId === record.projectId,
+            onClick: () => handleTriggerProject(record),
+          },
+        ];
+        return (
+          <span onClick={(e) => e.stopPropagation()} role="presentation">
+            <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+              <Button type="text" icon={<MoreOutlined style={{ fontSize: 18 }} />} aria-label="More actions" />
+            </Dropdown>
+          </span>
+        );
+      },
     },
   ];
 
@@ -213,9 +215,9 @@ const DeployedProjects = () => {
         }
         description={
           <span>
-            Projects with a successful deploy to an environment. Manage and deploy from the{' '}
+            Projects with a successful deploy to an environment. Click a row to open {BRAND.ideName}, or manage from{' '}
             <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => navigate('/projects')}>
-              project browser
+              {BRAND.navProjects}
             </Button>
             .
           </span>
@@ -249,14 +251,18 @@ const DeployedProjects = () => {
         rowKey={(r) => r.id ?? r.projectId}
         loading={loading}
         scroll={{ x: 1100 }}
+        onRow={(record) => ({
+          onClick: () => navigate(`/projects/${record.projectId}/editor`),
+          style: { cursor: 'pointer' },
+        })}
         locale={{
           emptyText: (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="No deployed projects in this view. Deploy a project from the project browser."
+              description={`No deployed projects in this view. Deploy a project from ${BRAND.navProjects}.`}
             >
               <Button type="primary" onClick={() => navigate('/projects')}>
-                Open project browser
+                Open {BRAND.navProjects}
               </Button>
             </Empty>
           ),

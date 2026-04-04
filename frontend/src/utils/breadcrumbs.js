@@ -1,10 +1,16 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { BRAND } from '../brand';
 
 /**
  * Ant Design {@code Breadcrumb} items for the current path.
+ *
+ * @param {string} pathname
+ * @param {{ projectName?: string }} [options] For `/projects/:projectId` and `/projects/:projectId/editor`, pass
+ *   `projectName` so the crumb shows the human-readable name; the URL still uses the stable `projectId`.
  */
-export function getBreadcrumbItems(pathname) {
+export function getBreadcrumbItems(pathname, options = {}) {
+  const { projectName } = options;
   const p = pathname || '/';
   const home = { title: <Link to="/dashboard">Home</Link> };
 
@@ -32,24 +38,27 @@ export function getBreadcrumbItems(pathname) {
     return [home, { title: 'DAGs' }];
   }
   if (p === '/projects') {
-    return [home, { title: 'Projects' }];
+    return [home, { title: BRAND.navProjects }];
   }
   const pm = p.match(/^\/projects\/([^/]+)$/);
   if (pm) {
+    const id = pm[1];
+    const label = projectName?.trim() ? projectName.trim() : id;
     return [
       home,
-      { title: <Link to="/projects">Projects</Link> },
-      { title: pm[1] },
+      { title: <Link to="/projects">{BRAND.navProjects}</Link> },
+      { title: label },
     ];
   }
   const pem = p.match(/^\/projects\/([^/]+)\/editor$/);
   if (pem) {
     const id = pem[1];
+    const label = projectName?.trim() ? projectName.trim() : id;
     return [
       home,
-      { title: <Link to="/projects">Projects</Link> },
-      { title: <Link to={`/projects/${id}`}>{id}</Link> },
-      { title: 'Editor' },
+      { title: <Link to="/projects">{BRAND.navProjects}</Link> },
+      { title: <Link to={`/projects/${id}`}>{label}</Link> },
+      { title: BRAND.ideName },
     ];
   }
   if (p === '/deployed-projects') {

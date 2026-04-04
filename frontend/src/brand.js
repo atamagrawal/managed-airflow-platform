@@ -7,4 +7,8 @@ export const BRAND = {
   tagline: 'Operations console for Apache Airflow',
   /** Compact line for header / sidebar */
   taglineShort: 'Apache Airflow operations',
+  /** IDE surface (sentence case for labels) */
+  ideName: 'Flow Deck IDE',
+  /** Sidebar + page title for the projects list */
+  navProjects: 'Projects',
 };

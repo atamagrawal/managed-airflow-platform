@@ -68,7 +68,7 @@ const Sidebar = () => {
       {
         key: '/projects',
         icon: <FolderOpenOutlined />,
-        label: 'Project browser',
+        label: BRAND.navProjects,
       },
       {
         key: '/deployed-projects',
