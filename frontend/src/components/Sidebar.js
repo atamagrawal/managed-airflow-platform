@@ -1,6 +1,6 @@
 import React from 'react';
 import { Layout, Menu } from 'antd';
-import { DashboardOutlined, TeamOutlined, CloudServerOutlined, FolderOpenOutlined, RocketOutlined } from '@ant-design/icons';
+import { DashboardOutlined, TeamOutlined, CloudServerOutlined, CodeOutlined, FolderOpenOutlined, RocketOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const { Sider } = Layout;
@@ -26,6 +26,11 @@ const Sidebar = () => {
       label: 'Deployments',
     },
     {
+      key: '/dags',
+      icon: <CodeOutlined />,
+      label: 'DAGs',
+    },
+    {
       key: '/projects',
       icon: <FolderOpenOutlined />,
       label: 'Project browser',
@@ -45,6 +50,7 @@ const Sidebar = () => {
   const getSelectedKey = () => {
     const path = location.pathname;
     if (path.startsWith('/deployed-projects')) return '/deployed-projects';
+    if (path.startsWith('/dags')) return '/dags';
     if (path.startsWith('/projects')) return '/projects';
     if (path.startsWith('/deployments')) return '/deployments';
     if (path.startsWith('/tenants')) return '/tenants';

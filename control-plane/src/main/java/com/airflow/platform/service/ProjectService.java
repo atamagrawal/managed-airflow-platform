@@ -39,6 +39,8 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -333,6 +335,48 @@ public class ProjectService {
         Project project = projectRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
         return projectFileRepository.findByProject(project);
+    }
+
+    /**
+     * Lists DAG-type project files for each project–deployment pair that has a successful deploy
+     * ({@link ProjectDeployment#getLastDeployedAt()} set).
+     */
+    @Transactional(readOnly = true)
+    public List<DeployedDagResponse> listDeployedProjectDags(String deploymentIdFilter) {
+        List<ProjectDeployment> links;
+        if (StringUtils.hasText(deploymentIdFilter)) {
+            if (!deploymentRepository.existsByDeploymentId(deploymentIdFilter)) {
+                throw new ResourceNotFoundException("Deployment not found: " + deploymentIdFilter);
+            }
+            links = projectDeploymentRepository.findDeployedLinksWithProjectAndDeploymentByDeploymentId(deploymentIdFilter);
+        } else {
+            links = projectDeploymentRepository.findDeployedLinksWithProjectAndDeployment();
+        }
+
+        List<DeployedDagResponse> rows = new ArrayList<>();
+        for (ProjectDeployment link : links) {
+            Project project = link.getProject();
+            AirflowDeployment deployment = link.getDeployment();
+            List<ProjectFile> dagFiles = projectFileRepository.findByProjectAndFileType(project, ProjectFile.FileType.DAG);
+            for (ProjectFile f : dagFiles) {
+                rows.add(DeployedDagResponse.builder()
+                        .deploymentId(deployment.getDeploymentId())
+                        .deploymentName(deployment.getName())
+                        .projectId(project.getProjectId())
+                        .projectName(project.getName())
+                        .fileId(f.getId())
+                        .filePath(f.getFilePath())
+                        .fileName(f.getFileName())
+                        .airflowDagId(extractAirflowDagId(f.getContent()))
+                        .lastDeployedAt(link.getLastDeployedAt())
+                        .build());
+            }
+        }
+        rows.sort(Comparator
+                .comparing(DeployedDagResponse::getDeploymentId, Comparator.nullsFirst(String::compareTo))
+                .thenComparing(DeployedDagResponse::getProjectId, Comparator.nullsFirst(String::compareTo))
+                .thenComparing(DeployedDagResponse::getFileName, Comparator.nullsFirst(String::compareTo)));
+        return rows;
     }
 
     @Transactional

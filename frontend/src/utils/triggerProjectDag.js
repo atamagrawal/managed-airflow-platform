@@ -15,7 +15,7 @@ async function resolveDagFiles(projectId, existingFiles) {
   return getDagFilesFromList(response.data);
 }
 
-function showTriggerResult(response, projectName) {
+export function showTriggerResult(response, projectName) {
   const { triggeredCount, failedCount, totalDagFiles, results } = response.data;
   if (triggeredCount > 0) {
     message.success(
@@ -132,4 +132,15 @@ export async function triggerProjectWithDagSelection({
       onCancel: () => resolve(),
     });
   });
+}
+
+/** Trigger a single DAG file when deployment and file are already known (e.g. deployed DAGs list). */
+export async function triggerProjectDagFile(projectId, deploymentId, fileName, projectName) {
+  if (!deploymentId || !fileName) {
+    message.error('deploymentId and fileName are required');
+    return;
+  }
+  const response = await projectAPI.trigger(projectId, deploymentId, fileName);
+  showTriggerResult(response, projectName);
+  return response;
 }
