@@ -1,3 +1,8 @@
+# Display name for OpenAPI/Swagger — keep in sync with frontend/src/brand.js → PRODUCT_NAME
+app:
+  brand:
+    name: Flow Deck
+
 spring:
   application:
     name: managed-airflow-control-plane
@@ -273,6 +278,12 @@ local:
   test-cluster-idle-timeout-minutes: 60
   idle-stop:
     check-interval-ms: 60000
+  # Lazy-created deployment when using Flow Deck IDE → Test environment in Sync (one row per tenant by name).
+  test-deployment:
+    name: Test environment
+    description: On-demand test environment for Flow Deck IDE (per tenant)
+    airflow-version: 3.1.8
+    executor-type: LOCAL
   # When config/airflow_local_settings.py changes (template/handoff fix), restart a running airflow-apiserver so Python reloads it.
   airflow-handoff:
     restart-apiserver-on-settings-change: true
@@ -288,7 +299,8 @@ bootstrap:
     organization: Local Development
     region: local
   default-deployment:
-    enabled: true
+    # When false, no Airflow deployment row or compose dir is created at startup; create deployments from the UI/API.
+    enabled: false
     name: Local Default Deployment
     description: Auto-created for local development
     airflow-version: 3.1.8

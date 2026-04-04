@@ -4,6 +4,7 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -14,11 +15,12 @@ import org.springframework.context.annotation.Configuration;
 public class OpenApiConfig {
 
     @Bean
-    public OpenAPI managedAirflowOpenAPI() {
+    public OpenAPI managedAirflowOpenAPI(
+            @Value("${app.brand.name:Flow Deck}") String brandName) {
         return new OpenAPI()
                 .info(new Info()
-                        .title("FlowDeck API")
-                        .description("FlowDeck operations API for Apache Airflow deployments, projects, DAGs, and tenants")
+                        .title(brandName + " API")
+                        .description(brandName + " operations API for Apache Airflow deployments, projects, DAGs, and tenants")
                         .version("1.0.0")
                         .contact(new Contact()
                                 .name("Platform Team")

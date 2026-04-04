@@ -35,6 +35,7 @@ public class LocalDockerStackLifecycleService {
 
     private final AirflowDeploymentRepository deploymentRepository;
     private final LocalDeploymentProvider localDeploymentProvider;
+    private final LocalDeploymentCommittedStatusService committedStatusService;
 
     @Autowired(required = false)
     private LocalAirflowFabUserSyncService localAirflowFabUserSyncService;
@@ -42,34 +43,23 @@ public class LocalDockerStackLifecycleService {
     @Value("${local.test-cluster-idle-timeout-minutes:60}")
     private long testClusterIdleTimeoutMinutes;
 
-    @Transactional
     public DeploymentResponse startCluster(String deploymentId) {
-        AirflowDeployment deployment = requireDeploymentWithAccess(deploymentId);
-        String live = localDeploymentProvider.getDeploymentStatus(deployment);
-        if ("RUNNING".equals(live)) {
-            deployment.setStatus(AirflowDeployment.DeploymentStatus.RUNNING);
-            deployment.setWebserverUrl(localDeploymentProvider.getWebserverUrl(deployment));
-            touchLastActivity(deployment);
-            deployment = deploymentRepository.save(deployment);
-            return DeploymentResponse.fromEntity(deployment);
+        if (committedStatusService.markDeployingUnlessAlreadyRunning(deploymentId)) {
+            return DeploymentResponse.fromEntity(
+                    deploymentRepository.findByDeploymentId(deploymentId).orElseThrow());
         }
-
-        deployment.setStatus(AirflowDeployment.DeploymentStatus.DEPLOYING);
-        deploymentRepository.save(deployment);
         try {
+            AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
             localDeploymentProvider.startComposeStack(deployment);
-            deployment.setStatus(AirflowDeployment.DeploymentStatus.RUNNING);
-            deployment.setWebserverUrl(localDeploymentProvider.getWebserverUrl(deployment));
-            if (deployment.getDeployedAt() == null) {
-                deployment.setDeployedAt(LocalDateTime.now());
-            }
-            touchLastActivity(deployment);
-            deployment = deploymentRepository.save(deployment);
-            scheduleFabSyncAfterCommit(deployment.getDeploymentId());
+            committedStatusService.markRunningAfterComposeStart(deploymentId);
+            scheduleFabSyncAfterCommit(deploymentId);
             log.info("Started local test cluster for deployment {}", deploymentId);
         } catch (Exception e) {
-            deployment.setStatus(AirflowDeployment.DeploymentStatus.FAILED);
-            deploymentRepository.save(deployment);
+            committedStatusService.markFailedAfterComposeStart(deploymentId);
+            if (e instanceof DeploymentException) {
+                throw (DeploymentException) e;
+            }
             throw new DeploymentException("Failed to start local stack: " + e.getMessage(), e);
         }
         return DeploymentResponse.fromEntity(deploymentRepository.findByDeploymentId(deploymentId).orElseThrow());

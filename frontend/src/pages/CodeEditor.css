@@ -8,6 +8,92 @@
   background: #fff;
 }
 
+/* Flow Deck IDE — project editor shell */
+.flow-deck-ide {
+  background: #f1f5f9;
+}
+
+.flow-deck-ide .code-editor-content {
+  background: #f1f5f9;
+}
+
+.flow-deck-ide .editor-main-pane {
+  background: #fff;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.flow-deck-ide .editor-placeholder,
+.flow-deck-ide-empty-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  background: linear-gradient(180deg, #fafbfc 0%, #f8fafc 100%);
+}
+
+.flow-deck-ide-empty-editor-inner {
+  max-width: 400px;
+  text-align: center;
+  padding: 28px 32px;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+}
+
+.flow-deck-ide-empty-editor-inner h3 {
+  margin: 0 0 10px;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.flow-deck-ide-empty-editor-inner > p {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #64748b;
+}
+
+.flow-deck-ide-empty-tips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.flow-deck-ide-empty-tips li {
+  position: relative;
+  padding: 8px 0 8px 28px;
+  font-size: 13px;
+  color: #475569;
+  border-top: 1px solid #f1f5f9;
+}
+
+.flow-deck-ide-empty-tips li:first-child {
+  border-top: none;
+}
+
+.flow-deck-ide-empty-tips li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #36cfc9, #6366f1);
+}
+
+.flow-deck-ide .editor-content-area {
+  background: #fff;
+}
+
 .code-editor-container.fullscreen {
   position: fixed;
   top: 0;
@@ -32,10 +118,18 @@
   background: #fff;
 }
 
+.flow-deck-ide .editor-main-pane {
+  border-left: 1px solid #e2e8f0;
+}
+
 .editor-content-area {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.flow-deck-ide .flow-deck-ide-empty-editor {
+  flex: 1;
 }
 
 .editor-placeholder {

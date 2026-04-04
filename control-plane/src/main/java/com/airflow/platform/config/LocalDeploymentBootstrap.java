@@ -20,7 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * Creates a default Airflow deployment automatically for local development.
+ * Optionally creates a default Airflow deployment on startup for local development.
+ * Disabled by default ({@code bootstrap.default-deployment.enabled=false}); enable only if you want an automatic row.
  */
 @Component
 @RequiredArgsConstructor
@@ -32,7 +33,7 @@ public class LocalDeploymentBootstrap {
     private final AirflowDeploymentRepository deploymentRepository;
     private final AirflowDeploymentService airflowDeploymentService;
 
-    @Value("${bootstrap.default-deployment.enabled:true}")
+    @Value("${bootstrap.default-deployment.enabled:false}")
     private boolean enabled;
 
     @Value("${bootstrap.default-tenant.tenant-id:local-default}")

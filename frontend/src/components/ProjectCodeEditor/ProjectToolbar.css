@@ -1,37 +1,384 @@
+/* Flow Deck IDE — toolbar (aligned with project file tree indigo accent) */
 .flow-deck-ide-toolbar {
+  --ide-accent: #6366f1;
+  --ide-accent-hover: #4f46e5;
+  --ide-accent-soft: rgba(99, 102, 241, 0.12);
+  --ide-accent-border: rgba(99, 102, 241, 0.35);
+  --ide-surface: #f8fafc;
+  --ide-surface-2: #ffffff;
+  --ide-text: #0f172a;
+  --ide-muted: #64748b;
+  --ide-border: #e2e8f0;
+  --ide-run: #16a34a;
+  --ide-run-hover: #15803d;
+
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
-  height: 42px;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 14px 8px 12px;
+  background: linear-gradient(180deg, var(--ide-surface-2) 0%, var(--ide-surface) 100%);
+  border-bottom: 1px solid var(--ide-border);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  font-family: var(--brand-font, system-ui, sans-serif);
+}
+
+.flow-deck-ide-toolbar-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--brand-mint, #36cfc9) 0%,
+    var(--brand-accent, #1890ff) 50%,
+    var(--ide-accent) 100%
+  );
+  pointer-events: none;
 }
 
 .toolbar-section {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+}
+
+.toolbar-section--left {
+  flex-shrink: 0;
 }
 
 .toolbar-center {
   flex: 1;
   justify-content: center;
+  min-width: 0;
 }
 
 .toolbar-right {
+  flex-shrink: 0;
   justify-content: flex-end;
+  gap: 10px;
 }
 
+.flow-deck-ide-toolbar-btn-ghost {
+  color: var(--ide-text) !important;
+  font-weight: 500;
+}
+
+.flow-deck-ide-toolbar-btn-ghost:hover {
+  color: var(--ide-accent) !important;
+  background: var(--ide-accent-soft) !important;
+}
+
+.flow-deck-ide-toolbar-divider {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--ide-border);
+  vertical-align: middle;
+}
+
+.flow-deck-ide-toolbar-divider--vertical {
+  height: 22px;
+  margin: 0 4px 0 8px;
+}
+
+/* Mini Flow Deck mark */
+.flow-deck-ide-toolbar-mark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.flow-deck-ide-toolbar-mark-bar {
+  display: block;
+  width: 3px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, var(--brand-mint, #36cfc9) 0%, var(--ide-accent) 100%);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.35);
+}
+
+.flow-deck-ide-toolbar-mark-bar--1 {
+  height: 8px;
+  opacity: 0.85;
+}
+
+.flow-deck-ide-toolbar-mark-bar--2 {
+  height: 12px;
+}
+
+.flow-deck-ide-toolbar-mark-bar--3 {
+  height: 6px;
+  opacity: 0.75;
+}
+
+.flow-deck-ide-brand-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, 46vw);
+  padding: 6px 14px 6px 10px;
+  background: var(--ide-surface-2);
+  border: 1px solid var(--ide-border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.flow-deck-ide-brand-chip-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.flow-deck-ide-brand-chip-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ide-accent);
+  line-height: 1.2;
+}
+
+.flow-deck-ide-brand-chip-file {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ide-text);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Test environment status */
+.flow-deck-test-env {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--ide-border);
+  background: var(--ide-surface-2);
+  cursor: default;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  max-width: 200px;
+}
+
+.flow-deck-test-env:hover {
+  border-color: var(--ide-accent-border);
+  box-shadow: 0 0 0 1px var(--ide-accent-soft);
+}
+
+.flow-deck-test-env--running {
+  border-color: rgba(22, 163, 74, 0.45);
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.08) 0%, var(--ide-surface-2) 100%);
+}
+
+.flow-deck-test-env--starting {
+  border-color: rgba(234, 179, 8, 0.5);
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, var(--ide-surface-2) 100%);
+}
+
+.flow-deck-test-env--stopped {
+  background: var(--ide-surface);
+}
+
+.flow-deck-test-env--off {
+  border-style: dashed;
+}
+
+.flow-deck-test-env-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--ide-accent-soft);
+  color: var(--ide-accent);
+  font-size: 15px;
+}
+
+.flow-deck-test-env-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.flow-deck-test-env-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ide-muted);
+  line-height: 1.2;
+}
+
+.flow-deck-test-env-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ide-text);
+  line-height: 1.2;
+}
+
+.flow-deck-test-env-state-icon {
+  font-size: 13px;
+  color: var(--ide-accent);
+}
+
+.flow-deck-test-env-state-icon--muted {
+  color: var(--ide-muted);
+}
+
+.flow-deck-test-env-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.flow-deck-test-env-dot--running {
+  background: var(--ide-run);
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+  animation: flow-deck-test-env-pulse 2s ease-in-out infinite;
+}
+
+.flow-deck-test-env-dot--off {
+  background: var(--ide-border);
+  box-shadow: inset 0 0 0 1px var(--ide-muted);
+}
+
+@keyframes flow-deck-test-env-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(0.92);
+  }
+}
+
+/* Sync + Run cluster */
+.flow-deck-ide-action-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 10px;
+  border: 1px solid var(--ide-border);
+}
+
+.flow-deck-ide-sync-btn {
+  font-weight: 600 !important;
+  border-color: var(--ide-accent-border) !important;
+  color: var(--ide-accent) !important;
+  border-radius: 8px !important;
+}
+
+.flow-deck-ide-sync-btn:hover {
+  border-color: var(--ide-accent) !important;
+  color: var(--ide-accent-hover) !important;
+  background: var(--ide-accent-soft) !important;
+}
+
+.flow-deck-ide-sync-caret {
+  font-size: 9px !important;
+  margin-left: 6px !important;
+  opacity: 0.65;
+}
+
+.flow-deck-ide-run-btn {
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+}
+
+.flow-deck-ide-run-btn--active {
+  background: var(--ide-run) !important;
+  border-color: var(--ide-run) !important;
+}
+
+.flow-deck-ide-run-btn--active:hover {
+  background: var(--ide-run-hover) !important;
+  border-color: var(--ide-run-hover) !important;
+}
+
+.flow-deck-ide-run-btn.ant-btn-primary[disabled] {
+  opacity: 0.45;
+}
+
+/* Settings menu rows */
 .toolbar-settings-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  min-width: 160px;
+  min-width: 180px;
   padding: 4px 0;
 }
 
 .toolbar-settings-item .ant-typography {
   margin: 0;
   font-size: 12px;
+}
+
+.toolbar-sync-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 300px;
+  padding: 4px 0;
+}
+
+.toolbar-sync-menu-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ide-text);
+}
+
+.toolbar-sync-menu-item-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ide-muted);
+  white-space: normal;
+}
+
+/* Dropdown panel */
+.flow-deck-sync-menu-root .ant-dropdown-menu {
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.12);
+  border: 1px solid var(--ide-border);
+}
+
+.flow-deck-sync-menu-root .ant-dropdown-menu-item-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ide-muted);
+  padding: 8px 12px 4px;
+}
+
+.flow-deck-sync-menu-root .ant-dropdown-menu-item {
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.flow-deck-sync-menu-root .ant-dropdown-menu-item-icon {
+  color: var(--ide-accent);
 }

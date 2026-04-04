@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { message, Modal, Input, Select, Form } from 'antd';
 import { Allotment } from 'allotment';
@@ -11,9 +11,9 @@ import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../utils/projectDeployments';
 import { pickDeploymentId } from '../utils/pickDeploymentModal';
-import { pickDeploymentForLocalStack } from '../utils/localTestCluster';
 import { getApiErrorMessage } from '../utils/apiError';
 import { BRAND } from '../brand';
+import { isFlowDeckTestDeploymentName } from '../constants/localTestDeployment';
 import './CodeEditor.css';
 
 const { Option } = Select;
@@ -42,11 +42,25 @@ const ProjectCodeEditor = () => {
   const [triggering, setTriggering] = useState(false);
   const [deploymentProvider, setDeploymentProvider] = useState('kubernetes');
   const [localStackBusy, setLocalStackBusy] = useState(false);
+  /** Drives test-env pill copy while localStackBusy: start vs stop request. */
+  const [localStackPhase, setLocalStackPhase] = useState(null);
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFileForm] = Form.useForm();
 
   const currentFile = openFiles.find((f) => f.fileId === activeFileId);
   const isCurrentFileModified = modifiedFiles.has(activeFileId);
+
+  const localTestDeployment = useMemo(() => {
+    if (deploymentProvider !== 'local') return null;
+    const tid = project?.tenantId;
+    return (
+      deployments.find(
+        (d) =>
+          isFlowDeckTestDeploymentName(d.name) &&
+          (!tid || d.tenantId === tid)
+      ) || null
+    );
+  }, [deploymentProvider, deployments, project?.tenantId]);
 
   const fetchDeployments = useCallback(async () => {
     try {
@@ -307,7 +321,11 @@ const ProjectCodeEditor = () => {
     try {
       const resolved = resolveDeploymentForDeploy(project, deployments);
       if (!resolved.ok) {
-        message.error('No deployments available. Create an Airflow deployment first.');
+        message.error(
+          deploymentProvider === 'local'
+            ? 'No deployments yet. Use Sync to Airflow → Start / refresh test environment, or create one under Deployments.'
+            : 'No deployments available. Create an Airflow deployment first.'
+        );
         return;
       }
       let deploymentId = resolved.deploymentId;
@@ -328,57 +346,44 @@ const ProjectCodeEditor = () => {
     }
   };
 
-  const handleStartTestCluster = async () => {
+  const handleStartLocalTest = async () => {
     if (!project) return;
     try {
-      const picked = await pickDeploymentForLocalStack(
-        project,
-        deployments,
-        `Start test cluster — ${project.name}`
-      );
-      if (!picked.ok) {
-        message.warning('No deployment available. Create an Airflow deployment first.');
-        return;
-      }
+      setLocalStackPhase('start');
       setLocalStackBusy(true);
-      await deploymentAPI.startLocalStack(picked.deploymentId, projectId);
+      await projectAPI.startLocalTest(projectId);
       message.success(
-        "Test cluster is starting (Docker) using this project's Dockerfile. This may take a few minutes."
+        'Test environment is starting from your project build config and files. This may take several minutes.'
       );
+      await fetchProject();
       await fetchDeployments();
+      await fetchProjectFiles();
     } catch (error) {
-      if (error?.message === 'no deployments') return;
-      const msg = getApiErrorMessage(error, 'Failed to start test cluster');
+      const msg = getApiErrorMessage(error, 'Failed to start test environment');
       if (msg) message.error(msg);
       console.error(error);
     } finally {
       setLocalStackBusy(false);
+      setLocalStackPhase(null);
     }
   };
 
-  const handleStopTestCluster = async () => {
+  const handleStopLocalTest = async () => {
     if (!project) return;
     try {
-      const picked = await pickDeploymentForLocalStack(
-        project,
-        deployments,
-        `Stop test cluster — ${project.name}`
-      );
-      if (!picked.ok) {
-        message.warning('No deployment available.');
-        return;
-      }
+      setLocalStackPhase('stop');
       setLocalStackBusy(true);
-      await deploymentAPI.stopLocalStack(picked.deploymentId);
-      message.success('Test cluster stopped.');
+      await projectAPI.stopLocalTest(projectId);
+      message.success('Test environment stopped.');
+      await fetchProject();
       await fetchDeployments();
     } catch (error) {
-      if (error?.message === 'no deployments') return;
-      const msg = getApiErrorMessage(error, 'Failed to stop test cluster');
+      const msg = getApiErrorMessage(error, 'Failed to stop test environment');
       if (msg) message.error(msg);
       console.error(error);
     } finally {
       setLocalStackBusy(false);
+      setLocalStackPhase(null);
     }
   };
 
@@ -386,7 +391,11 @@ const ProjectCodeEditor = () => {
     try {
       const resolved = resolveDeploymentForTrigger(project, deployments);
       if (!resolved.ok) {
-        message.warning('Deploy this project to a deployment before triggering DAGs.');
+        message.warning(
+          deploymentProvider === 'local'
+            ? 'Link this project to a deployment first (Sync to Airflow → Choose deployment…, or start the test environment).'
+            : 'Deploy this project to a deployment before triggering DAGs.'
+        );
         return;
       }
       let deploymentId = resolved.deploymentId;
@@ -519,14 +528,16 @@ schema_compatibility: BACKWARD
   };
 
   return (
-    <div className={`code-editor-container ${isFullscreen ? 'fullscreen' : ''}`}>
+    <div
+      className={`code-editor-container flow-deck-ide ${isFullscreen ? 'fullscreen' : ''}`}
+    >
       <ProjectToolbar
         project={project}
         currentFile={currentFile}
         isModified={isCurrentFileModified}
         onSave={handleSave}
         onFormat={handleFormat}
-        onDeploy={handleDeploy}
+        onDeployToEnvironment={handleDeploy}
         onTrigger={handleTrigger}
         onFullscreen={handleFullscreen}
         isFullscreen={isFullscreen}
@@ -539,8 +550,10 @@ schema_compatibility: BACKWARD
         triggering={triggering}
         deploymentProvider={deploymentProvider}
         localStackBusy={localStackBusy}
-        onStartTestCluster={handleStartTestCluster}
-        onStopTestCluster={handleStopTestCluster}
+        localStackPhase={localStackPhase}
+        onStartLocalTest={handleStartLocalTest}
+        onStopLocalTest={handleStopLocalTest}
+        localTestDeployment={localTestDeployment}
       />
 
       <div className="code-editor-content">
@@ -587,8 +600,27 @@ schema_compatibility: BACKWARD
                   />
                 </div>
               ) : (
-                <div className="editor-placeholder">
-                  <p>Select a file from the tree to start editing</p>
+                <div className="flow-deck-ide-empty-editor" aria-hidden={false}>
+                  <div className="flow-deck-ide-empty-editor-inner">
+                    <h3>Open a file</h3>
+                    <p>
+                      Pick a DAG, plugin, contract, or config file from the explorer on the left to
+                      edit in {BRAND.ideName}.
+                    </p>
+                    <ul className="flow-deck-ide-empty-tips">
+                      <li>
+                        Click a file in the tree to open a tab; unsaved edits show a dot on the tab.
+                      </li>
+                      <li>
+                        Use <strong>New</strong> in the toolbar to add a file under dags/, plugins/,
+                        etc.
+                      </li>
+                      <li>
+                        When you are ready, use <strong>Sync</strong> to push to Airflow, then{' '}
+                        <strong>Run DAGs</strong> after the project is linked to a deployment.
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               )}
             </div>
