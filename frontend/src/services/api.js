@@ -53,6 +53,11 @@ export const tenantAPI = {
   delete: (tenantId) => api.delete(`/tenants/${tenantId}`),
 };
 
+// Environment (Airflow metadata on deployments: connections, etc.)
+export const environmentAPI = {
+  syncConnection: (data) => api.post('/environment/connections/sync', data),
+};
+
 // Deployment APIs
 export const deploymentAPI = {
   getAll: () => api.get('/deployments'),

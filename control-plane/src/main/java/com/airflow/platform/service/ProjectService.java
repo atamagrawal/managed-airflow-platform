@@ -3,6 +3,7 @@ package com.airflow.platform.service;
 import com.airflow.platform.config.DagDeploymentConfig;
 import com.airflow.platform.config.SupportedAirflowVersions;
 import com.airflow.platform.util.AirflowApiUrlUtils;
+import com.airflow.platform.util.AirflowVersionUtils;
 import com.airflow.platform.dto.*;
 import com.airflow.platform.exception.DeploymentException;
 import com.airflow.platform.exception.ResourceNotFoundException;
@@ -733,28 +734,10 @@ public class ProjectService {
     }
 
     private ResponseEntity<Map<String, Object>> postTriggerDagRun(String baseUrl, String airflowDagId, String airflowVersion) {
-        if (isAirflow3OrLater(airflowVersion)) {
+        if (AirflowVersionUtils.isAirflow3OrLater(airflowVersion)) {
             return postTriggerDagRunAirflow3(baseUrl, airflowDagId);
         }
         return postTriggerDagRunAirflow2(baseUrl, airflowDagId);
-    }
-
-    private boolean isAirflow3OrLater(String airflowVersion) {
-        if (airflowVersion == null || airflowVersion.isBlank()) {
-            return true;
-        }
-        int end = 0;
-        while (end < airflowVersion.length() && Character.isDigit(airflowVersion.charAt(end))) {
-            end++;
-        }
-        if (end == 0) {
-            return true;
-        }
-        try {
-            return Integer.parseInt(airflowVersion.substring(0, end)) >= 3;
-        } catch (NumberFormatException e) {
-            return true;
-        }
     }
 
     private String obtainAirflowAccessToken(String baseUrl) {

@@ -16,6 +16,9 @@ import DeploymentDetails from './pages/DeploymentDetails';
 import Dags from './pages/Dags';
 import Projects from './pages/Projects';
 import DeployedProjects from './pages/DeployedProjects';
+import EnvironmentLayout from './pages/EnvironmentLayout';
+import EnvironmentConnections from './pages/EnvironmentConnections';
+import EnvironmentVariables from './pages/EnvironmentVariables';
 import ProjectDetails from './pages/ProjectDetails';
 import ProjectCodeEditor from './pages/ProjectCodeEditor';
 import NotFound from './pages/NotFound';
@@ -89,6 +92,11 @@ function AppRoutes() {
         />
         <Route path="/deployments" element={<Deployments />} />
         <Route path="/deployments/:deploymentId" element={<DeploymentDetails />} />
+        <Route path="/environment" element={<EnvironmentLayout />}>
+          <Route index element={<Navigate to="connections" replace />} />
+          <Route path="connections" element={<EnvironmentConnections />} />
+          <Route path="variables" element={<EnvironmentVariables />} />
+        </Route>
         <Route path="/dags" element={<Dags />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/deployed-projects" element={<DeployedProjects />} />
