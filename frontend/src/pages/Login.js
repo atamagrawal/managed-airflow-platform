@@ -4,8 +4,11 @@ import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getApiErrorMessage } from '../utils/apiError';
+import BrandMark from '../components/BrandMark';
+import FlowDeckWordmark from '../components/FlowDeckWordmark';
+import { BRAND } from '../brand';
 
-const { Title, Paragraph } = Typography;
+const { Paragraph } = Typography;
 
 const Login = () => {
   const { login } = useAuth();
@@ -29,23 +32,19 @@ const Login = () => {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #1f1f1f 0%, #434343 100%)',
-        padding: 24,
-      }}
-    >
-      <Card style={{ width: '100%', maxWidth: 400, borderRadius: 8 }}>
-        <Title level={3} style={{ textAlign: 'center', marginBottom: 8 }}>
-          Managed Airflow
-        </Title>
-        <Paragraph type="secondary" style={{ textAlign: 'center', marginBottom: 24 }}>
-          Sign in to the control plane
-        </Paragraph>
+    <div className="login-shell">
+      <Card className="login-card" style={{ width: '100%', maxWidth: 420 }}>
+        <div className="login-brand-block">
+          <div className="login-brand-mark">
+            <BrandMark size="lg" />
+          </div>
+          <div style={{ color: 'rgba(0, 0, 0, 0.88)' }}>
+            <FlowDeckWordmark size="xl" />
+          </div>
+          <Paragraph type="secondary" className="login-brand-tagline">
+            {BRAND.tagline}
+          </Paragraph>
+        </div>
         <Form name="login" onFinish={onFinish} layout="vertical" requiredMark={false}>
           <Form.Item name="username" label="Username" rules={[{ required: true, message: 'Enter username' }]}>
             <Input prefix={<UserOutlined />} placeholder="Username" autoComplete="username" size="large" />
@@ -60,7 +59,7 @@ const Login = () => {
           </Form.Item>
         </Form>
         <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0, textAlign: 'center' }}>
-          Default dev users: <code>admin</code> / <code>admin</code> or <code>user</code> / <code>user</code>
+          Dev sign-in: <code>admin</code> / <code>admin</code> · <code>user</code> / <code>user</code>
         </Paragraph>
       </Card>
     </div>
