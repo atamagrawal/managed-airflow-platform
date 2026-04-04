@@ -7,6 +7,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -36,6 +39,14 @@ public class DockerComposeGenerator {
     @Value("${deployment.compose.airflow-image:}")
     private String composeAirflowImage;
 
+    /**
+     * Space-separated browser origins allowed to POST {@code /auth/token} during control-plane UI handoff.
+     * Airflow expects space separation (not commas) in {@code access_control_allow_origins}.
+     * Override when the console is served from another host/port (e.g. {@code http://myhost:9090}).
+     */
+    @Value("${deployment.compose.airflow-cors-allow-origins:}")
+    private String composeAirflowCorsAllowOrigins;
+
     public String generateDockerCompose(AirflowDeployment deployment) {
         log.info("Generating docker-compose.yml for deployment: {}", deployment.getDeploymentId());
 
@@ -60,6 +71,14 @@ public class DockerComposeGenerator {
         compose.append("  AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'\n");
         compose.append("  AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: '5'\n");
         compose.append("  _PIP_ADDITIONAL_REQUIREMENTS: ''\n");
+        // Handoff uses a form POST to Airflow /auth/managed-platform-ui-handoff (navigation; CORS does not apply).
+        // Airflow [api] access_control_allow_origins is space-separated per https://airflow.apache.org/docs/apache-airflow/stable/security/api.html
+        compose.append("  AIRFLOW__API__ACCESS_CONTROL_ALLOW_ORIGINS: ")
+                .append(yamlDoubleQuoted(resolveAirflowCorsAllowOrigins()))
+                .append("\n");
+        compose.append("  AIRFLOW__API__ACCESS_CONTROL_ALLOW_HEADERS: \"origin, content-type, accept\"\n");
+        compose.append("  AIRFLOW__API__ACCESS_CONTROL_ALLOW_METHODS: \"POST, GET, OPTIONS, DELETE\"\n");
+        compose.append("  AIRFLOW__API__ACCESS_CONTROL_ALLOW_CREDENTIALS: 'True'\n");
 
         if (needsRedis) {
             compose.append("  AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0\n");
@@ -293,6 +312,23 @@ public class DockerComposeGenerator {
         return env.toString();
     }
 
+    /**
+     * Airflow imports {@code airflow_local_settings} from {@code $AIRFLOW_HOME/config} (compose bind-mounts
+     * {@code ./config}). Patches {@code FabAuthManager.get_fastapi_app}: CORS for {@code /auth}, optional
+     * {@code /auth/managed-platform-ui-handoff} form sign-in (console handoff), and {@code _token} cookie on
+     * {@code /auth/token} JSON responses.
+     */
+    public String generateAirflowLocalSettingsPy() {
+        try (InputStream in = DockerComposeGenerator.class.getResourceAsStream("/airflow/airflow_local_settings.py")) {
+            if (in == null) {
+                throw new IllegalStateException("Missing classpath resource /airflow/airflow_local_settings.py");
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read airflow_local_settings.py template", e);
+        }
+    }
+
     private String resolveAirflowImageForCompose(AirflowDeployment deployment) {
         if (StringUtils.hasText(composeAirflowImage)) {
             return composeAirflowImage.trim();
@@ -333,6 +369,22 @@ public class DockerComposeGenerator {
             return 5555 + (hash % 100);
         }
         return 5555;
+    }
+
+    private String resolveAirflowCorsAllowOrigins() {
+        if (StringUtils.hasText(composeAirflowCorsAllowOrigins)) {
+            return composeAirflowCorsAllowOrigins.trim();
+        }
+        return "http://localhost:3000 http://127.0.0.1:3000 http://localhost:8080 http://127.0.0.1:8080 "
+                + "http://[::1]:3000 http://[::1]:8080";
+    }
+
+    private static String yamlDoubleQuoted(String value) {
+        if (value == null) {
+            return "\"\"";
+        }
+        String escaped = value.replace("\\", "\\\\").replace("\"", "\\\"");
+        return "\"" + escaped + "\"";
     }
 
     private boolean useCustomBuild(AirflowDeployment deployment) {

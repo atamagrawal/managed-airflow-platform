@@ -6,7 +6,9 @@ import com.airflow.platform.dto.UserAccountResponse;
 import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.PlatformUser;
 import com.airflow.platform.repository.PlatformUserRepository;
+import com.airflow.platform.security.AirflowBootstrapCrypto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +31,8 @@ public class PlatformUserService {
     private final PlatformSecurityProperties securityProperties;
     private final PasswordEncoder passwordEncoder;
     private final TenantService tenantService;
+    private final ObjectProvider<LocalAirflowFabUserSyncService> localAirflowFabUserSyncService;
+    private final AirflowBootstrapCrypto airflowBootstrapCrypto;
 
     @Transactional
     public UserAccountResponse createUser(PlatformUserCreateRequest request) {
@@ -67,7 +71,21 @@ public class PlatformUserService {
         entity.setRolesCsv(String.join(",", roles));
         entity.setHomeTenantId(admin ? null : homeTenantId);
         entity.setEnabled(true);
+        try {
+            entity.setAirflowBootstrapSecret(airflowBootstrapCrypto.encrypt(request.getPassword()));
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not store credentials for Airflow sync: " + e.getMessage(), e);
+        }
         entity = platformUserRepository.save(entity);
+
+        localAirflowFabUserSyncService.ifAvailable(sync -> {
+            String tenantForSync = admin
+                    ? null
+                    : (StringUtils.hasText(homeTenantId)
+                            ? homeTenantId.trim()
+                            : securityProperties.getDefaultTenantIdForUsers());
+            sync.syncUserToDeployments(tenantForSync, username, request.getPassword(), admin);
+        });
 
         return toResponse(entity);
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, Descriptions, Button, Space, Tag, Tabs, Table, Modal, Form, Input, Select, message, Breadcrumb } from 'antd';
 import { getBreadcrumbItems } from '../utils/breadcrumbs';
@@ -26,22 +26,16 @@ const ProjectDetails = () => {
   const [triggerLoading, setTriggerLoading] = useState(false);
   const [form] = Form.useForm();
 
-  useEffect(() => {
-    fetchProjectDetails();
-    fetchProjectFiles();
-    fetchDeployments();
-  }, [projectId]);
-
-  const fetchDeployments = async () => {
+  const fetchDeployments = useCallback(async () => {
     try {
       const response = await deploymentAPI.getAll();
       setDeployments(response.data);
     } catch (error) {
       console.error('Error fetching deployments:', error);
     }
-  };
+  }, []);
 
-  const fetchProjectDetails = async () => {
+  const fetchProjectDetails = useCallback(async () => {
     try {
       setLoading(true);
       const response = await projectAPI.getById(projectId);
@@ -53,9 +47,9 @@ const ProjectDetails = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId]);
 
-  const fetchProjectFiles = async () => {
+  const fetchProjectFiles = useCallback(async () => {
     try {
       const response = await projectAPI.getFiles(projectId);
       setFiles(response.data);
@@ -64,7 +58,13 @@ const ProjectDetails = () => {
       if (msg) message.error(msg);
       console.error('Error fetching files:', error);
     }
-  };
+  }, [projectId]);
+
+  useEffect(() => {
+    fetchProjectDetails();
+    fetchProjectFiles();
+    fetchDeployments();
+  }, [fetchProjectDetails, fetchProjectFiles, fetchDeployments]);
 
   const handleDeploy = async () => {
     try {

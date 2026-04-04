@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Descriptions, Button, Tag, Spin, Alert, Typography, Space, Breadcrumb } from 'antd';
+import { Card, Descriptions, Button, Tag, Spin, Alert, Typography, Space, Breadcrumb, message } from 'antd';
 import { getBreadcrumbItems } from '../utils/breadcrumbs';
 import { getApiErrorMessage } from '../utils/apiError';
 import { ArrowLeftOutlined, LinkOutlined } from '@ant-design/icons';
-import { deploymentAPI } from '../services/api';
+import { deploymentAPI, navigateToAirflowHandoff } from '../services/api';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -16,6 +16,8 @@ const DeploymentDetails = () => {
   const [deployment, setDeployment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [openingAirflow, setOpeningAirflow] = useState(false);
+  const openAirflowLockRef = useRef(false);
 
   useEffect(() => {
     const fetchDeploymentDetails = async () => {
@@ -34,6 +36,22 @@ const DeploymentDetails = () => {
 
     fetchDeploymentDetails();
   }, [deploymentId]);
+
+  const handleOpenAirflow = async () => {
+    if (!deploymentId || openAirflowLockRef.current) return;
+    openAirflowLockRef.current = true;
+    try {
+      setOpeningAirflow(true);
+      const { data } = await deploymentAPI.airflowUiHandoff(deploymentId);
+      navigateToAirflowHandoff(data.handoffId);
+    } catch (err) {
+      openAirflowLockRef.current = false;
+      const msg = getApiErrorMessage(err, 'Could not open Airflow');
+      if (msg) message.error(msg);
+    } finally {
+      setOpeningAirflow(false);
+    }
+  };
 
   const getStatusColor = (status) => {
     const colors = {
@@ -139,9 +157,10 @@ const DeploymentDetails = () => {
                 <Button
                   type="link"
                   icon={<LinkOutlined />}
-                  onClick={() => window.open(deployment.webserverUrl, '_blank')}
+                  loading={openingAirflow}
+                  onClick={handleOpenAirflow}
                 >
-                  Open
+                  Open Airflow
                 </Button>
               </Space>
             ) : (

@@ -16,6 +16,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -39,6 +41,12 @@ public class AirflowDeploymentService {
 
     @Autowired(required = false)
     private ECSScalingManager ecsScalingManager;
+
+    @Autowired(required = false)
+    private LocalAirflowFabUserSyncService localAirflowFabUserSyncService;
+
+    @Autowired(required = false)
+    private LocalDeploymentStatusReconciler localDeploymentStatusReconciler;
 
     @Transactional
     public DeploymentResponse createDeployment(DeploymentCreateRequest request) {
@@ -107,6 +115,22 @@ public class AirflowDeploymentService {
             deployment = deploymentRepository.save(deployment);
             log.info("Airflow deployment created successfully: {}", deploymentId);
 
+            if (localAirflowFabUserSyncService != null && deploymentProvider != null
+                    && "local".equals(deploymentProvider.getProviderType())) {
+                final String syncDeploymentId = deployment.getDeploymentId();
+                Runnable scheduleFab = () -> localAirflowFabUserSyncService.schedulePostDeployFabSync(syncDeploymentId);
+                if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            scheduleFab.run();
+                        }
+                    });
+                } else {
+                    scheduleFab.run();
+                }
+            }
+
         } catch (Exception e) {
             log.error("Failed to deploy Airflow: {}", deploymentId, e);
             finalDeployment.setStatus(AirflowDeployment.DeploymentStatus.FAILED);
@@ -119,6 +143,9 @@ public class AirflowDeploymentService {
 
     @Transactional(readOnly = true)
     public DeploymentResponse getDeployment(String deploymentId) {
+        if (localDeploymentStatusReconciler != null) {
+            localDeploymentStatusReconciler.reconcileIfPendingOrDeploying(deploymentId);
+        }
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
         assertDeploymentAccess(deployment);
@@ -127,6 +154,9 @@ public class AirflowDeploymentService {
 
     @Transactional(readOnly = true)
     public List<DeploymentResponse> getDeploymentsByTenant(String tenantId) {
+        if (localDeploymentStatusReconciler != null) {
+            localDeploymentStatusReconciler.reconcilePendingOrDeployingDeployments();
+        }
         return deploymentRepository.findByTenantTenantId(tenantId).stream()
                 .map(DeploymentResponse::fromEntity)
                 .collect(Collectors.toList());
@@ -146,6 +176,9 @@ public class AirflowDeploymentService {
 
     @Transactional(readOnly = true)
     public List<DeploymentResponse> getAllDeployments() {
+        if (localDeploymentStatusReconciler != null) {
+            localDeploymentStatusReconciler.reconcilePendingOrDeployingDeployments();
+        }
         return deploymentRepository.findAll().stream()
                 .map(DeploymentResponse::fromEntity)
                 .collect(Collectors.toList());

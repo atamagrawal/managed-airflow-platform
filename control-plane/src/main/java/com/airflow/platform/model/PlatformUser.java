@@ -44,6 +44,13 @@ public class PlatformUser {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    /**
+     * AES-GCM encrypted copy of the user's password (keyed from platform JWT secret) so new local deployments can
+     * provision matching Airflow FAB users without a FlowDeck login. Updated on each successful DB login.
+     */
+    @Column(name = "airflow_bootstrap_secret", length = 2048)
+    private String airflowBootstrapSecret;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

@@ -66,6 +66,7 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/h2-console", "/h2-console/**").permitAll()
+                        .requestMatchers("/api/v1/public/airflow-handoff/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/tenants", "/api/v1/tenants/**").hasRole("ADMIN")
                         .requestMatchers("/api/**").authenticated()

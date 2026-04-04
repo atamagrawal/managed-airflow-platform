@@ -3,6 +3,31 @@ import { getStoredToken, setStoredToken } from '../authStorage';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api/v1';
 
+/** Origin of the control plane (no /api/v1), for public handoff URLs etc. */
+export function getControlPlaneOrigin() {
+  const trimmed = API_BASE_URL.replace(/\/api\/v1\/?$/i, '').replace(/\/$/, '');
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return 'http://localhost:8080';
+}
+
+/**
+ * Navigates to the one-time Airflow handoff page (same tab). Avoids a second tab/window so users do not open
+ * two handoff pages and burn the single-use ticket on the first /complete call.
+ */
+export function navigateToAirflowHandoff(handoffId) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const base = getControlPlaneOrigin();
+  const url = `${base}/api/v1/public/airflow-handoff/${encodeURIComponent(handoffId)}`;
+  window.location.assign(url);
+}
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -67,6 +92,8 @@ export const deploymentAPI = {
   create: (data) => api.post('/deployments', data),
   update: (deploymentId, data) => api.put(`/deployments/${deploymentId}`, data),
   delete: (deploymentId) => api.delete(`/deployments/${deploymentId}`),
+  /** Single-use browser handoff for Airflow 3 FAB UI login (uses signed-in session; no body). */
+  airflowUiHandoff: (deploymentId) => api.post(`/deployments/${deploymentId}/airflow-ui-handoff`),
 };
 
 // Deployed DAGs (project DAG files with a successful deploy to a deployment)
