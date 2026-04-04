@@ -17,8 +17,8 @@ public class OpenApiConfig {
     public OpenAPI managedAirflowOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Managed Airflow Platform API")
-                        .description("Control plane API for managing multi-tenant Apache Airflow deployments")
+                        .title("FlowDeck API")
+                        .description("FlowDeck operations API for Apache Airflow deployments, projects, DAGs, and tenants")
                         .version("1.0.0")
                         .contact(new Contact()
                                 .name("Platform Team")

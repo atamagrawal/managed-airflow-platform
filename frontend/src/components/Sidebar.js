@@ -11,6 +11,9 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import BrandMark from './BrandMark';
+import FlowDeckWordmark from './FlowDeckWordmark';
+import { BRAND } from '../brand';
 
 const { Sider } = Layout;
 
@@ -84,7 +87,17 @@ const Sidebar = () => {
 
   return (
     <Sider collapsible>
-      <div className="logo">Airflow Platform</div>
+      <div className="logo">
+        <div className="logo-inner">
+          <BrandMark size="sm" />
+          <div>
+            <div className="logo-wordmark">
+              <FlowDeckWordmark size="sm" />
+            </div>
+            <div className="logo-tagline">{BRAND.taglineShort}</div>
+          </div>
+        </div>
+      </div>
       <Menu
         theme="dark"
         selectedKeys={[getSelectedKey()]}

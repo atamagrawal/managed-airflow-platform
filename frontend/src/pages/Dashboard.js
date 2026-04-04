@@ -3,6 +3,9 @@ import { Row, Col, Card, Statistic, Typography, Spin, Alert } from 'antd';
 import { TeamOutlined, CloudServerOutlined, CheckCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { tenantAPI, deploymentAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import BrandMark from '../components/BrandMark';
+import FlowDeckWordmark from '../components/FlowDeckWordmark';
+import { BRAND } from '../brand';
 
 const { Title } = Typography;
 
@@ -71,7 +74,17 @@ const Dashboard = () => {
 
   return (
     <div>
-      <Title level={2} className="page-header">
+      <div className="dashboard-hero">
+        <div className="dashboard-hero-mark">
+          <BrandMark size="lg" />
+        </div>
+        <div className="dashboard-hero-title" style={{ color: 'rgba(0, 0, 0, 0.88)' }}>
+          <FlowDeckWordmark size="lg" />
+        </div>
+        <p className="dashboard-hero-sub">{BRAND.tagline}</p>
+      </div>
+
+      <Title level={2} className="page-header" style={{ marginTop: 0 }}>
         Dashboard
       </Title>
 
