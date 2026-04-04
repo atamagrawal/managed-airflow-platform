@@ -2,8 +2,9 @@ package com.airflow.platform.service;
 
 import com.airflow.platform.config.PlatformSecurityProperties;
 import com.airflow.platform.dto.AuthResponse;
-import com.airflow.platform.dto.UserAccountResponse;
 import com.airflow.platform.exception.ResourceNotFoundException;
+import com.airflow.platform.model.PlatformUser;
+import com.airflow.platform.repository.PlatformUserRepository;
 import com.airflow.platform.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -12,11 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -26,12 +25,38 @@ public class AuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final TenantService tenantService;
+    private final PlatformUserRepository platformUserRepository;
 
     public AuthResponse login(String username, String password) {
         if (username == null || username.isBlank()) {
             throw new BadCredentialsException("Invalid credentials");
         }
         String key = username.trim();
+
+        var dbUser = platformUserRepository.findByUsernameIgnoreCaseAndEnabledIsTrue(key);
+        if (dbUser.isPresent()) {
+            PlatformUser u = dbUser.get();
+            if (!passwordEncoder.matches(password, u.getPasswordHash())) {
+                throw new BadCredentialsException("Invalid credentials");
+            }
+            List<String> roles = PlatformUserService.parseRolesCsv(u.getRolesCsv());
+            boolean admin = roles.stream().anyMatch(r -> "ADMIN".equalsIgnoreCase(r));
+            String tenantScope = resolveDatabaseUserTenantScope(u, admin);
+            if (!admin) {
+                assertTenantExistsForLogin(tenantScope);
+            }
+            String principal = u.getUsername();
+            return AuthResponse.builder()
+                    .accessToken(jwtService.createToken(principal, roles, tenantScope))
+                    .tokenType("Bearer")
+                    .expiresInMs(securityProperties.getJwtExpirationMs())
+                    .username(principal)
+                    .roles(roles)
+                    .tenantScope(tenantScope)
+                    .admin(admin)
+                    .build();
+        }
+
         Map<String, PlatformSecurityProperties.UserAccountProperties> users = securityProperties.getUsers();
         PlatformSecurityProperties.UserAccountProperties account = users.get(key);
         if (account == null) {
@@ -70,27 +95,15 @@ public class AuthService {
                 .build();
     }
 
-    /**
-     * Lists users defined in configuration ({@code platform.security.users}). No passwords.
-     */
-    public List<UserAccountResponse> listConfiguredUsers() {
-        return securityProperties.getUsers().entrySet().stream()
-                .map(e -> {
-                    PlatformSecurityProperties.UserAccountProperties account = e.getValue();
-                    List<String> roles = normalizeRoles(account.getRoles());
-                    boolean admin = roles.stream().anyMatch(r -> "ADMIN".equalsIgnoreCase(r));
-                    String tenantScope = resolveHomeTenantId(account, admin);
-                    boolean usesDefault = !admin && !StringUtils.hasText(account.getTenantId());
-                    return UserAccountResponse.builder()
-                            .username(e.getKey())
-                            .roles(roles)
-                            .tenantScope(tenantScope)
-                            .admin(admin)
-                            .usesPlatformDefaultTenant(usesDefault)
-                            .build();
-                })
-                .sorted(Comparator.comparing(UserAccountResponse::getUsername, String.CASE_INSENSITIVE_ORDER))
-                .collect(Collectors.toList());
+    private String resolveDatabaseUserTenantScope(PlatformUser u, boolean admin) {
+        if (admin) {
+            return null;
+        }
+        if (StringUtils.hasText(u.getHomeTenantId())) {
+            return u.getHomeTenantId().trim();
+        }
+        String fallback = securityProperties.getDefaultTenantIdForUsers();
+        return StringUtils.hasText(fallback) ? fallback.trim() : null;
     }
 
     /**

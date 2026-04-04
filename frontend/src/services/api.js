@@ -38,9 +38,11 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
 };
 
-// Admin-only: configured control-plane users (YAML), no passwords
+// Admin-only: control-plane users (database + configuration); no passwords on list
 export const adminUserAPI = {
   list: () => api.get('/admin/users'),
+  create: (data) => api.post('/admin/users', data),
+  delete: (id) => api.delete(`/admin/users/${id}`),
 };
 
 // Tenant APIs
