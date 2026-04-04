@@ -24,7 +24,9 @@ const EditorTabs = ({ openFiles, activeFileId, onTabChange, onTabClose, modified
       label: (
         <div className="editor-tab-label">
           <FileOutlined style={{ marginRight: 6 }} />
-          <span className="editor-tab-filename">{file.fileName || `${file.name}.py`}</span>
+          <span className="editor-tab-filename">
+            {file.name || file.fileName || 'Untitled'}
+          </span>
           {isModified && (
             <span className="editor-tab-modified" title="Unsaved changes">
               •
@@ -54,15 +56,7 @@ const EditorTabs = ({ openFiles, activeFileId, onTabChange, onTabClose, modified
   });
 
   if (openFiles.length === 0) {
-    return (
-      <div className="editor-tabs-empty">
-        <FileOutlined style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 16 }} />
-        <div style={{ color: '#8c8c8c' }}>No files open</div>
-        <div style={{ color: '#bfbfbf', fontSize: 12, marginTop: 4 }}>
-          Select a file from the tree to start editing
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (

@@ -10,6 +10,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -31,6 +32,7 @@ public class LocalAirflowHandoffConfigEnsurer {
 
     @EventListener(ApplicationReadyEvent.class)
     @Order(ORDER_AFTER_DEFAULT_DEPLOYMENT_BOOTSTRAP)
+    @Transactional(readOnly = true)
     public void ensureHandoffPatchFiles() {
         List<AirflowDeployment> all = deploymentRepository.findAll();
         if (all.isEmpty()) {

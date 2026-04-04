@@ -7,6 +7,7 @@ import com.airflow.platform.provider.impl.LocalDeploymentProvider;
 import com.airflow.platform.repository.AirflowDeploymentRepository;
 import com.airflow.platform.repository.PlatformUserRepository;
 import com.airflow.platform.security.AirflowBootstrapCrypto;
+import com.airflow.platform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.airflow.platform.config.AsyncConfig;
@@ -39,7 +40,7 @@ public class LocalAirflowFabUserSyncService {
     private final PlatformSecurityProperties securityProperties;
 
     /**
-     * After each successful FlowDeck login, push this user to every relevant RUNNING local deployment.
+     * After each successful Flow Deck login, push this user to every relevant RUNNING local deployment.
      */
     public void syncUserOnLogin(String username, String plainPassword, boolean platformAdmin, String tenantScope) {
         String tenantFilter = platformAdmin ? null : tenantScope;
@@ -172,7 +173,7 @@ public class LocalAirflowFabUserSyncService {
     private void syncOneDbUserToDeployment(AirflowDeployment deployment, PlatformUser u, boolean fabAdmin) {
         String cipher = u.getAirflowBootstrapSecret();
         if (!StringUtils.hasText(cipher)) {
-            log.debug("Skipping FAB sync for {} on deployment {} (no bootstrap secret yet — sign in to FlowDeck once)",
+            log.debug("Skipping FAB sync for {} on deployment {} (no bootstrap secret yet — sign in to Flow Deck once)",
                     u.getUsername(), deployment.getDeploymentId());
             return;
         }
@@ -188,6 +189,39 @@ public class LocalAirflowFabUserSyncService {
     private static boolean isPlatformAdmin(PlatformUser u) {
         return PlatformUserService.parseRolesCsv(u.getRolesCsv()).stream()
                 .anyMatch(r -> "ADMIN".equalsIgnoreCase(r));
+    }
+
+    /**
+     * Runs immediately before the browser opens the Airflow UI handoff. Post-{@code startCluster} FAB sync is
+     * {@linkplain #schedulePostDeployFabSync asynchronous}; users who click Open Airflow (or Start stack then Open)
+     * often arrive before that job finishes, which produced &quot;invalid credential&quot; at
+     * {@code /auth/managed-platform-ui-handoff}.
+     */
+    public void ensureUserForUiHandoff(AirflowDeployment deployment, String username, String plainPassword) {
+        if (deployment.getStatus() != AirflowDeployment.DeploymentStatus.RUNNING) {
+            log.debug("Skipping pre-handoff FAB sync for {}: status {}", deployment.getDeploymentId(),
+                    deployment.getStatus());
+            return;
+        }
+        if (username == null || username.isBlank() || plainPassword == null) {
+            return;
+        }
+        boolean fabAdmin = resolveFabAdminForHandoff(username.trim());
+        try {
+            localDeploymentProvider.ensureFabUserMatchesPlatform(deployment, username, plainPassword, fabAdmin);
+        } catch (Exception e) {
+            log.warn("Pre-handoff FAB sync failed for user {} on deployment {}: {}", username,
+                    deployment.getDeploymentId(), e.getMessage());
+        }
+    }
+
+    private boolean resolveFabAdminForHandoff(String username) {
+        if (SecurityUtils.isAdmin()) {
+            return true;
+        }
+        return platformUserRepository.findByUsernameIgnoreCaseAndEnabledIsTrue(username)
+                .map(LocalAirflowFabUserSyncService::isPlatformAdmin)
+                .orElse(false);
     }
 
     /**

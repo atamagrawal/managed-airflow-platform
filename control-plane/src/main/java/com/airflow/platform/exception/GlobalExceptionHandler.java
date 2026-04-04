@@ -12,7 +12,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.apache.catalina.connector.ClientAbortException;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -93,6 +95,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.notFound().build();
     }
 
+    /**
+     * Client closed the TCP connection before the response body finished (browser timeout, tab closed, proxy idle limit).
+     * Not a server bug; logging at ERROR is noise. Common for long operations like local stack start.
+     */
+    @ExceptionHandler(ClientAbortException.class)
+    public ResponseEntity<Void> handleClientAbort(ClientAbortException ex) {
+        if (log.isDebugEnabled()) {
+            log.debug("Client disconnected before response completed: {}", ex.getMessage());
+        }
+        return ResponseEntity.noContent().build();
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, Object> response = new HashMap<>();
@@ -110,7 +124,13 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
+    public ResponseEntity<?> handleGenericException(Exception ex) {
+        if (isBenignClientDisconnect(ex)) {
+            if (log.isDebugEnabled()) {
+                log.debug("Client disconnected before response completed: {}", ex.getMessage());
+            }
+            return ResponseEntity.noContent().build();
+        }
         log.error("Unexpected error", ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
@@ -118,6 +138,24 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    private static boolean isBenignClientDisconnect(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            if (t instanceof ClientAbortException) {
+                return true;
+            }
+            if (t instanceof IOException io) {
+                String m = io.getMessage();
+                if (m != null) {
+                    String lower = m.toLowerCase();
+                    if (lower.contains("broken pipe") || lower.contains("connection reset by peer")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     @Data

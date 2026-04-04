@@ -108,6 +108,9 @@ public class AirflowUiHandoffService {
     @Autowired(required = false)
     private LocalDockerStackLifecycleService localDockerStackLifecycleService;
 
+    @Autowired(required = false)
+    private LocalAirflowFabUserSyncService localAirflowFabUserSyncService;
+
     private final ConcurrentHashMap<String, StoredHandoff> tickets = new ConcurrentHashMap<>();
 
     private record StoredHandoff(String username, String password, String browserBaseUrl, String airflowVersion,
@@ -126,6 +129,9 @@ public class AirflowUiHandoffService {
         String webserverUrl = d.getWebserverUrl();
         if (!StringUtils.hasText(webserverUrl)) {
             throw new IllegalArgumentException("Deployment has no webserver URL");
+        }
+        if (localAirflowFabUserSyncService != null) {
+            localAirflowFabUserSyncService.ensureUserForUiHandoff(d, username, password);
         }
         String browserBase = browserBaseUrlForHandoff(webserverUrl.trim());
         String id = UUID.randomUUID().toString();

@@ -1,5 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Space, Tag, Popconfirm, Alert, Empty } from 'antd';
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Select,
+  InputNumber,
+  message,
+  Space,
+  Tag,
+  Alert,
+  Empty,
+  Dropdown,
+  Tooltip,
+} from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -7,6 +22,10 @@ import {
   ReloadOutlined,
   PlayCircleOutlined,
   PauseCircleOutlined,
+  MoreOutlined,
+  ExperimentOutlined,
+  CopyOutlined,
+  FolderOpenOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { deploymentAPI, tenantAPI, openAirflowHandoffInNewTab } from '../services/api';
@@ -14,7 +33,11 @@ import { useAuth } from '../context/AuthContext';
 import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
 import PageHeader from '../components/PageHeader';
 import { getApiErrorMessage } from '../utils/apiError';
+import { isFlowDeckTestDeploymentName } from '../constants/localTestDeployment';
+import { BRAND } from '../brand';
 import dayjs from 'dayjs';
+import './Deployments.css';
+
 const { Option } = Select;
 const { TextArea } = Input;
 
@@ -40,7 +63,7 @@ const Deployments = () => {
     }
   }, [isAdmin]);
 
-  // Local Docker deploy can take minutes; poll while any row is still provisioning so status self-heals from the API.
+  // Local deploy can take minutes; poll while any row is still provisioning so status self-heals from the API.
   useEffect(() => {
     const busy = deployments.some((d) => d.status === 'DEPLOYING' || d.status === 'PENDING');
     if (!busy) {
@@ -163,22 +186,51 @@ const Deployments = () => {
   const handleDeleteDeployment = async (deploymentId) => {
     try {
       await deploymentAPI.delete(deploymentId);
-      message.success('Deployment deleted successfully');
+      message.success('Deployment removed from the platform');
       fetchDeployments();
     } catch (error) {
-      message.error('Failed to delete deployment');
+      message.error('Failed to remove deployment');
       console.error('Error deleting deployment:', error);
     }
+  };
+
+  const confirmRemoveDeployment = (record) => {
+    const flowDeck = isFlowDeckTestDeploymentName(record.name);
+    Modal.confirm({
+      title: 'Remove this deployment from the platform?',
+      width: 480,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ marginBottom: 8 }}>
+            <strong>Stop Airflow</strong> only shuts down running containers. The deployment stays in this list and you
+            can start it again.
+          </p>
+          <p style={{ marginBottom: flowDeck ? 8 : 0 }}>
+            <strong>Remove</strong> deletes the deployment record and local workspace files. This cannot be undone.
+          </p>
+          {flowDeck && (
+            <p style={{ marginBottom: 0, color: 'rgba(0,0,0,0.65)' }}>
+              This row is the {BRAND.name} test environment for your tenant. The IDE can create it again the next time you
+              use <strong>Sync → Test environment</strong>.
+            </p>
+          )}
+        </div>
+      ),
+      okText: 'Remove',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: () => handleDeleteDeployment(record.deploymentId),
+    });
   };
 
   const handleStartLocalStack = async (deploymentId) => {
     try {
       setLocalStackBusyId(deploymentId);
       await deploymentAPI.startLocalStack(deploymentId);
-      message.success('Docker stack is starting. This may take a few minutes.');
+      message.success('Stack is starting. This may take a few minutes.');
       fetchDeployments();
     } catch (error) {
-      const msg = getApiErrorMessage(error, 'Failed to start Docker stack');
+      const msg = getApiErrorMessage(error, 'Failed to start stack');
       if (msg) message.error(msg);
       console.error(error);
     } finally {
@@ -190,10 +242,10 @@ const Deployments = () => {
     try {
       setLocalStackBusyId(deploymentId);
       await deploymentAPI.stopLocalStack(deploymentId);
-      message.success('Docker stack stopped.');
+      message.success('Stack stopped.');
       fetchDeployments();
     } catch (error) {
-      const msg = getApiErrorMessage(error, 'Failed to stop Docker stack');
+      const msg = getApiErrorMessage(error, 'Failed to stop stack');
       if (msg) message.error(msg);
       console.error(error);
     } finally {
@@ -214,108 +266,195 @@ const Deployments = () => {
     return colors[status] || 'default';
   };
 
+  const copyDeploymentId = (id) => {
+    if (!id || typeof navigator?.clipboard?.writeText !== 'function') return;
+    navigator.clipboard.writeText(id).then(
+      () => message.success('Deployment ID copied'),
+      () => message.error('Could not copy')
+    );
+  };
+
+  const tenantColumn = {
+    title: 'Tenant',
+    dataIndex: 'tenantId',
+    key: 'tenantId',
+    width: 120,
+    ellipsis: true,
+  };
+
+  const deploymentColumn = {
+    title: 'Deployment',
+    key: 'deployment',
+    width: 240,
+    fixed: 'left',
+    render: (_, record) => {
+      const id = record.deploymentId;
+      return (
+        <div className="deployments-deployment-cell deployments-deployment-cell--id-only">
+          <Tooltip title={id}>
+            <span className="deployments-deployment-id-wrap">
+              <code className="deployments-deployment-id-code">{id}</code>
+            </span>
+          </Tooltip>
+          <Tooltip title="Copy deployment ID">
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => copyDeploymentId(id)}
+              aria-label="Copy deployment ID"
+            />
+          </Tooltip>
+        </div>
+      );
+    },
+  };
+
+  const tagColumn = {
+    title: 'Tag',
+    key: 'tag',
+    width: 118,
+    align: 'center',
+    render: (_, record) =>
+      isFlowDeckTestDeploymentName(record.name) ? (
+        <Tag icon={<ExperimentOutlined />} color="processing" style={{ margin: 0 }}>
+          Test env
+        </Tag>
+      ) : (
+        <span className="deployments-tag-empty">—</span>
+      ),
+  };
+
+  const actionsColumn = {
+    title: 'Actions',
+    key: 'actions',
+    width: 200,
+    fixed: 'right',
+    align: 'right',
+    render: (_, record) => (
+      <div className="deployments-row-actions">
+        {deploymentProvider === 'local' &&
+          (record.status === 'STOPPED' || record.status === 'FAILED') && (
+            <Tooltip title="Start Airflow (containers only; row stays)">
+              <Button
+                type="text"
+                size="small"
+                icon={<PlayCircleOutlined />}
+                loading={localStackBusyId === record.deploymentId}
+                onClick={() => handleStartLocalStack(record.deploymentId)}
+                aria-label="Start Airflow"
+              />
+            </Tooltip>
+          )}
+        {deploymentProvider === 'local' && record.status === 'RUNNING' && (
+          <Tooltip title="Stop Airflow (containers only)">
+            <Button
+              type="text"
+              size="small"
+              icon={<PauseCircleOutlined />}
+              loading={localStackBusyId === record.deploymentId}
+              onClick={() => handleStopLocalStack(record.deploymentId)}
+              aria-label="Stop Airflow"
+            />
+          </Tooltip>
+        )}
+        {record.webserverUrl && (
+          <Tooltip title="Open Airflow UI">
+            <Button
+              type="text"
+              size="small"
+              icon={<LinkOutlined />}
+              loading={openingAirflowDeploymentId === record.deploymentId}
+              onClick={() => handleOpenAirflow(record.deploymentId)}
+              aria-label="Open Airflow"
+            />
+          </Tooltip>
+        )}
+        <Tooltip title="Deployed projects">
+          <Button
+            type="text"
+            size="small"
+            icon={<FolderOpenOutlined />}
+            onClick={() => navigate(`/deployed-projects?deploymentId=${record.deploymentId}`)}
+            aria-label="Deployed projects"
+          />
+        </Tooltip>
+        <Dropdown
+          trigger={['click']}
+          placement="bottomRight"
+          menu={{
+            items: [
+              {
+                key: 'remove',
+                danger: true,
+                icon: <DeleteOutlined />,
+                label: 'Remove from platform…',
+              },
+            ],
+            onClick: ({ key, domEvent }) => {
+              domEvent?.stopPropagation();
+              if (key === 'remove') {
+                confirmRemoveDeployment(record);
+              }
+            },
+          }}
+        >
+          <Tooltip title="More">
+            <Button
+              type="text"
+              size="small"
+              icon={<MoreOutlined />}
+              aria-label="More actions"
+            />
+          </Tooltip>
+        </Dropdown>
+      </div>
+    ),
+  };
+
   const columns = [
+    deploymentColumn,
+    tagColumn,
+    ...(isAdmin ? [tenantColumn] : []),
     {
-      title: 'Deployment ID',
-      dataIndex: 'deploymentId',
-      key: 'deploymentId',
-    },
-    {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: 'Tenant ID',
-      dataIndex: 'tenantId',
-      key: 'tenantId',
-    },
-    {
-      title: 'Airflow Version',
+      title: 'Version',
       dataIndex: 'airflowVersion',
       key: 'airflowVersion',
+      width: 96,
+      ellipsis: true,
     },
     {
       title: 'Executor',
       dataIndex: 'executorType',
       key: 'executorType',
+      width: 88,
+      ellipsis: true,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      width: 108,
       render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag>,
     },
     {
       title: 'Workers',
       key: 'workers',
-      render: (_, record) => `${record.minWorkers} - ${record.maxWorkers}`,
+      width: 84,
+      render: (_, record) => `${record.minWorkers}–${record.maxWorkers}`,
     },
     {
-      title: 'Created At',
+      title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
+      width: 132,
       render: (date) => dayjs(date).format('YYYY-MM-DD HH:mm'),
     },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_, record) => (
-        <Space wrap>
-          {deploymentProvider === 'local' &&
-            (record.status === 'STOPPED' || record.status === 'FAILED') && (
-              <Button
-                type="link"
-                icon={<PlayCircleOutlined />}
-                loading={localStackBusyId === record.deploymentId}
-                onClick={() => handleStartLocalStack(record.deploymentId)}
-              >
-                Start Docker
-              </Button>
-            )}
-          {deploymentProvider === 'local' && record.status === 'RUNNING' && (
-            <Button
-              type="link"
-              icon={<PauseCircleOutlined />}
-              loading={localStackBusyId === record.deploymentId}
-              onClick={() => handleStopLocalStack(record.deploymentId)}
-            >
-              Stop Docker
-            </Button>
-          )}
-          {record.webserverUrl && (
-            <Button
-              type="link"
-              icon={<LinkOutlined />}
-              loading={openingAirflowDeploymentId === record.deploymentId}
-              onClick={() => handleOpenAirflow(record.deploymentId)}
-            >
-              Open Airflow
-            </Button>
-          )}
-          <Button
-            type="link"
-            onClick={() => navigate(`/deployed-projects?deploymentId=${record.deploymentId}`)}
-          >
-            Deployed projects
-          </Button>
-          <Popconfirm
-            title="Are you sure you want to delete this deployment?"
-            onConfirm={() => handleDeleteDeployment(record.deploymentId)}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
+    actionsColumn,
   ];
 
   return (
-    <div>
+    <div className="deployments-page">
       <PageHeader
         title="Deployments"
         description="Airflow environments in your tenant (or all tenants as admin). Create a deployment before linking and syncing projects."
@@ -341,10 +480,13 @@ const Deployments = () => {
       />
 
       <Table
+        className="deployments-table"
         columns={columns}
         dataSource={deployments}
         loading={loading}
         rowKey="id"
+        scroll={{ x: 1240 }}
+        tableLayout="fixed"
         locale={{
           emptyText: (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No deployments yet">

@@ -53,6 +53,9 @@ export async function openAirflowHandoffInNewTab(getHandoffId) {
   }
 }
 
+/** Long-running control-plane calls (local Docker build/up, full project deploy). */
+const LONG_REQUEST_MS = 1_800_000; // 30 minutes
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -119,12 +122,13 @@ export const deploymentAPI = {
   delete: (deploymentId) => api.delete(`/deployments/${deploymentId}`),
   /** Single-use browser handoff for Airflow 3 FAB UI login (uses signed-in session; no body). */
   airflowUiHandoff: (deploymentId) => api.post(`/deployments/${deploymentId}/airflow-ui-handoff`),
-  /** Local provider only: start Docker Compose Airflow (test cluster). Pass projectId to use that project's Dockerfile/requirements first. */
+  /** Local provider only: start the deployment’s local runtime (test stack). Optional projectId to materialize that project first. */
   startLocalStack: (deploymentId, projectId) =>
     api.post(`/deployments/${deploymentId}/local-stack/start`, null, {
       params: projectId ? { projectId } : {},
+      timeout: LONG_REQUEST_MS,
     }),
-  /** Local provider only: stop Docker Compose Airflow. */
+  /** Local provider only: stop the deployment’s local runtime. */
   stopLocalStack: (deploymentId) => api.post(`/deployments/${deploymentId}/local-stack/stop`),
 };
 
@@ -149,7 +153,10 @@ export const projectAPI = {
   unlinkDeployment: (projectId, deploymentId) =>
     api.delete(`/projects/${projectId}/deployments/${deploymentId}`),
   deploy: (projectId, deploymentId) =>
-    api.post(`/projects/${projectId}/deploy`, null, { params: { deploymentId } }),
+    api.post(`/projects/${projectId}/deploy`, null, {
+      params: { deploymentId },
+      timeout: LONG_REQUEST_MS,
+    }),
   trigger: (projectId, deploymentId, fileName) =>
     api.post(`/projects/${projectId}/trigger`, null, {
       params: fileName ? { deploymentId, fileName } : { deploymentId },
@@ -157,6 +164,11 @@ export const projectAPI = {
   getFiles: (projectId) => api.get(`/projects/${projectId}/files`),
   addFile: (projectId, data) => api.post(`/projects/${projectId}/files`, data),
   updateFile: (projectId, fileId, data) => api.put(`/projects/${projectId}/files/${fileId}`, data),
+  /** Local provider: ensure shared tenant test deployment, materialize project build, start runtime, deploy project. */
+  startLocalTest: (projectId) =>
+    api.post(`/projects/${projectId}/local-test/start`, null, { timeout: LONG_REQUEST_MS }),
+  /** Local provider: stop shared tenant test stack. */
+  stopLocalTest: (projectId) => api.post(`/projects/${projectId}/local-test/stop`),
 };
 
 export default api;
