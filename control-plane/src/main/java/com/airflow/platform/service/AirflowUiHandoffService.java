@@ -41,6 +41,7 @@ public class AirflowUiHandoffService {
             <body>
             <p id="m">Signing you in to Airflow…</p>
             <script>
+            try { if (window.opener) { window.opener = null; } } catch (e) {}
             const cfg = HANDOFF_JSON;
             (async () => {
               const m = document.getElementById('m');
