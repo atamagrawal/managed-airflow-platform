@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Layout, Menu } from 'antd';
 import {
   DashboardOutlined,
@@ -8,6 +8,9 @@ import {
   CodeOutlined,
   FolderOpenOutlined,
   RocketOutlined,
+  ExperimentOutlined,
+  LinkOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +24,13 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAdmin } = useAuth();
+  const [menuOpenKeys, setMenuOpenKeys] = useState([]);
+
+  useEffect(() => {
+    if (location.pathname.startsWith('/environment')) {
+      setMenuOpenKeys((prev) => (prev.includes('environment') ? prev : [...prev, 'environment']));
+    }
+  }, [location.pathname]);
 
   const menuItems = useMemo(() => {
     const items = [
@@ -50,20 +60,37 @@ const Sidebar = () => {
         icon: <CloudServerOutlined />,
         label: 'Deployments',
       },
-    {
-      key: '/dags',
-      icon: <CodeOutlined />,
-      label: 'DAGs',
-    },
-    {
-      key: '/projects',
-      icon: <FolderOpenOutlined />,
-      label: 'Project browser',
-    },
+      {
+        key: '/dags',
+        icon: <CodeOutlined />,
+        label: 'DAGs',
+      },
+      {
+        key: '/projects',
+        icon: <FolderOpenOutlined />,
+        label: 'Project browser',
+      },
       {
         key: '/deployed-projects',
         icon: <RocketOutlined />,
         label: 'Deployed projects',
+      },
+      {
+        key: 'environment',
+        icon: <ExperimentOutlined />,
+        label: 'Environment manager',
+        children: [
+          {
+            key: '/environment/connections',
+            icon: <LinkOutlined />,
+            label: 'Connections',
+          },
+          {
+            key: '/environment/variables',
+            icon: <DatabaseOutlined />,
+            label: 'Variables',
+          },
+        ],
       }
     );
     return items;
@@ -79,6 +106,10 @@ const Sidebar = () => {
     if (path.startsWith('/deployed-projects')) return '/deployed-projects';
     if (path.startsWith('/dags')) return '/dags';
     if (path.startsWith('/projects')) return '/projects';
+    if (path.startsWith('/environment/variables')) return '/environment/variables';
+    if (path.startsWith('/environment/connections') || path === '/environment') {
+      return '/environment/connections';
+    }
     if (path.startsWith('/deployments')) return '/deployments';
     if (path.startsWith('/tenants')) return '/tenants';
     if (path.startsWith('/users')) return '/users';
@@ -101,6 +132,8 @@ const Sidebar = () => {
       <Menu
         theme="dark"
         selectedKeys={[getSelectedKey()]}
+        openKeys={menuOpenKeys}
+        onOpenChange={setMenuOpenKeys}
         mode="inline"
         items={menuItems}
         onClick={handleMenuClick}

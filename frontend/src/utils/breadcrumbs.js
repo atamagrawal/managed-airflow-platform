@@ -55,5 +55,19 @@ export function getBreadcrumbItems(pathname) {
   if (p === '/deployed-projects') {
     return [home, { title: 'Deployed projects' }];
   }
+  if (p === '/environment' || p === '/environment/connections') {
+    return [
+      home,
+      { title: 'Environment manager' },
+      { title: 'Connections' },
+    ];
+  }
+  if (p === '/environment/variables') {
+    return [
+      home,
+      { title: 'Environment manager' },
+      { title: 'Variables' },
+    ];
+  }
   return [home, { title: 'Page' }];
 }
