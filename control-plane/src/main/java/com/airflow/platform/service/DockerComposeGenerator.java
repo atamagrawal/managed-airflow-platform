@@ -183,13 +183,8 @@ public class DockerComposeGenerator {
         compose.append("      retries: 5\n");
         compose.append("      start_period: 30s\n");
         compose.append("    restart: always\n");
+        compose.append("    # Only init (init already waits for postgres[/redis]). Lets Compose start apiserver + scheduler + dag-processor in parallel after migrate.\n");
         compose.append("    depends_on:\n");
-        compose.append("      postgres:\n");
-        compose.append("        condition: service_healthy\n");
-        if (needsRedis) {
-            compose.append("      redis:\n");
-            compose.append("        condition: service_healthy\n");
-        }
         compose.append("      airflow-init:\n");
         compose.append("        condition: service_completed_successfully\n\n");
 
@@ -204,12 +199,6 @@ public class DockerComposeGenerator {
         compose.append("      start_period: 30s\n");
         compose.append("    restart: always\n");
         compose.append("    depends_on:\n");
-        compose.append("      postgres:\n");
-        compose.append("        condition: service_healthy\n");
-        if (needsRedis) {
-            compose.append("      redis:\n");
-            compose.append("        condition: service_healthy\n");
-        }
         compose.append("      airflow-init:\n");
         compose.append("        condition: service_completed_successfully\n\n");
 
@@ -230,12 +219,6 @@ public class DockerComposeGenerator {
         compose.append("      start_period: 30s\n");
         compose.append("    restart: always\n");
         compose.append("    depends_on:\n");
-        compose.append("      postgres:\n");
-        compose.append("        condition: service_healthy\n");
-        if (needsRedis) {
-            compose.append("      redis:\n");
-            compose.append("        condition: service_healthy\n");
-        }
         compose.append("      airflow-init:\n");
         compose.append("        condition: service_completed_successfully\n\n");
 
@@ -257,10 +240,6 @@ public class DockerComposeGenerator {
             compose.append("      DUMB_INIT_SETSID: \"0\"\n");
             compose.append("    restart: always\n");
             compose.append("    depends_on:\n");
-            compose.append("      postgres:\n");
-            compose.append("        condition: service_healthy\n");
-            compose.append("      redis:\n");
-            compose.append("        condition: service_healthy\n");
             compose.append("      airflow-init:\n");
             compose.append("        condition: service_completed_successfully\n");
             compose.append("      airflow-apiserver:\n");
@@ -280,10 +259,6 @@ public class DockerComposeGenerator {
             compose.append("      start_period: 30s\n");
             compose.append("    restart: always\n");
             compose.append("    depends_on:\n");
-            compose.append("      postgres:\n");
-            compose.append("        condition: service_healthy\n");
-            compose.append("      redis:\n");
-            compose.append("        condition: service_healthy\n");
             compose.append("      airflow-init:\n");
             compose.append("        condition: service_completed_successfully\n\n");
         }
