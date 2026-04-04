@@ -36,6 +36,18 @@ public final class SecurityUtils {
     /**
      * Ensures the given tenant id is visible to the current user (admin: any; user: must match JWT scope).
      */
+    /**
+     * Platform username from the JWT (principal name).
+     */
+    public static Optional<String> getCurrentUsername() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return Optional.empty();
+        }
+        String name = auth.getName();
+        return name != null && !name.isBlank() ? Optional.of(name) : Optional.empty();
+    }
+
     public static void assertTenantInScope(String tenantId) {
         if (isAdmin()) {
             return;

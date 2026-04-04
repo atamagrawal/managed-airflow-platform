@@ -248,6 +248,10 @@ deployment:
   compose:
       # Data contracts (AIP-07) are not in upstream Airflow; this image bundles the custom provider.
       airflow-image: atamagrawal/airflow:aip07-data-contracts-3.1.8
+      # Optional: space-separated origins for Airflow API CORS plus handoff. Defaults include loopback on 3000/8080.
+      # FAB /auth/token uses a separate FastAPI app; generated config/airflow_local_settings.py patches CORS there
+      # (and allows any loopback port via regex). After changing origins, regenerate compose and restart apiserver.
+      # airflow-cors-allow-origins: "http://myhost:8080"
   # Optional: override the Airflow image in generated docker-compose (scheduler, api-server, workers, …)
   # and the FROM line in the default Dockerfile for newly created projects (when the user does not supply one).
   # If omitted, the image is apache/airflow:{airflowVersion} from the deployment (e.g. apache/airflow:3.1.8).
@@ -263,6 +267,9 @@ deployment:
 local:
   base-directory: ${user.home}/airflow-deployments
   docker-compose-timeout: 300
+  # When config/airflow_local_settings.py changes (template/handoff fix), restart a running airflow-apiserver so Python reloads it.
+  airflow-handoff:
+    restart-apiserver-on-settings-change: true
 
 # Local bootstrap defaults
 bootstrap:

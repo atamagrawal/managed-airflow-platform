@@ -21,6 +21,7 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,6 +54,9 @@ public class LocalDeploymentProvider implements DeploymentProvider {
     @Value("${local.docker-compose-timeout:300}")
     private int timeout;
 
+    @Value("${local.airflow-handoff.restart-apiserver-on-settings-change:true}")
+    private boolean restartApiserverOnLocalSettingsChange;
+
     @Override
     public void deploy(AirflowDeployment deployment) {
         log.info("Deploying Airflow locally: {}", deployment.getDeploymentId());
@@ -70,6 +74,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             String dockerCompose = composeGenerator.generateDockerCompose(deployment);
             Path composePath = deploymentPath.resolve("docker-compose.yml");
             Files.writeString(composePath, dockerCompose);
+            persistAirflowLocalSettingsPy(deploymentPath);
 
             log.info("Docker Compose file generated: {}", composePath);
 
@@ -100,6 +105,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             String dockerCompose = composeGenerator.generateDockerCompose(deployment);
             Path composePath = deploymentPath.resolve("docker-compose.yml");
             Files.writeString(composePath, dockerCompose);
+            persistAirflowLocalSettingsPy(deploymentPath);
 
             // Stop and remove existing containers
             executeDockerCompose(deploymentDir, "down");
@@ -141,6 +147,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             if (composeChanged) {
                 Files.writeString(composePath, newCompose, StandardCharsets.UTF_8);
             }
+            boolean handoffSettingsChanged = persistAirflowLocalSettingsPy(deploymentPath);
 
             Path stampPath = deploymentPath.resolve(BUILD_INPUTS_STAMP);
             BuildInputsSnapshot current = BuildInputsSnapshot.capture(deployment, deploymentPath);
@@ -186,10 +193,86 @@ public class LocalDeploymentProvider implements DeploymentProvider {
                         + "(bind-mounted DAGs/plugins are already visible to running containers)",
                         deployment.getDeploymentId());
             }
+            if (handoffSettingsChanged) {
+                restartAirflowApiserverIfRunning(deploymentDir, deployment.getDeploymentId());
+            }
         } catch (Exception e) {
             log.error("Failed to sync local stack after project deploy: {}", deployment.getDeploymentId(), e);
             throw new DeploymentException("Local project sync failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * FAB {@code /auth/token} lives in a mounted sub-app without the main API CORS stack; this file patches CORS at
+     * startup. Regenerated whenever compose is written so control-plane upgrades pick up template fixes.
+     *
+     * @return {@code true} if the file was created or its contents changed (running apiserver should be restarted)
+     */
+    private boolean persistAirflowLocalSettingsPy(Path deploymentPath) {
+        try {
+            Path configDir = deploymentPath.resolve("config");
+            Files.createDirectories(configDir);
+            Path f = configDir.resolve("airflow_local_settings.py");
+            String content = composeGenerator.generateAirflowLocalSettingsPy();
+            if (Files.exists(f)) {
+                String existing = Files.readString(f, StandardCharsets.UTF_8);
+                if (existing.equals(content)) {
+                    return false;
+                }
+            }
+            Files.writeString(f, content, StandardCharsets.UTF_8);
+            return true;
+        } catch (Exception e) {
+            log.warn("Could not write {}/config/airflow_local_settings.py (Open Airflow handoff may fail until fixed): {}",
+                    deploymentPath, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Writes {@code config/airflow_local_settings.py} if this deployment has a compose directory. Use on control-plane
+     * startup so stacks created before the handoff patch (or before a template upgrade) still get the file without a
+     * manual project sync.
+     */
+    public void ensureAirflowHandoffConfig(AirflowDeployment deployment) {
+        try {
+            Path deploymentPath = Paths.get(getDeploymentDirectory(deployment));
+            if (!Files.exists(deploymentPath.resolve("docker-compose.yml"))) {
+                return;
+            }
+            if (persistAirflowLocalSettingsPy(deploymentPath)) {
+                restartAirflowApiserverIfRunning(getDeploymentDirectory(deployment), deployment.getDeploymentId());
+            }
+        } catch (Exception e) {
+            log.warn("Could not ensure airflow_local_settings.py for {}: {}", deployment.getDeploymentId(), e.getMessage());
+        }
+    }
+
+    /**
+     * Loads updated {@code airflow_local_settings.py} into a long-lived apiserver process. Only runs when the service
+     * is already up; skipped when {@code local.airflow-handoff.restart-apiserver-on-settings-change} is false.
+     */
+    private void restartAirflowApiserverIfRunning(String deploymentDir, String deploymentId) {
+        if (!restartApiserverOnLocalSettingsChange) {
+            log.debug("Skipping airflow-apiserver restart after local settings change (local.airflow-handoff.restart-apiserver-on-settings-change=false)");
+            return;
+        }
+        try {
+            if (!isApiserverComposeServiceRunning(deploymentDir)) {
+                return;
+            }
+            log.info("Restarting airflow-apiserver for deployment {} so config/airflow_local_settings.py is loaded",
+                    deploymentId);
+            executeDockerCompose(deploymentDir, "restart", "airflow-apiserver");
+        } catch (Exception e) {
+            log.warn("Could not restart airflow-apiserver for {} after updating airflow_local_settings.py: {}",
+                    deploymentId, e.getMessage());
+        }
+    }
+
+    private boolean isApiserverComposeServiceRunning(String deploymentDir) throws IOException, InterruptedException {
+        String output = executeDockerCompose(deploymentDir, "ps", "--services", "--filter", "status=running");
+        return output != null && output.toLowerCase().contains("apiserver");
     }
 
     /**
@@ -396,7 +479,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             // Check if containers are running
             String output = executeDockerCompose(deploymentDir, "ps", "--services", "--filter", "status=running");
 
-            if (output != null && output.contains("apiserver")) {
+            if (output != null && output.toLowerCase().contains("apiserver")) {
                 return "RUNNING";
             } else if (output != null && !output.trim().isEmpty()) {
                 return "STARTING";
@@ -440,6 +523,99 @@ public class LocalDeploymentProvider implements DeploymentProvider {
     @Override
     public String getProviderType() {
         return "local";
+    }
+
+    /**
+     * Ensures a FAB user exists on this deployment with the same username/password as the platform account.
+     * Safe to call when the stack is running; no-op if compose is missing.
+     * <p>
+     * Does not run {@code airflow users delete} first — each CLI invocation cold-loads Airflow and can take minutes;
+     * {@code users create} plus {@code reset-password} on failure is enough for idempotency.
+     */
+    public void ensureFabUserMatchesPlatform(AirflowDeployment deployment, String username, String plainPassword,
+                                             boolean platformAdmin) {
+        if (username == null || username.isBlank() || plainPassword == null) {
+            return;
+        }
+        String fabRole = platformAdmin ? "Admin" : "User";
+        String deploymentDir = getDeploymentDirectory(deployment);
+        if (!Files.exists(Paths.get(deploymentDir, "docker-compose.yml"))) {
+            log.debug("Skipping FAB user sync for {}: no compose file", deployment.getDeploymentId());
+            return;
+        }
+        try {
+            composeExec(deploymentDir, "airflow-apiserver", false, buildExecArgs(
+                    "airflow", "users", "create",
+                    "-u", username.trim(),
+                    "-f", username.trim(),
+                    "-l", "User",
+                    "-r", fabRole,
+                    "-e", username.trim() + "@managed-airflow.local",
+                    "-p", plainPassword));
+            log.info("Synced platform user '{}' to Airflow FAB on deployment {}", username, deployment.getDeploymentId());
+        } catch (DeploymentException e) {
+            log.info("FAB user create failed for {} on {}, trying reset-password: {}", username,
+                    deployment.getDeploymentId(), e.getMessage());
+            try {
+                composeExec(deploymentDir, "airflow-apiserver", false, buildExecArgs(
+                        "airflow", "users", "reset-password", "-u", username.trim(), "-p", plainPassword));
+                log.info("Reset Airflow FAB password for '{}' on deployment {}", username, deployment.getDeploymentId());
+            } catch (Exception e2) {
+                log.warn("Could not sync user {} to deployment {}: {}", username, deployment.getDeploymentId(),
+                        e2.getMessage());
+            }
+        } catch (Exception e) {
+            log.warn("Could not sync user {} to deployment {}: {}", username, deployment.getDeploymentId(), e.getMessage());
+        }
+    }
+
+    private static String[] buildExecArgs(String... args) {
+        return args;
+    }
+
+    /**
+     * {@code docker compose exec -T <service> <args...>}.
+     *
+     * @param ignoreNonZeroExit when true, a non-zero process exit does not throw (still logged).
+     */
+    public String composeExec(String deploymentDir, String composeService, boolean ignoreNonZeroExit, String... execArgs)
+            throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>(resolveComposeBaseCommand());
+        command.add("exec");
+        command.add("-T");
+        command.add(composeService);
+        command.addAll(Arrays.asList(execArgs));
+
+        log.info("Compose exec in {}: {} {}", deploymentDir, composeService, String.join(" ", execArgs));
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(new File(deploymentDir));
+        pb.redirectErrorStream(true);
+
+        Process process = pb.start();
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                log.debug(line);
+                output.append(line).append("\n");
+            }
+        }
+
+        boolean completed = process.waitFor(timeout, TimeUnit.SECONDS);
+        if (!completed) {
+            process.destroyForcibly();
+            throw new DeploymentException("Docker compose exec timed out after " + timeout + " seconds");
+        }
+        int exitCode = process.exitValue();
+        if (exitCode != 0 && !ignoreNonZeroExit) {
+            throw new DeploymentException("Docker compose exec failed with exit code " + exitCode + ". Output:\n"
+                    + trimOutput(output.toString()));
+        }
+        if (exitCode != 0) {
+            log.debug("Compose exec non-zero exit {} (ignored): {}", exitCode, trimOutput(output.toString()));
+        }
+        return output.toString();
     }
 
     private String getDeploymentDirectory(AirflowDeployment deployment) {

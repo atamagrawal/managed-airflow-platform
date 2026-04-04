@@ -96,6 +96,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static boolean isPublicApiPath(String path) {
         return path.startsWith("/api/v1/auth/login")
+                || path.startsWith("/api/v1/public/airflow-handoff/")
                 || path.startsWith("/swagger-ui")
                 || path.startsWith("/v3/api-docs");
     }

@@ -44,22 +44,16 @@ const ProjectCodeEditor = () => {
   const currentFile = openFiles.find((f) => f.fileId === activeFileId);
   const isCurrentFileModified = modifiedFiles.has(activeFileId);
 
-  useEffect(() => {
-    fetchProject();
-    fetchProjectFiles();
-    fetchDeployments();
-  }, [projectId]);
-
-  const fetchDeployments = async () => {
+  const fetchDeployments = useCallback(async () => {
     try {
       const response = await deploymentAPI.getAll();
       setDeployments(response.data);
     } catch (error) {
       console.error('Error fetching deployments:', error);
     }
-  };
+  }, []);
 
-  const fetchProject = async () => {
+  const fetchProject = useCallback(async () => {
     try {
       const response = await projectAPI.getById(projectId);
       setProject(response.data);
@@ -67,9 +61,9 @@ const ProjectCodeEditor = () => {
       message.error('Failed to fetch project');
       console.error('Error:', error);
     }
-  };
+  }, [projectId]);
 
-  const fetchProjectFiles = async () => {
+  const fetchProjectFiles = useCallback(async () => {
     try {
       const response = await projectAPI.getFiles(projectId);
       const filesData = response.data || [];
@@ -77,15 +71,21 @@ const ProjectCodeEditor = () => {
 
       // Load file contents
       const contents = {};
-      filesData.forEach(file => {
+      filesData.forEach((file) => {
         contents[file.id] = file.content;
       });
-      setFileContents(prev => ({ ...prev, ...contents }));
+      setFileContents((prev) => ({ ...prev, ...contents }));
     } catch (error) {
       message.error('Failed to fetch project files');
       console.error('Error:', error);
     }
-  };
+  }, [projectId]);
+
+  useEffect(() => {
+    fetchProject();
+    fetchProjectFiles();
+    fetchDeployments();
+  }, [fetchProject, fetchProjectFiles, fetchDeployments]);
 
   const handleFileSelect = (file) => {
     const fileId = file.isConfig ? file.fileId : file.id.toString();
@@ -161,6 +161,39 @@ const ProjectCodeEditor = () => {
     }
   };
 
+  const saveConfigFile = useCallback(
+    async (configFile, content) => {
+      const updates = {};
+
+      switch (configFile.configKey) {
+        case 'requirements':
+          updates.requirementsTxt = content;
+          break;
+        case 'packages':
+          updates.packagesTxt = content;
+          break;
+        case 'dockerfile':
+          updates.dockerfile = content;
+          break;
+        case 'settings':
+          updates.airflowSettingsYaml = content;
+          break;
+        case 'ignore':
+          updates.airflowIgnore = content;
+          break;
+        case 'env':
+          updates.envFile = content;
+          break;
+        default:
+          break;
+      }
+
+      await projectAPI.update(projectId, updates);
+      await fetchProject();
+    },
+    [projectId, fetchProject]
+  );
+
   const handleSave = useCallback(async () => {
     if (!activeFileId || !modifiedFiles.has(activeFileId)) {
       message.info('No changes to save');
@@ -169,7 +202,7 @@ const ProjectCodeEditor = () => {
 
     setSaving(true);
     try {
-      const activeFile = openFiles.find(f => f.fileId === activeFileId);
+      const activeFile = openFiles.find((f) => f.fileId === activeFileId);
       const content = fileContents[activeFileId];
 
       if (activeFile.isConfig) {
@@ -183,7 +216,7 @@ const ProjectCodeEditor = () => {
         await fetchProjectFiles();
       }
 
-      setModifiedFiles(prev => {
+      setModifiedFiles((prev) => {
         const newSet = new Set(prev);
         newSet.delete(activeFileId);
         return newSet;
@@ -196,35 +229,7 @@ const ProjectCodeEditor = () => {
     } finally {
       setSaving(false);
     }
-  }, [activeFileId, modifiedFiles, openFiles, fileContents, projectId]);
-
-  const saveConfigFile = async (configFile, content) => {
-    const updates = {};
-
-    switch (configFile.configKey) {
-      case 'requirements':
-        updates.requirementsTxt = content;
-        break;
-      case 'packages':
-        updates.packagesTxt = content;
-        break;
-      case 'dockerfile':
-        updates.dockerfile = content;
-        break;
-      case 'settings':
-        updates.airflowSettingsYaml = content;
-        break;
-      case 'ignore':
-        updates.airflowIgnore = content;
-        break;
-      case 'env':
-        updates.envFile = content;
-        break;
-    }
-
-    await projectAPI.update(projectId, updates);
-    await fetchProject();
-  };
+  }, [activeFileId, modifiedFiles, openFiles, fileContents, projectId, saveConfigFile, fetchProjectFiles]);
 
   const handleFormat = () => {
     if (!activeFileId || !fileContents[activeFileId]) return;

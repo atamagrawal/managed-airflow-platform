@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Space, Tag, Popconfirm, Alert, Empty } from 'antd';
 import { PlusOutlined, DeleteOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { deploymentAPI, tenantAPI } from '../services/api';
+import { deploymentAPI, tenantAPI, navigateToAirflowHandoff } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
 import PageHeader from '../components/PageHeader';
@@ -21,6 +21,8 @@ const Deployments = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [deploymentProvider, setDeploymentProvider] = useState('kubernetes');
   const [form] = Form.useForm();
+  const [openingAirflowDeploymentId, setOpeningAirflowDeploymentId] = useState(null);
+  const openAirflowHandoffLockRef = useRef(false);
 
   useEffect(() => {
     fetchDeployments();
@@ -29,6 +31,18 @@ const Deployments = () => {
       fetchTenants();
     }
   }, [isAdmin]);
+
+  // Local Docker deploy can take minutes; poll while any row is still provisioning so status self-heals from the API.
+  useEffect(() => {
+    const busy = deployments.some((d) => d.status === 'DEPLOYING' || d.status === 'PENDING');
+    if (!busy) {
+      return undefined;
+    }
+    const id = setInterval(() => {
+      fetchDeployments();
+    }, 8000);
+    return () => clearInterval(id);
+  }, [deployments]);
 
   const fetchDeployments = async () => {
     try {
@@ -59,6 +73,22 @@ const Deployments = () => {
       setDeploymentProvider(response.data.provider || 'kubernetes');
     } catch (error) {
       console.error('Error fetching deployment config:', error);
+    }
+  };
+
+  const handleOpenAirflow = async (deploymentId) => {
+    if (openAirflowHandoffLockRef.current) return;
+    openAirflowHandoffLockRef.current = true;
+    try {
+      setOpeningAirflowDeploymentId(deploymentId);
+      const { data } = await deploymentAPI.airflowUiHandoff(deploymentId);
+      navigateToAirflowHandoff(data.handoffId);
+    } catch (error) {
+      openAirflowHandoffLockRef.current = false;
+      const msg = getApiErrorMessage(error, 'Could not open Airflow');
+      if (msg) message.error(msg);
+    } finally {
+      setOpeningAirflowDeploymentId(null);
     }
   };
 
@@ -195,9 +225,10 @@ const Deployments = () => {
             <Button
               type="link"
               icon={<LinkOutlined />}
-              onClick={() => window.open(record.webserverUrl, '_blank')}
+              loading={openingAirflowDeploymentId === record.deploymentId}
+              onClick={() => handleOpenAirflow(record.deploymentId)}
             >
-              Open
+              Open Airflow
             </Button>
           )}
           <Button
