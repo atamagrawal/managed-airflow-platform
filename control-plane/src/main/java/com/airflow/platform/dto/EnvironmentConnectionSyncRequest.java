@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * Syncs one Airflow connection to one or more deployments ({@code syncScope}).
- * {@value #SYNC_SCOPE_SELECTED} matches an Astro-style “link to deployments” workflow.
+ * {@value #SYNC_SCOPE_SELECTED} pushes the connection only to the listed deployments.
  */
 @Data
 public class EnvironmentConnectionSyncRequest {

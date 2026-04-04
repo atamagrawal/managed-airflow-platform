@@ -58,14 +58,14 @@ export function getBreadcrumbItems(pathname) {
   if (p === '/environment' || p === '/environment/connections') {
     return [
       home,
-      { title: 'Environment manager' },
+      { title: 'Environment' },
       { title: 'Connections' },
     ];
   }
   if (p === '/environment/variables') {
     return [
       home,
-      { title: 'Environment manager' },
+      { title: 'Environment' },
       { title: 'Variables' },
     ];
   }
