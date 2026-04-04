@@ -119,6 +119,13 @@ export const deploymentAPI = {
   delete: (deploymentId) => api.delete(`/deployments/${deploymentId}`),
   /** Single-use browser handoff for Airflow 3 FAB UI login (uses signed-in session; no body). */
   airflowUiHandoff: (deploymentId) => api.post(`/deployments/${deploymentId}/airflow-ui-handoff`),
+  /** Local provider only: start Docker Compose Airflow (test cluster). Pass projectId to use that project's Dockerfile/requirements first. */
+  startLocalStack: (deploymentId, projectId) =>
+    api.post(`/deployments/${deploymentId}/local-stack/start`, null, {
+      params: projectId ? { projectId } : {},
+    }),
+  /** Local provider only: stop Docker Compose Airflow. */
+  stopLocalStack: (deploymentId) => api.post(`/deployments/${deploymentId}/local-stack/stop`),
 };
 
 // Deployed DAGs (project DAG files with a successful deploy to a deployment)

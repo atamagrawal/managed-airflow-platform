@@ -11,7 +11,9 @@ import { projectAPI, deploymentAPI } from '../services/api';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../utils/projectDeployments';
 import { pickDeploymentId } from '../utils/pickDeploymentModal';
+import { pickDeploymentForLocalStack } from '../utils/localTestCluster';
 import { getApiErrorMessage } from '../utils/apiError';
+import { BRAND } from '../brand';
 import './CodeEditor.css';
 
 const { Option } = Select;
@@ -38,6 +40,8 @@ const ProjectCodeEditor = () => {
   const [saving, setSaving] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [deploymentProvider, setDeploymentProvider] = useState('kubernetes');
+  const [localStackBusy, setLocalStackBusy] = useState(false);
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFileForm] = Form.useForm();
 
@@ -50,6 +54,15 @@ const ProjectCodeEditor = () => {
       setDeployments(response.data);
     } catch (error) {
       console.error('Error fetching deployments:', error);
+    }
+  }, []);
+
+  const fetchDeploymentConfig = useCallback(async () => {
+    try {
+      const response = await deploymentAPI.getConfig();
+      setDeploymentProvider(response.data?.provider || 'kubernetes');
+    } catch (error) {
+      console.error('Error fetching deployment config:', error);
     }
   }, []);
 
@@ -85,7 +98,18 @@ const ProjectCodeEditor = () => {
     fetchProject();
     fetchProjectFiles();
     fetchDeployments();
-  }, [fetchProject, fetchProjectFiles, fetchDeployments]);
+    fetchDeploymentConfig();
+  }, [fetchProject, fetchProjectFiles, fetchDeployments, fetchDeploymentConfig]);
+
+  useEffect(() => {
+    const title = project?.name
+      ? `${project.name} · ${BRAND.ideName} · ${BRAND.name}`
+      : `${BRAND.ideName} · ${BRAND.name}`;
+    document.title = title;
+    return () => {
+      document.title = BRAND.name;
+    };
+  }, [project?.name]);
 
   const handleFileSelect = (file) => {
     const fileId = file.isConfig ? file.fileId : file.id.toString();
@@ -304,6 +328,60 @@ const ProjectCodeEditor = () => {
     }
   };
 
+  const handleStartTestCluster = async () => {
+    if (!project) return;
+    try {
+      const picked = await pickDeploymentForLocalStack(
+        project,
+        deployments,
+        `Start test cluster — ${project.name}`
+      );
+      if (!picked.ok) {
+        message.warning('No deployment available. Create an Airflow deployment first.');
+        return;
+      }
+      setLocalStackBusy(true);
+      await deploymentAPI.startLocalStack(picked.deploymentId, projectId);
+      message.success(
+        "Test cluster is starting (Docker) using this project's Dockerfile. This may take a few minutes."
+      );
+      await fetchDeployments();
+    } catch (error) {
+      if (error?.message === 'no deployments') return;
+      const msg = getApiErrorMessage(error, 'Failed to start test cluster');
+      if (msg) message.error(msg);
+      console.error(error);
+    } finally {
+      setLocalStackBusy(false);
+    }
+  };
+
+  const handleStopTestCluster = async () => {
+    if (!project) return;
+    try {
+      const picked = await pickDeploymentForLocalStack(
+        project,
+        deployments,
+        `Stop test cluster — ${project.name}`
+      );
+      if (!picked.ok) {
+        message.warning('No deployment available.');
+        return;
+      }
+      setLocalStackBusy(true);
+      await deploymentAPI.stopLocalStack(picked.deploymentId);
+      message.success('Test cluster stopped.');
+      await fetchDeployments();
+    } catch (error) {
+      if (error?.message === 'no deployments') return;
+      const msg = getApiErrorMessage(error, 'Failed to stop test cluster');
+      if (msg) message.error(msg);
+      console.error(error);
+    } finally {
+      setLocalStackBusy(false);
+    }
+  };
+
   const handleTrigger = async () => {
     try {
       const resolved = resolveDeploymentForTrigger(project, deployments);
@@ -459,6 +537,10 @@ schema_compatibility: BACKWARD
         saving={saving}
         deploying={deploying}
         triggering={triggering}
+        deploymentProvider={deploymentProvider}
+        localStackBusy={localStackBusy}
+        onStartTestCluster={handleStartTestCluster}
+        onStopTestCluster={handleStopTestCluster}
       />
 
       <div className="code-editor-content">

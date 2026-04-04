@@ -27,7 +27,7 @@ const { Content } = Layout;
 
 function AppLayout() {
   const location = useLocation();
-  const isProjectEditor =
+  const isFlowDeckIde =
     location.pathname.includes('/projects/') && location.pathname.includes('/editor');
 
   return (
@@ -36,9 +36,9 @@ function AppLayout() {
       <Layout style={{ background: '#f0f2f5' }}>
         <Header />
         <Content
-          className={isProjectEditor ? undefined : 'app-main-content'}
+          className={isFlowDeckIde ? undefined : 'app-main-content'}
           style={
-            isProjectEditor
+            isFlowDeckIde
               ? { padding: 0, background: '#fff' }
               : {
                   margin: '20px 16px 32px',

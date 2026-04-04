@@ -16,7 +16,10 @@ import {
   SettingOutlined,
   FileAddOutlined,
   ArrowLeftOutlined,
+  MoreOutlined,
+  PauseCircleOutlined,
 } from '@ant-design/icons';
+import { BRAND } from '../../brand';
 import './ProjectToolbar.css';
 
 const { Text } = Typography;
@@ -38,6 +41,10 @@ const ProjectToolbar = ({
   saving,
   deploying,
   triggering,
+  deploymentProvider,
+  localStackBusy,
+  onStartTestCluster,
+  onStopTestCluster,
 }) => {
   const settingsMenuItems = [
     {
@@ -112,15 +119,16 @@ const ProjectToolbar = ({
   ];
 
   return (
-    <div className="project-editor-toolbar">
+    <div className="flow-deck-ide-toolbar">
       <div className="toolbar-section">
         <Button
           icon={<ArrowLeftOutlined />}
           onClick={onBack}
           size="small"
           type="text"
+          title={`Back to ${BRAND.navProjects}`}
         >
-          Back
+          {BRAND.navProjects}
         </Button>
         <Button
           icon={<FileAddOutlined />}
@@ -152,10 +160,18 @@ const ProjectToolbar = ({
       </div>
 
       <div className="toolbar-section toolbar-center">
+        <Text type="secondary" style={{ fontSize: 11, letterSpacing: '0.02em' }}>
+          {BRAND.ideName}
+        </Text>
         {currentFile && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {currentFile.name || currentFile.fileName}
-          </Text>
+          <>
+            <Text type="secondary" style={{ fontSize: 11, margin: '0 6px' }}>
+              ·
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {currentFile.name || currentFile.fileName}
+            </Text>
+          </>
         )}
       </div>
 
@@ -180,6 +196,38 @@ const ProjectToolbar = ({
           >
             Trigger
           </Button>
+        )}
+        {deploymentProvider === 'local' && (
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'start-test',
+                  label: 'Start test cluster (Docker)',
+                  icon: <PlayCircleOutlined />,
+                  disabled: localStackBusy,
+                  onClick: () => onStartTestCluster?.(),
+                },
+                {
+                  key: 'stop-test',
+                  label: 'Stop test cluster',
+                  icon: <PauseCircleOutlined />,
+                  disabled: localStackBusy,
+                  onClick: () => onStopTestCluster?.(),
+                },
+              ],
+            }}
+            trigger={['click']}
+            placement="bottomRight"
+          >
+            <Button
+              type="text"
+              icon={<MoreOutlined style={{ fontSize: 16 }} />}
+              size="small"
+              aria-label="Local test cluster"
+              title="Start or stop local Docker test cluster"
+            />
+          </Dropdown>
         )}
         <Button
           icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}

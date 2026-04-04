@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Space, Tag, Popconfirm, Alert, Empty } from 'antd';
-import { PlusOutlined, DeleteOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  LinkOutlined,
+  ReloadOutlined,
+  PlayCircleOutlined,
+  PauseCircleOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { deploymentAPI, tenantAPI, openAirflowHandoffInNewTab } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +29,7 @@ const Deployments = () => {
   const [deploymentProvider, setDeploymentProvider] = useState('kubernetes');
   const [form] = Form.useForm();
   const [openingAirflowDeploymentId, setOpeningAirflowDeploymentId] = useState(null);
+  const [localStackBusyId, setLocalStackBusyId] = useState(null);
   const openAirflowHandoffLockRef = useRef(false);
 
   useEffect(() => {
@@ -163,6 +171,36 @@ const Deployments = () => {
     }
   };
 
+  const handleStartLocalStack = async (deploymentId) => {
+    try {
+      setLocalStackBusyId(deploymentId);
+      await deploymentAPI.startLocalStack(deploymentId);
+      message.success('Docker stack is starting. This may take a few minutes.');
+      fetchDeployments();
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Failed to start Docker stack');
+      if (msg) message.error(msg);
+      console.error(error);
+    } finally {
+      setLocalStackBusyId(null);
+    }
+  };
+
+  const handleStopLocalStack = async (deploymentId) => {
+    try {
+      setLocalStackBusyId(deploymentId);
+      await deploymentAPI.stopLocalStack(deploymentId);
+      message.success('Docker stack stopped.');
+      fetchDeployments();
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Failed to stop Docker stack');
+      if (msg) message.error(msg);
+      console.error(error);
+    } finally {
+      setLocalStackBusyId(null);
+    }
+  };
+
   const getStatusColor = (status) => {
     const colors = {
       RUNNING: 'green',
@@ -223,7 +261,28 @@ const Deployments = () => {
       title: 'Actions',
       key: 'actions',
       render: (_, record) => (
-        <Space>
+        <Space wrap>
+          {deploymentProvider === 'local' &&
+            (record.status === 'STOPPED' || record.status === 'FAILED') && (
+              <Button
+                type="link"
+                icon={<PlayCircleOutlined />}
+                loading={localStackBusyId === record.deploymentId}
+                onClick={() => handleStartLocalStack(record.deploymentId)}
+              >
+                Start Docker
+              </Button>
+            )}
+          {deploymentProvider === 'local' && record.status === 'RUNNING' && (
+            <Button
+              type="link"
+              icon={<PauseCircleOutlined />}
+              loading={localStackBusyId === record.deploymentId}
+              onClick={() => handleStopLocalStack(record.deploymentId)}
+            >
+              Stop Docker
+            </Button>
+          )}
           {record.webserverUrl && (
             <Button
               type="link"

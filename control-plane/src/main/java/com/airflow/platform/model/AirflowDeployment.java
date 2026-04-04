@@ -97,6 +97,9 @@ public class AirflowDeployment {
 
     private LocalDateTime deployedAt;
 
+    /** Last user activity for local Docker stacks (deploy, trigger, open Airflow UI, start). Used for idle auto-stop. */
+    private LocalDateTime localStackLastActivityAt;
+
     public enum ExecutorType {
         LOCAL,
         CELERY,

@@ -239,7 +239,10 @@ const Dashboard = () => {
           message="Get started"
           description={
             <Space direction="vertical" size="small">
-              <span>Create an Airflow deployment, then add projects and deploy them from the project browser.</span>
+              <span>
+                Create an Airflow deployment, then add projects and deploy them from {BRAND.navProjects}. Open any project
+                in {BRAND.ideName} to edit DAGs and config.
+              </span>
               <Button type="primary" onClick={() => navigate('/deployments')}>
                 Go to deployments
               </Button>
@@ -253,7 +256,7 @@ const Dashboard = () => {
           <Card size="small" title="Quick links">
             <Space wrap>
               <Button type="link" onClick={() => navigate('/projects')}>
-                Project browser
+                {BRAND.navProjects}
               </Button>
               <Button type="link" onClick={() => navigate('/deployed-projects')}>
                 Deployed projects

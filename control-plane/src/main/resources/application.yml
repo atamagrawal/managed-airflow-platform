@@ -267,6 +267,12 @@ deployment:
 local:
   base-directory: ${user.home}/airflow-deployments
   docker-compose-timeout: 300
+  # When false, new deployments only write compose files; use Start test cluster (API/UI) to run Docker.
+  auto-start-docker-on-create: false
+  # Stop local Docker after this many minutes without deploy/trigger/Open Airflow (0 = disable auto-stop).
+  test-cluster-idle-timeout-minutes: 60
+  idle-stop:
+    check-interval-ms: 60000
   # When config/airflow_local_settings.py changes (template/handoff fix), restart a running airflow-apiserver so Python reloads it.
   airflow-handoff:
     restart-apiserver-on-settings-change: true

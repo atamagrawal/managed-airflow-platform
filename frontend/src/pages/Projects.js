@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Table, Button, Space, Tag, Popconfirm, message, Input, Modal, Empty } from 'antd';
+import { Table, Button, Space, Tag, message, Input, Modal, Empty, Dropdown } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -8,8 +8,8 @@ import {
   PlayCircleOutlined,
   EyeOutlined,
   FolderOpenOutlined,
-  CodeOutlined,
   ReloadOutlined,
+  MoreOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { projectAPI, deploymentAPI } from '../services/api';
@@ -20,6 +20,7 @@ import { pickDeploymentId } from '../utils/pickDeploymentModal';
 import { getApiErrorMessage } from '../utils/apiError';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
+import { BRAND } from '../brand';
 import dayjs from 'dayjs';
 
 const { Search } = Input;
@@ -237,66 +238,63 @@ const Projects = () => {
       title: 'Actions',
       key: 'actions',
       fixed: 'right',
-      width: 320,
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="primary"
-            icon={<CodeOutlined />}
-            onClick={() => navigate(`/projects/${record.projectId}/editor`)}
-            size="small"
-          >
-            Project Editor
-          </Button>
-          <Button
-            type="link"
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/projects/${record.projectId}`)}
-            size="small"
-          >
-            View
-          </Button>
-          <Button
-            type="link"
-            icon={<EditOutlined />}
-            onClick={() => showEditModal(record)}
-            size="small"
-          >
-            Edit
-          </Button>
-          <Button
-            type="link"
-            icon={<RocketOutlined />}
-            onClick={() => handleDeployProject(record.projectId, record.name, record)}
-            disabled={record.status === 'DEPLOYING'}
-            size="small"
-          >
-            Deploy
-          </Button>
-          {record.linkedDeploymentIds?.length > 0 && (
-            <Button
-              type="link"
-              icon={<PlayCircleOutlined />}
-              onClick={() => handleTriggerProject(record.projectId, record.name, record)}
-              loading={triggeringProjectId === record.projectId}
-              size="small"
-              style={{ color: '#52c41a' }}
-            >
-              Trigger
-            </Button>
-          )}
-          <Popconfirm
-            title="Are you sure you want to delete this project?"
-            onConfirm={() => handleDeleteProject(record.projectId)}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button type="link" danger icon={<DeleteOutlined />} size="small">
-              Delete
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+      width: 72,
+      align: 'center',
+      render: (_, record) => {
+        const items = [
+          {
+            key: 'view',
+            label: 'View details',
+            icon: <EyeOutlined />,
+            onClick: () => navigate(`/projects/${record.projectId}`),
+          },
+          {
+            key: 'edit',
+            label: 'Edit',
+            icon: <EditOutlined />,
+            onClick: () => showEditModal(record),
+          },
+          {
+            key: 'deploy',
+            label: 'Deploy to environment',
+            icon: <RocketOutlined />,
+            disabled: record.status === 'DEPLOYING',
+            onClick: () => handleDeployProject(record.projectId, record.name, record),
+          },
+        ];
+        if (record.linkedDeploymentIds?.length > 0) {
+          items.push({
+            key: 'trigger',
+            label: 'Trigger DAGs',
+            icon: <PlayCircleOutlined />,
+            disabled: triggeringProjectId === record.projectId,
+            onClick: () => handleTriggerProject(record.projectId, record.name, record),
+          });
+        }
+        items.push({ type: 'divider' });
+        items.push({
+          key: 'delete',
+          label: 'Delete project',
+          icon: <DeleteOutlined />,
+          danger: true,
+          onClick: () => {
+            Modal.confirm({
+              title: 'Delete this project?',
+              okText: 'Delete',
+              okType: 'danger',
+              cancelText: 'Cancel',
+              onOk: () => handleDeleteProject(record.projectId),
+            });
+          },
+        });
+        return (
+          <span onClick={(e) => e.stopPropagation()} role="presentation">
+            <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+              <Button type="text" icon={<MoreOutlined style={{ fontSize: 18 }} />} aria-label="More actions" />
+            </Dropdown>
+          </span>
+        );
+      },
     },
   ];
 
@@ -306,12 +304,12 @@ const Projects = () => {
         title={
           <span>
             <FolderOpenOutlined style={{ marginRight: 10 }} />
-            Project browser
+            {BRAND.navProjects}
           </span>
         }
         description={
           <span>
-            Search and manage projects. Pick a deployment when you deploy. See{' '}
+            Click a row to open the project in {BRAND.ideName}. Use the ⋯ menu for metadata, deploy, and more. See{' '}
             <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => navigate('/deployed-projects')}>
               deployed projects
             </Button>{' '}
@@ -346,6 +344,10 @@ const Projects = () => {
         rowKey={(r) => r.id ?? r.projectId}
         loading={loading}
         scroll={{ x: 1400 }}
+        onRow={(record) => ({
+          onClick: () => navigate(`/projects/${record.projectId}/editor`),
+          style: { cursor: 'pointer' },
+        })}
         locale={{
           emptyText: (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No projects match your search (or none exist yet).">

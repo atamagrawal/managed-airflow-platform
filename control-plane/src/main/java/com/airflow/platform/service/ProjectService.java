@@ -73,6 +73,9 @@ public class ProjectService {
     @Autowired(required = false)
     private DeploymentProvider deploymentProviderImpl;
 
+    @Autowired(required = false)
+    private LocalDockerStackLifecycleService localDockerStackLifecycleService;
+
     @Value("${deployment.provider:local}")
     private String deploymentProvider;
 
@@ -432,7 +435,10 @@ public class ProjectService {
         try {
             if ("local".equalsIgnoreCase(deploymentProvider)) {
                 deployProjectLocally(project, deployment);
-                refreshLocalDeploymentRuntime(deployment);
+                AirflowDeployment fresh = deploymentRepository.findByDeploymentId(deploymentId).orElse(deployment);
+                if (fresh.getStatus() == AirflowDeployment.DeploymentStatus.RUNNING) {
+                    refreshLocalDeploymentRuntime(fresh);
+                }
             } else {
                 throw new DeploymentException("Deployment provider not supported: " + deploymentProvider);
             }
@@ -441,6 +447,9 @@ public class ProjectService {
             projectDeploymentRepository.save(link);
             project.setStatus(Project.ProjectStatus.DEPLOYED);
             project.setLastDeployedAt(LocalDateTime.now());
+            if (localDockerStackLifecycleService != null) {
+                localDockerStackLifecycleService.touchLastActivityTrusted(deploymentId);
+            }
         } catch (Exception e) {
             log.error("Failed to deploy project: {}", projectId, e);
             project.setStatus(Project.ProjectStatus.FAILED);
@@ -452,7 +461,44 @@ public class ProjectService {
         return toResponse(project);
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Writes the project's {@code Dockerfile}, {@code requirements.txt}, and {@code packages.txt} to the local
+     * deployment directory so the test cluster {@code docker compose build} uses this project's image definition.
+     */
+    @Transactional
+    public void materializeLocalDeploymentBuildFromProject(String projectId, String deploymentId) {
+        if (!"local".equalsIgnoreCase(deploymentProvider)) {
+            throw new DeploymentException("Project build files can only be materialized when deployment.provider=local");
+        }
+        Project project = requireAccessibleProject(projectId);
+        AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
+        assertProjectDeploymentSameTenant(project, deployment);
+        try {
+            Path deploymentRoot = Paths.get(
+                    localBaseDirectory,
+                    deployment.getTenant().getTenantId(),
+                    deployment.getDeploymentId());
+            Files.createDirectories(deploymentRoot);
+            String requirements = StringUtils.hasText(project.getRequirementsTxt())
+                    ? project.getRequirementsTxt()
+                    : getDefaultRequirements();
+            Files.writeString(deploymentRoot.resolve("requirements.txt"), requirements);
+            if (project.getPackagesTxt() != null) {
+                Files.writeString(deploymentRoot.resolve("packages.txt"), project.getPackagesTxt());
+            }
+            String dockerfile = StringUtils.hasText(project.getDockerfile())
+                    ? project.getDockerfile().trim()
+                    : getDefaultDockerfile(project.getAirflowVersion());
+            Files.writeString(deploymentRoot.resolve("Dockerfile"), dockerfile);
+            log.info("Materialized project {} Docker build context for local deployment {}", projectId, deploymentId);
+        } catch (IOException e) {
+            throw new DeploymentException("Failed to write project build files: " + e.getMessage(), e);
+        }
+    }
+
+    @Transactional
     public Map<String, Object> triggerProject(String projectId, String deploymentId, String fileName) {
         log.info("Triggering project DAG runs: {} on deployment {}", projectId, deploymentId);
 
@@ -488,9 +534,16 @@ public class ProjectService {
             }
         }
 
+        if ("local".equalsIgnoreCase(deploymentProvider)
+                && deployment.getStatus() == AirflowDeployment.DeploymentStatus.STOPPED) {
+            throw new DeploymentException(
+                    "The local test cluster is stopped. Start it from the project ⋯ menu, then try again.");
+        }
+
         String webserverUrl = deployment.getWebserverUrl();
         if (webserverUrl == null || webserverUrl.isBlank()) {
-            throw new DeploymentException("Airflow webserver URL not found for deployment: " + deployment.getDeploymentId());
+            throw new DeploymentException("Airflow webserver URL not found for deployment: " + deployment.getDeploymentId()
+                    + ". If you use local Docker, start the test cluster first.");
         }
 
         String baseUrl = AirflowApiUrlUtils.normalizeAirflowBaseUrl(webserverUrl);
@@ -540,6 +593,9 @@ public class ProjectService {
         summary.put("failedCount", dagFiles.size() - successCount);
         summary.put("success", successCount > 0);
         summary.put("results", results);
+        if (localDockerStackLifecycleService != null && successCount > 0) {
+            localDockerStackLifecycleService.touchLastActivityTrusted(deploymentId);
+        }
         return summary;
     }
 
