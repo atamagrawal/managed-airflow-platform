@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Space, Tag, Popconfirm, Alert, Empty } from 'antd';
 import { PlusOutlined, DeleteOutlined, LinkOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { deploymentAPI, tenantAPI, navigateToAirflowHandoff } from '../services/api';
+import { deploymentAPI, tenantAPI, openAirflowHandoffInNewTab } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
 import PageHeader from '../components/PageHeader';
@@ -81,8 +81,11 @@ const Deployments = () => {
     openAirflowHandoffLockRef.current = true;
     try {
       setOpeningAirflowDeploymentId(deploymentId);
-      const { data } = await deploymentAPI.airflowUiHandoff(deploymentId);
-      navigateToAirflowHandoff(data.handoffId);
+      await openAirflowHandoffInNewTab(async () => {
+        const { data } = await deploymentAPI.airflowUiHandoff(deploymentId);
+        return data.handoffId;
+      });
+      openAirflowHandoffLockRef.current = false;
     } catch (error) {
       openAirflowHandoffLockRef.current = false;
       const msg = getApiErrorMessage(error, 'Could not open Airflow');

@@ -4,7 +4,7 @@ import { Card, Descriptions, Button, Tag, Spin, Alert, Typography, Space, Breadc
 import { getBreadcrumbItems } from '../utils/breadcrumbs';
 import { getApiErrorMessage } from '../utils/apiError';
 import { ArrowLeftOutlined, LinkOutlined } from '@ant-design/icons';
-import { deploymentAPI, navigateToAirflowHandoff } from '../services/api';
+import { deploymentAPI, openAirflowHandoffInNewTab } from '../services/api';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -42,8 +42,11 @@ const DeploymentDetails = () => {
     openAirflowLockRef.current = true;
     try {
       setOpeningAirflow(true);
-      const { data } = await deploymentAPI.airflowUiHandoff(deploymentId);
-      navigateToAirflowHandoff(data.handoffId);
+      await openAirflowHandoffInNewTab(async () => {
+        const { data } = await deploymentAPI.airflowUiHandoff(deploymentId);
+        return data.handoffId;
+      });
+      openAirflowLockRef.current = false;
     } catch (err) {
       openAirflowLockRef.current = false;
       const msg = getApiErrorMessage(err, 'Could not open Airflow');

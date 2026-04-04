@@ -16,16 +16,41 @@ export function getControlPlaneOrigin() {
 }
 
 /**
- * Navigates to the one-time Airflow handoff page (same tab). Avoids a second tab/window so users do not open
- * two handoff pages and burn the single-use ticket on the first /complete call.
+ * Call from a click handler only: opens one empty tab synchronously (keeps user activation), mints a handoff ticket,
+ * then navigates that tab to the handoff URL.
+ *
+ * Do not pass `noopener` here: with noopener many browsers return a window handle that the opener cannot navigate,
+ * so the tab stays on about:blank while the code falls back to location.assign in the current tab.
+ * The handoff page clears window.opener after load.
  */
-export function navigateToAirflowHandoff(handoffId) {
+export async function openAirflowHandoffInNewTab(getHandoffId) {
   if (typeof window === 'undefined') {
     return;
   }
-  const base = getControlPlaneOrigin();
-  const url = `${base}/api/v1/public/airflow-handoff/${encodeURIComponent(handoffId)}`;
-  window.location.assign(url);
+  const tab = window.open('about:blank', '_blank');
+  try {
+    const handoffId = await getHandoffId();
+    const base = getControlPlaneOrigin();
+    const url = `${base}/api/v1/public/airflow-handoff/${encodeURIComponent(handoffId)}`;
+    if (tab) {
+      try {
+        tab.location.replace(url);
+      } catch {
+        tab.location.href = url;
+      }
+    } else {
+      window.location.assign(url);
+    }
+  } catch (e) {
+    try {
+      if (tab && !tab.closed) {
+        tab.close();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    throw e;
+  }
 }
 
 const api = axios.create({
