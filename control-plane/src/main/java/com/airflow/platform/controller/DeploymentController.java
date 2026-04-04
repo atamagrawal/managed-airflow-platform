@@ -46,9 +46,9 @@ public class DeploymentController {
     }
 
     @GetMapping
-    @Operation(summary = "Get all deployments")
+    @Operation(summary = "Get deployments visible to the current user (all for admin, tenant-scoped otherwise)")
     public ResponseEntity<List<DeploymentResponse>> getAllDeployments() {
-        List<DeploymentResponse> deployments = deploymentService.getAllDeployments();
+        List<DeploymentResponse> deployments = deploymentService.getDeploymentsForCurrentUser();
         return ResponseEntity.ok(deployments);
     }
 
@@ -62,7 +62,7 @@ public class DeploymentController {
     @GetMapping("/tenant/{tenantId}")
     @Operation(summary = "Get all deployments for a tenant")
     public ResponseEntity<List<DeploymentResponse>> getDeploymentsByTenant(@PathVariable String tenantId) {
-        List<DeploymentResponse> deployments = deploymentService.getDeploymentsByTenant(tenantId);
+        List<DeploymentResponse> deployments = deploymentService.getDeploymentsByTenantForCaller(tenantId);
         return ResponseEntity.ok(deployments);
     }
 

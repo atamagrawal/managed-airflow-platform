@@ -20,4 +20,8 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<Project> findByStatus(Project.ProjectStatus status);
 
     List<Project> findByOwner(String owner);
+
+    List<Project> findByTenant_TenantId(String tenantId);
+
+    boolean existsByTenant_TenantId(String tenantId);
 }

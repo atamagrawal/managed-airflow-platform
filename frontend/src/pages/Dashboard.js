@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Row, Col, Card, Statistic, Typography, Spin, Alert } from 'antd';
 import { TeamOutlined, CloudServerOutlined, CheckCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { tenantAPI, deploymentAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const { Title } = Typography;
 
 const Dashboard = () => {
+  const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({
@@ -15,20 +17,22 @@ const Dashboard = () => {
     failedDeployments: 0,
   });
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const [tenantsResponse, deploymentsResponse] = await Promise.all([
-        tenantAPI.getAll(),
-        deploymentAPI.getAll(),
-      ]);
-
-      const tenants = tenantsResponse.data;
-      const deployments = deploymentsResponse.data;
+      let tenants = [];
+      let deployments = [];
+      if (isAdmin) {
+        const [tenantsResponse, deploymentsResponse] = await Promise.all([
+          tenantAPI.getAll(),
+          deploymentAPI.getAll(),
+        ]);
+        tenants = tenantsResponse.data;
+        deployments = deploymentsResponse.data;
+      } else {
+        const deploymentsResponse = await deploymentAPI.getAll();
+        deployments = deploymentsResponse.data;
+      }
 
       const runningDeployments = deployments.filter((d) => d.status === 'RUNNING').length;
       const failedDeployments = deployments.filter((d) => d.status === 'FAILED').length;
@@ -47,7 +51,11 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   if (loading) {
     return (
@@ -68,17 +76,19 @@ const Dashboard = () => {
       </Title>
 
       <Row gutter={16}>
-        <Col span={6}>
-          <Card className="stats-card">
-            <Statistic
-              title="Total Tenants"
-              value={stats.totalTenants}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#3f8600' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
+        {isAdmin && (
+          <Col span={6}>
+            <Card className="stats-card">
+              <Statistic
+                title="Total Tenants"
+                value={stats.totalTenants}
+                prefix={<TeamOutlined />}
+                valueStyle={{ color: '#3f8600' }}
+              />
+            </Card>
+          </Col>
+        )}
+        <Col span={isAdmin ? 6 : 8}>
           <Card className="stats-card">
             <Statistic
               title="Total Deployments"
@@ -88,7 +98,7 @@ const Dashboard = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={isAdmin ? 6 : 8}>
           <Card className="stats-card">
             <Statistic
               title="Running Deployments"
@@ -98,7 +108,7 @@ const Dashboard = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={isAdmin ? 6 : 8}>
           <Card className="stats-card">
             <Statistic
               title="Failed Deployments"

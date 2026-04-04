@@ -1,30 +1,52 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Layout, Menu } from 'antd';
-import { DashboardOutlined, TeamOutlined, CloudServerOutlined, CodeOutlined, FolderOpenOutlined, RocketOutlined } from '@ant-design/icons';
+import {
+  DashboardOutlined,
+  TeamOutlined,
+  UserOutlined,
+  CloudServerOutlined,
+  CodeOutlined,
+  FolderOpenOutlined,
+  RocketOutlined,
+} from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const { Sider } = Layout;
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAdmin } = useAuth();
 
-  const menuItems = [
-    {
-      key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: 'Dashboard',
-    },
-    {
-      key: '/tenants',
-      icon: <TeamOutlined />,
-      label: 'Tenants',
-    },
-    {
-      key: '/deployments',
-      icon: <CloudServerOutlined />,
-      label: 'Deployments',
-    },
+  const menuItems = useMemo(() => {
+    const items = [
+      {
+        key: '/dashboard',
+        icon: <DashboardOutlined />,
+        label: 'Dashboard',
+      },
+    ];
+    if (isAdmin) {
+      items.push(
+        {
+          key: '/tenants',
+          icon: <TeamOutlined />,
+          label: 'Tenants',
+        },
+        {
+          key: '/users',
+          icon: <UserOutlined />,
+          label: 'Users',
+        }
+      );
+    }
+    items.push(
+      {
+        key: '/deployments',
+        icon: <CloudServerOutlined />,
+        label: 'Deployments',
+      },
     {
       key: '/dags',
       icon: <CodeOutlined />,
@@ -35,12 +57,14 @@ const Sidebar = () => {
       icon: <FolderOpenOutlined />,
       label: 'Project browser',
     },
-    {
-      key: '/deployed-projects',
-      icon: <RocketOutlined />,
-      label: 'Deployed projects',
-    },
-  ];
+      {
+        key: '/deployed-projects',
+        icon: <RocketOutlined />,
+        label: 'Deployed projects',
+      }
+    );
+    return items;
+  }, [isAdmin]);
 
   const handleMenuClick = ({ key }) => {
     navigate(key);
@@ -54,6 +78,7 @@ const Sidebar = () => {
     if (path.startsWith('/projects')) return '/projects';
     if (path.startsWith('/deployments')) return '/deployments';
     if (path.startsWith('/tenants')) return '/tenants';
+    if (path.startsWith('/users')) return '/users';
     return path;
   };
 

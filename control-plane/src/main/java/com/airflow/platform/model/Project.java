@@ -37,6 +37,10 @@ public class Project {
     @Column(nullable = false)
     private ProjectStatus status;
 
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    private Tenant tenant;
+
     // Configuration files content
     @Column(columnDefinition = "TEXT")
     private String requirementsTxt; // Python dependencies

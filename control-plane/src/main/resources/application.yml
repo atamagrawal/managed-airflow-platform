@@ -61,6 +61,33 @@ springdoc:
     operations-sorter: method
     tags-sorter: alpha
 
+# Control plane login (JWT). Override secrets in production. Tenant APIs require role ADMIN.
+platform:
+  security:
+    jwt-secret: ${PLATFORM_JWT_SECRET:dev-jwt-signing-key-at-least-32-bytes!!}
+    jwt-expiration-ms: 86400000
+    # Fallback home tenant when a non-admin user's entry has no tenant-id (must exist in DB / Tenants).
+    default-tenant-id-for-users: local-default
+    # Accounts listed in Admin → Users. Per-user tenant-id = home tenant for non-admins; omit to use default above.
+    # Admins are never tenant-scoped in the JWT regardless of tenant-id here.
+    users:
+      admin:
+        password: "{noop}admin"
+        roles:
+          - ADMIN
+          - USER
+      user:
+        password: "{noop}user"
+        roles:
+          - USER
+        tenant-id: local-default
+      # Example second tenant (uncomment after creating that tenant in Admin → Tenants):
+      # analyst:
+      #   password: "{noop}changeme"
+      #   roles:
+      #     - USER
+      #   tenant-id: acme-corp
+
 # DAG deployment strategy configuration
 dag:
   deployment:
@@ -240,6 +267,7 @@ local:
 # Local bootstrap defaults
 bootstrap:
   default-tenant:
+    # Set to false if tenants should be created only via Admin → Tenants (use tenant id matching platform.security.default-tenant-id-for-users).
     enabled: true
     tenant-id: local-default
     name: Local Default Tenant

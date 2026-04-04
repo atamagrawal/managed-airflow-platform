@@ -10,6 +10,12 @@ import lombok.Data;
 @Data
 public class ProjectCreateRequest {
 
+    /**
+     * Required when an administrator creates a project; ignored for non-admin users (tenant comes from login scope).
+     */
+    @Size(max = 100, message = "Tenant ID must not exceed 100 characters")
+    private String tenantId;
+
     @NotBlank(message = "Project name is required")
     @Size(max = 200, message = "Name must not exceed 200 characters")
     private String name;
