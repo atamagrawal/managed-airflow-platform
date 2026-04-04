@@ -28,6 +28,14 @@ export const deploymentAPI = {
   delete: (deploymentId) => api.delete(`/deployments/${deploymentId}`),
 };
 
+// Deployed DAGs (project DAG files with a successful deploy to a deployment)
+export const deployedDagsAPI = {
+  getAll: (deploymentId) =>
+    api.get('/deployed-dags', {
+      params: deploymentId && deploymentId !== 'all' ? { deploymentId } : {},
+    }),
+};
+
 // Project APIs
 export const projectAPI = {
   getAll: () => api.get('/projects'),
