@@ -21,6 +21,7 @@ public class ProjectResponse {
 
     private Long id;
     private String projectId;
+    private String tenantId;
     /** @deprecated Prefer {@link #linkedDeploymentIds}. Set to the first linked deployment for backward compatibility. */
     private String deploymentId;
     /** @deprecated Prefer {@link #linkedDeploymentIds}. */
@@ -59,6 +60,7 @@ public class ProjectResponse {
         return ProjectResponse.builder()
                 .id(project.getId())
                 .projectId(project.getProjectId())
+                .tenantId(project.getTenant() != null ? project.getTenant().getTenantId() : null)
                 .linkedDeploymentIds(ids)
                 .deploymentId(firstId)
                 .deploymentName(null)

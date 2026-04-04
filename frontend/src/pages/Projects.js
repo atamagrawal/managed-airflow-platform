@@ -17,12 +17,14 @@ import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../utils/projectDeployments';
 import { pickDeploymentId } from '../utils/pickDeploymentModal';
 import { getApiErrorMessage } from '../utils/apiError';
+import { useAuth } from '../context/AuthContext';
 import dayjs from 'dayjs';
 
 const { Title, Paragraph } = Typography;
 const { Search } = Input;
 
 const Projects = () => {
+  const { isAdmin } = useAuth();
   const [projects, setProjects] = useState([]);
   const [deployments, setDeployments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -169,7 +171,20 @@ const Projects = () => {
     return colors[status] || 'default';
   };
 
+  const tenantColumn = isAdmin
+    ? [
+        {
+          title: 'Tenant',
+          dataIndex: 'tenantId',
+          key: 'tenantId',
+          width: 160,
+          ellipsis: true,
+        },
+      ]
+    : [];
+
   const columns = [
+    ...tenantColumn,
     {
       title: 'Name',
       dataIndex: 'name',

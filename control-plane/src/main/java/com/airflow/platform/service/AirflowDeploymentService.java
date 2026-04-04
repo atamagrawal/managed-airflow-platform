@@ -9,9 +9,11 @@ import com.airflow.platform.model.AirflowDeployment;
 import com.airflow.platform.model.Tenant;
 import com.airflow.platform.provider.DeploymentProvider;
 import com.airflow.platform.repository.AirflowDeploymentRepository;
+import com.airflow.platform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +43,14 @@ public class AirflowDeploymentService {
     @Transactional
     public DeploymentResponse createDeployment(DeploymentCreateRequest request) {
         log.info("Creating Airflow deployment: {} for tenant: {}", request.getName(), request.getTenantId());
+
+        if (!SecurityUtils.isAdmin()) {
+            String scope = SecurityUtils.getNonAdminTenantScope()
+                    .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+            if (!scope.equals(request.getTenantId())) {
+                throw new AccessDeniedException("Deployments must use your assigned tenant");
+            }
+        }
 
         SupportedAirflowVersions.requireSupported(request.getAirflowVersion());
 
@@ -111,6 +121,7 @@ public class AirflowDeploymentService {
     public DeploymentResponse getDeployment(String deploymentId) {
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        assertDeploymentAccess(deployment);
         return DeploymentResponse.fromEntity(deployment);
     }
 
@@ -122,10 +133,32 @@ public class AirflowDeploymentService {
     }
 
     @Transactional(readOnly = true)
+    public List<DeploymentResponse> getDeploymentsByTenantForCaller(String tenantId) {
+        if (!SecurityUtils.isAdmin()) {
+            String scope = SecurityUtils.getNonAdminTenantScope()
+                    .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+            if (!scope.equals(tenantId)) {
+                throw new AccessDeniedException("Not authorized");
+            }
+        }
+        return getDeploymentsByTenant(tenantId);
+    }
+
+    @Transactional(readOnly = true)
     public List<DeploymentResponse> getAllDeployments() {
         return deploymentRepository.findAll().stream()
                 .map(DeploymentResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DeploymentResponse> getDeploymentsForCurrentUser() {
+        if (SecurityUtils.isAdmin()) {
+            return getAllDeployments();
+        }
+        String tenantId = SecurityUtils.getNonAdminTenantScope()
+                .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+        return getDeploymentsByTenant(tenantId);
     }
 
     @Transactional
@@ -134,6 +167,7 @@ public class AirflowDeploymentService {
 
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        assertDeploymentAccess(deployment);
 
         try {
             // Remove auto-scaling for ECS if applicable
@@ -157,6 +191,7 @@ public class AirflowDeploymentService {
 
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        assertDeploymentAccess(deployment);
 
         deployment.setName(request.getName());
         deployment.setDescription(request.getDescription());
@@ -192,6 +227,10 @@ public class AirflowDeploymentService {
         }
 
         return DeploymentResponse.fromEntity(deployment);
+    }
+
+    private void assertDeploymentAccess(AirflowDeployment deployment) {
+        SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
     }
 
     private String generateDeploymentId(String name) {

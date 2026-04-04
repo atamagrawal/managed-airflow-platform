@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, message, Tabs, Space, Select } from 'antd';
-import { projectAPI } from '../services/api';
+import { projectAPI, tenantAPI } from '../services/api';
 import { getApiErrorMessage } from '../utils/apiError';
 import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
+import { useAuth } from '../context/AuthContext';
 
 const { TextArea } = Input;
 const { TabPane } = Tabs;
@@ -10,6 +11,34 @@ const { TabPane } = Tabs;
 const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [tenantOptions, setTenantOptions] = useState([]);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const { isAdmin } = useAuth();
+
+  useEffect(() => {
+    if (!isAdmin || project) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setTenantsLoading(true);
+      try {
+        const { data } = await tenantAPI.getAll();
+        const opts = (data || []).map((t) => ({
+          value: t.tenantId,
+          label: `${t.name} (${t.tenantId})`,
+        }));
+        if (!cancelled) setTenantOptions(opts);
+      } catch (e) {
+        if (!cancelled) setTenantOptions([]);
+      } finally {
+        if (!cancelled) setTenantsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, project]);
 
   useEffect(() => {
     if (project) {
@@ -86,6 +115,23 @@ const ProjectForm = ({ project, deployments, onSuccess, onCancel }) => {
           >
             <Input placeholder="my-airflow-project" />
           </Form.Item>
+
+          {!project && isAdmin && (
+            <Form.Item
+              label="Tenant"
+              name="tenantId"
+              rules={[{ required: true, message: 'Please select a tenant' }]}
+              tooltip="Non-admin users always create projects in their own tenant."
+            >
+              <Select
+                placeholder="Select tenant"
+                options={tenantOptions}
+                showSearch
+                optionFilterProp="label"
+                loading={tenantsLoading}
+              />
+            </Form.Item>
+          )}
 
           <Form.Item
             label="Description"

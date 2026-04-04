@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getStoredToken, setStoredToken } from '../authStorage';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api/v1';
 
@@ -8,6 +9,39 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+api.interceptors.request.use((config) => {
+  const token = getStoredToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
+      setStoredToken(null);
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login');
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Authentication
+export const authAPI = {
+  login: (username, password) =>
+    api.post('/auth/login', { username, password }, { skipAuthRedirect: true }),
+  me: () => api.get('/auth/me'),
+};
+
+// Admin-only: configured control-plane users (YAML), no passwords
+export const adminUserAPI = {
+  list: () => api.get('/admin/users'),
+};
 
 // Tenant APIs
 export const tenantAPI = {

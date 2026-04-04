@@ -34,6 +34,9 @@ export function getApiErrorMessage(error, fallback = 'Request failed') {
   if (isDeploymentPickNoise(error)) return null;
 
   const data = error.response?.data;
+  if (data && typeof data.error === 'string' && data.error.trim()) {
+    return data.error;
+  }
   if (data && typeof data.message === 'string' && data.message.trim()) {
     return data.message;
   }

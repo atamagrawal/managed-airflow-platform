@@ -3,6 +3,7 @@ import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Typogr
 import { PlusOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { deploymentAPI, tenantAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
 import dayjs from 'dayjs';
 
@@ -12,6 +13,7 @@ const { TextArea } = Input;
 
 const Deployments = () => {
   const navigate = useNavigate();
+  const { isAdmin, tenantScope } = useAuth();
   const [deployments, setDeployments] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -22,9 +24,11 @@ const Deployments = () => {
 
   useEffect(() => {
     fetchDeployments();
-    fetchTenants();
     fetchDeploymentConfig();
-  }, []);
+    if (isAdmin) {
+      fetchTenants();
+    }
+  }, [isAdmin]);
 
   const fetchDeployments = async () => {
     try {
@@ -220,7 +224,16 @@ const Deployments = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <Title level={2}>Deployments</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => {
+            setModalVisible(true);
+            if (!isAdmin && tenantScope) {
+              form.setFieldsValue({ tenantId: tenantScope });
+            }
+          }}
+        >
           Create Deployment
         </Button>
       </div>
@@ -279,19 +292,30 @@ const Deployments = () => {
             }),
           }}
         >
-          <Form.Item
-            name="tenantId"
-            label="Tenant"
-            rules={[{ required: true, message: 'Please select a tenant' }]}
-          >
-            <Select placeholder="Select tenant">
-              {tenants.map((tenant) => (
-                <Option key={tenant.tenantId} value={tenant.tenantId}>
-                  {tenant.name} ({tenant.tenantId})
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+          {isAdmin ? (
+            <Form.Item
+              name="tenantId"
+              label="Tenant"
+              rules={[{ required: true, message: 'Please select a tenant' }]}
+            >
+              <Select placeholder="Select tenant">
+                {tenants.map((tenant) => (
+                  <Option key={tenant.tenantId} value={tenant.tenantId}>
+                    {tenant.name} ({tenant.tenantId})
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          ) : (
+            <Form.Item
+              name="tenantId"
+              label="Tenant"
+              rules={[{ required: true, message: 'Tenant is required' }]}
+              extra="Deployments are created in your assigned tenant. Contact an administrator to manage tenants."
+            >
+              <Input readOnly placeholder={tenantScope || '—'} />
+            </Form.Item>
+          )}
 
           <Form.Item
             name="name"

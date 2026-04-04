@@ -10,6 +10,8 @@ import com.airflow.platform.model.AirflowDeployment;
 import com.airflow.platform.model.Project;
 import com.airflow.platform.model.ProjectDeployment;
 import com.airflow.platform.model.ProjectFile;
+import com.airflow.platform.model.Tenant;
+import com.airflow.platform.security.SecurityUtils;
 import com.airflow.platform.provider.DeploymentProvider;
 import com.airflow.platform.repository.AirflowDeploymentRepository;
 import com.airflow.platform.repository.ProjectDeploymentRepository;
@@ -24,6 +26,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +64,7 @@ public class ProjectService {
     private final ProjectFileRepository projectFileRepository;
     private final ProjectDeploymentRepository projectDeploymentRepository;
     private final AirflowDeploymentRepository deploymentRepository;
+    private final TenantService tenantService;
     private final DagDeploymentConfig dagDeploymentConfig;
     private final DefaultProjectTemplateSeeder defaultProjectTemplateSeeder;
     private final RestTemplate restTemplate;
@@ -91,6 +95,7 @@ public class ProjectService {
                           ProjectFileRepository projectFileRepository,
                           ProjectDeploymentRepository projectDeploymentRepository,
                           AirflowDeploymentRepository deploymentRepository,
+                          TenantService tenantService,
                           DagDeploymentConfig dagDeploymentConfig,
                           DefaultProjectTemplateSeeder defaultProjectTemplateSeeder,
                           RestTemplate restTemplate) {
@@ -98,6 +103,7 @@ public class ProjectService {
         this.projectFileRepository = projectFileRepository;
         this.projectDeploymentRepository = projectDeploymentRepository;
         this.deploymentRepository = deploymentRepository;
+        this.tenantService = tenantService;
         this.dagDeploymentConfig = dagDeploymentConfig;
         this.defaultProjectTemplateSeeder = defaultProjectTemplateSeeder;
         this.restTemplate = restTemplate;
@@ -118,6 +124,7 @@ public class ProjectService {
         project.setName(request.getName());
         project.setDescription(request.getDescription());
         project.setStatus(Project.ProjectStatus.DRAFT);
+        project.setTenant(resolveTenantForCreate(request));
         project.setRequirementsTxt(request.getRequirementsTxt() != null ? request.getRequirementsTxt() : getDefaultRequirements());
         project.setPackagesTxt(request.getPackagesTxt());
         project.setDockerfile(StringUtils.hasText(request.getDockerfile())
@@ -148,33 +155,44 @@ public class ProjectService {
 
     @Transactional(readOnly = true)
     public ProjectResponse getProject(String projectId) {
-        Project project = projectRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
-        return toResponse(project);
+        return toResponse(requireAccessibleProject(projectId));
     }
 
     @Transactional(readOnly = true)
     public List<ProjectResponse> getAllProjects() {
-        return projectRepository.findAll().stream()
+        if (SecurityUtils.isAdmin()) {
+            return projectRepository.findAll().stream()
+                    .map(this::toResponse)
+                    .collect(Collectors.toList());
+        }
+        String scope = SecurityUtils.getNonAdminTenantScope()
+                .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+        return projectRepository.findByTenant_TenantId(scope).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public List<ProjectResponse> getProjectsByDeployment(String deploymentId) {
+        AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
+        String tenantId = deployment.getTenant().getTenantId();
         return projectDeploymentRepository.findByDeployment_DeploymentId(deploymentId).stream()
                 .map(ProjectDeployment::getProject)
                 .distinct()
+                .filter(p -> tenantId.equals(p.getTenant().getTenantId()))
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
     @Transactional
     public ProjectResponse linkProjectToDeployment(String projectId, String deploymentId) {
-        Project project = projectRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        Project project = requireAccessibleProject(projectId);
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
+        assertProjectDeploymentSameTenant(project, deployment);
         if (projectDeploymentRepository.existsByProject_ProjectIdAndDeployment_DeploymentId(projectId, deploymentId)) {
             return toResponse(project);
         }
@@ -188,12 +206,10 @@ public class ProjectService {
 
     @Transactional
     public void unlinkProjectFromDeployment(String projectId, String deploymentId) {
-        if (!projectRepository.existsByProjectId(projectId)) {
-            throw new ResourceNotFoundException("Project not found: " + projectId);
-        }
-        if (!deploymentRepository.existsByDeploymentId(deploymentId)) {
-            throw new ResourceNotFoundException("Deployment not found: " + deploymentId);
-        }
+        requireAccessibleProject(projectId);
+        AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
         projectDeploymentRepository.deleteByProject_ProjectIdAndDeployment_DeploymentId(projectId, deploymentId);
         log.info("Unlinked project {} from deployment {}", projectId, deploymentId);
     }
@@ -210,8 +226,7 @@ public class ProjectService {
     public ProjectResponse updateProject(String projectId, ProjectUpdateRequest request) {
         log.info("Updating project: {}", projectId);
 
-        Project project = projectRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        Project project = requireAccessibleProject(projectId);
 
         if (request.getName() != null) {
             project.setName(request.getName());
@@ -265,8 +280,7 @@ public class ProjectService {
     public void deleteProject(String projectId) {
         log.info("Deleting project: {}", projectId);
 
-        Project project = projectRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        Project project = requireAccessibleProject(projectId);
 
         // Delete all associated files
         projectFileRepository.deleteByProject(project);
@@ -282,8 +296,7 @@ public class ProjectService {
     public void addFileToProject(String projectId, ProjectFileRequest request) {
         log.info("Adding file to project: {}, path: {}", projectId, request.getFilePath());
 
-        Project project = projectRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        Project project = requireAccessibleProject(projectId);
 
         // Check if file already exists
         if (projectFileRepository.findByProjectAndFilePath(project, request.getFilePath()).isPresent()) {
@@ -316,6 +329,8 @@ public class ProjectService {
     public void updateProjectFile(String projectId, Long fileId, ProjectFileUpdateRequest request) {
         log.info("Updating file {} in project {}", fileId, projectId);
 
+        requireAccessibleProject(projectId);
+
         ProjectFile file = projectFileRepository.findByIdAndProject_ProjectId(fileId, projectId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Project file not found: " + fileId + " in project " + projectId));
@@ -332,8 +347,7 @@ public class ProjectService {
 
     @Transactional
     public List<ProjectFile> getProjectFiles(String projectId) {
-        Project project = projectRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        Project project = requireAccessibleProject(projectId);
         return projectFileRepository.findByProject(project);
     }
 
@@ -345,13 +359,26 @@ public class ProjectService {
     public List<DeployedDagResponse> listDeployedProjectDags(String deploymentIdFilter) {
         List<ProjectDeployment> links;
         if (StringUtils.hasText(deploymentIdFilter)) {
-            if (!deploymentRepository.existsByDeploymentId(deploymentIdFilter)) {
-                throw new ResourceNotFoundException("Deployment not found: " + deploymentIdFilter);
-            }
-            links = projectDeploymentRepository.findDeployedLinksWithProjectAndDeploymentByDeploymentId(deploymentIdFilter);
+            String depId = deploymentIdFilter.trim();
+            AirflowDeployment dep = deploymentRepository.findByDeploymentId(depId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + depId));
+            SecurityUtils.assertTenantInScope(dep.getTenant().getTenantId());
+            links = projectDeploymentRepository.findDeployedLinksWithProjectAndDeploymentByDeploymentId(depId);
         } else {
             links = projectDeploymentRepository.findDeployedLinksWithProjectAndDeployment();
+            if (!SecurityUtils.isAdmin()) {
+                String scope = SecurityUtils.getNonAdminTenantScope()
+                        .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+                links = links.stream()
+                        .filter(l -> scope.equals(l.getProject().getTenant().getTenantId())
+                                && scope.equals(l.getDeployment().getTenant().getTenantId()))
+                        .collect(Collectors.toList());
+            }
         }
+        links = links.stream()
+                .filter(l -> l.getProject().getTenant().getTenantId()
+                        .equals(l.getDeployment().getTenant().getTenantId()))
+                .collect(Collectors.toList());
 
         List<DeployedDagResponse> rows = new ArrayList<>();
         for (ProjectDeployment link : links) {
@@ -383,10 +410,11 @@ public class ProjectService {
     public ProjectResponse deployProject(String projectId, String deploymentId) {
         log.info("Deploying project: {} to deployment: {}", projectId, deploymentId);
 
-        Project project = projectRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        Project project = requireAccessibleProject(projectId);
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
+        assertProjectDeploymentSameTenant(project, deployment);
 
         ProjectDeployment link = projectDeploymentRepository
                 .findByProject_ProjectIdAndDeployment_DeploymentId(projectId, deploymentId)
@@ -427,8 +455,7 @@ public class ProjectService {
     public Map<String, Object> triggerProject(String projectId, String deploymentId, String fileName) {
         log.info("Triggering project DAG runs: {} on deployment {}", projectId, deploymentId);
 
-        Project project = projectRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        Project project = requireAccessibleProject(projectId);
 
         ProjectDeployment link = projectDeploymentRepository
                 .findByProject_ProjectIdAndDeployment_DeploymentId(projectId, deploymentId)
@@ -441,6 +468,10 @@ public class ProjectService {
         }
 
         AirflowDeployment deployment = link.getDeployment();
+        SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
+        if (!project.getTenant().getTenantId().equals(deployment.getTenant().getTenantId())) {
+            throw new DeploymentException("Project and deployment must belong to the same tenant");
+        }
 
         List<ProjectFile> dagFiles = projectFileRepository.findByProjectAndFileType(project, ProjectFile.FileType.DAG);
         if (dagFiles.isEmpty()) {
@@ -509,6 +540,31 @@ public class ProjectService {
         summary.put("success", successCount > 0);
         summary.put("results", results);
         return summary;
+    }
+
+    private Project requireAccessibleProject(String projectId) {
+        Project p = projectRepository.findByProjectId(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        SecurityUtils.assertTenantInScope(p.getTenant().getTenantId());
+        return p;
+    }
+
+    private Tenant resolveTenantForCreate(ProjectCreateRequest request) {
+        if (SecurityUtils.isAdmin()) {
+            if (!StringUtils.hasText(request.getTenantId())) {
+                throw new DeploymentException("tenantId is required when creating a project as an administrator");
+            }
+            return tenantService.getTenantEntity(request.getTenantId().trim());
+        }
+        String scope = SecurityUtils.getNonAdminTenantScope()
+                .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+        return tenantService.getTenantEntity(scope);
+    }
+
+    private void assertProjectDeploymentSameTenant(Project project, AirflowDeployment deployment) {
+        if (!project.getTenant().getTenantId().equals(deployment.getTenant().getTenantId())) {
+            throw new DeploymentException("Project and deployment must belong to the same tenant");
+        }
     }
 
     private void deployProjectLocally(Project project, AirflowDeployment deployment) throws IOException {

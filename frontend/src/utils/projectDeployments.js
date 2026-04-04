@@ -1,3 +1,9 @@
+function deploymentsForProjectTenant(project, allDeployments) {
+  const tid = project?.tenantId;
+  if (!tid) return allDeployments || [];
+  return (allDeployments || []).filter((d) => d.tenantId === tid);
+}
+
 /** Options when deploying: choose any Airflow deployment (deploy creates the project↔deployment link if needed). */
 export function getDeploymentSelectOptionsForDeploy(allDeployments) {
   return (allDeployments || []).map((d) => ({
@@ -12,7 +18,7 @@ export function getDeploymentSelectOptionsForTrigger(project, allDeployments) {
   if (!Array.isArray(linked) || linked.length === 0) {
     return [];
   }
-  return allDeployments
+  return deploymentsForProjectTenant(project, allDeployments)
     .filter((d) => linked.includes(d.deploymentId))
     .map((d) => ({
       label: d.name ? `${d.name} (${d.deploymentId})` : d.deploymentId,
@@ -30,12 +36,20 @@ export function resolveDeploymentForTrigger(project, allDeployments) {
     return { ok: false, reason: 'none' };
   }
   if (linked.length === 1) {
+    const opts = getDeploymentSelectOptionsForTrigger(project, allDeployments);
+    if (opts.length !== 1) {
+      return { ok: false, reason: 'none' };
+    }
     return { ok: true, deploymentId: linked[0], needsPicker: false };
+  }
+  const options = getDeploymentSelectOptionsForTrigger(project, allDeployments);
+  if (options.length === 0) {
+    return { ok: false, reason: 'none' };
   }
   return {
     ok: true,
     needsPicker: true,
-    options: getDeploymentSelectOptionsForTrigger(project, allDeployments),
+    options,
   };
 }
 
@@ -46,18 +60,26 @@ export function resolveDeploymentForTrigger(project, allDeployments) {
  * If the project is linked to exactly one deployment, deploy there without a modal.
  */
 export function resolveDeploymentForDeploy(project, allDeployments) {
-  const allOpts = getDeploymentSelectOptionsForDeploy(allDeployments);
+  const scoped = deploymentsForProjectTenant(project, allDeployments);
+  const allOpts = getDeploymentSelectOptionsForDeploy(scoped);
   if (allOpts.length === 0) {
     return { ok: false, reason: 'none' };
   }
   const linked = project?.linkedDeploymentIds || [];
 
   if (linked.length === 1) {
+    const allowed = scoped.some((d) => d.deploymentId === linked[0]);
+    if (!allowed) {
+      return { ok: false, reason: 'none' };
+    }
     return { ok: true, deploymentId: linked[0], needsPicker: false };
   }
 
   if (linked.length > 1) {
     const options = allOpts.filter((o) => linked.includes(o.value));
+    if (options.length === 0) {
+      return { ok: false, reason: 'none' };
+    }
     return { ok: true, needsPicker: true, options };
   }
 
