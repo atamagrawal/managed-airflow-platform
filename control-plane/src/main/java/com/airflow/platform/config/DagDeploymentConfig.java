@@ -13,9 +13,9 @@ import org.springframework.context.annotation.Configuration;
 public class DagDeploymentConfig {
 
     /**
-     * Strategy for organizing DAG files
-     * - UNIFIED: All DAGs (standalone and project-based) go to {deployment}/dags/
-     * - SEPARATED: Standalone DAGs go to {deployment}/dags/, project DAGs go to {deployment}/projects/{project}/dags/
+     * Strategy for organizing project DAG files on disk
+     * - UNIFIED: All project DAGs go to {deployment}/dags/
+     * - SEPARATED: Project DAGs go to {deployment}/projects/{projectId}/dags/
      */
     private Strategy strategy = Strategy.UNIFIED;
 
@@ -48,13 +48,11 @@ public class DagDeploymentConfig {
         UNIFIED,
 
         /**
-         * Separated strategy: Project DAGs in separate folders
-         * Standalone DAGs: {localBaseDirectory}/{deploymentId}/dags/
+         * Separated strategy: each project under its own folder
          * Project DAGs: {localBaseDirectory}/{deploymentId}/projects/{projectId}/dags/
          *
          * Pros:
-         * - Clear separation between standalone and project DAGs
-         * - Better organization for multiple projects
+         * - Clear separation between projects
          * - No filename conflicts between projects
          *
          * Cons:

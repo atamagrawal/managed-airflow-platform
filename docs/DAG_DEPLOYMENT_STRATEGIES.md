@@ -300,14 +300,14 @@ services:
 
 ## Triggering DAGs
 
-**Both strategies work identically for triggering:**
+**Both strategies work identically for triggering:** use the project trigger API (the control plane parses `dag_id` from DAG file content and calls Airflow):
 
 ```bash
-# Trigger a DAG (works for both strategies)
-POST /api/v1/dags/{dagId}/trigger
+POST /api/v1/projects/{projectId}/trigger?deploymentId={deploymentId}
+# Optional: POST ...&fileName=my_dag.py
 ```
 
-The trigger functionality uses Airflow's REST API and doesn't depend on file location.
+The trigger functionality uses Airflow's REST API and does not depend on which on-disk strategy was used beyond DAG files being deployed and visible to the scheduler.
 
 ## Best Practices
 

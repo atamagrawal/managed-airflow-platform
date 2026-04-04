@@ -79,13 +79,13 @@ The control plane is the management layer responsible for orchestrating all tena
 - REST API for UI and external integrations
 
 **Key Components:**
-- **Controllers:** REST endpoints for tenants, deployments, and DAGs
-- **Services:** Business logic for tenant, deployment, and DAG operations
+- **Controllers:** REST endpoints for tenants, deployments, and projects
+- **Services:** Business logic for tenant, deployment, and project operations
 - **Repositories:** Data access layer using Spring Data JPA
-- **Models:** JPA entities (Tenant, AirflowDeployment, Dag)
+- **Models:** JPA entities (Tenant, AirflowDeployment, Project, ProjectFile, …)
 - **Kubernetes Service:** Integration with Kubernetes API
 - **Helm Service:** Helm chart deployment via shell commands
-- **DAG Service:** DAG lifecycle management, validation, and deployment
+- **Project Service:** Project lifecycle, file storage, deploy to Airflow, DAG run triggers
 
 **Technology Stack:**
 - Java 17
@@ -269,150 +269,15 @@ The Kubernetes service handles:
   - Manage KEDA ScaledObjects
   - Configure ingress
 
-### 7. DAG Management System
+### 7. Project-Based DAGs
 
-The platform provides a comprehensive DAG management system that allows users to create, edit, and deploy DAGs directly from the web interface.
+DAG definitions live as **project files** (`ProjectFile` with type `DAG`, typically under `dags/` paths). There is no separate first-class `Dag` entity or `/api/v1/dags` control-plane API.
 
-#### 7.1 DAG Entity Model
+**Deploy:** `ProjectService` writes the project tree (including DAG `.py` files) to the deployment filesystem according to `dag.deployment.strategy` (`DagDeploymentConfig`).
 
-**DAG Entity:**
-```java
-Dag {
-  - dagId: Unique identifier (auto-generated)
-  - deployment: Associated AirflowDeployment
-  - name: Display name
-  - description: DAG description
-  - dagCode: Python code for the DAG
-  - fileName: Python file name (e.g., "my_dag.py")
-  - status: DRAFT/VALIDATING/VALID/INVALID/DEPLOYING/DEPLOYED/FAILED
-  - gitRepository: Optional Git repository URL
-  - gitBranch: Git branch (e.g., "main")
-  - gitPath: Path within repository
-  - gitCommitHash: Last synced commit
-  - validationErrors: Validation error messages
-  - isPaused: Whether DAG should be paused
-  - isActive: Whether DAG is active
-  - owner: DAG owner/team
-  - tags: Comma-separated tags
-  - createdAt, updatedAt: Timestamps
-  - lastSyncedAt, lastDeployedAt: Sync/deploy timestamps
-}
-```
+**Trigger:** The UI calls `POST /api/v1/projects/{projectId}/trigger` with a deployment id (and optionally a single DAG file name). The backend parses each selected DAG file’s Python content to obtain the Airflow `dag_id`, then calls the Airflow REST API (`/api/v1/dags/.../dagRuns` or `/api/v2/dags/.../dagRuns` depending on Airflow version).
 
-#### 7.2 DAG Lifecycle
-
-```
-1. DRAFT → User creates DAG in UI
-2. VALIDATING → System validates Python code
-3. VALID/INVALID → Validation result
-4. DEPLOYING → DAG being deployed to Airflow
-5. DEPLOYED → Successfully deployed and running
-6. FAILED → Deployment failed
-```
-
-#### 7.3 DAG Management Components
-
-**Backend (Spring Boot):**
-- **DagController**: REST API endpoints (`/api/v1/dags`)
-- **DagService**: Business logic for CRUD operations and validation
-- **DagRepository**: JPA repository for database access
-- **Validation Engine**: Python code validation (syntax, imports, structure)
-
-**Frontend (React):**
-- **Dags.js**: DAG listing page with filtering and actions
-- **DagForm.js**: Create/edit form with Monaco code editor
-- **DagDetails.js**: Read-only DAG details and code view
-- **Monaco Editor**: Full-featured Python code editor with syntax highlighting
-
-#### 7.4 DAG Validation
-
-The platform performs basic validation on DAG code:
-
-1. **Syntax Validation:**
-   - Checks for required Airflow imports
-   - Validates DAG object definition
-   - Checks for balanced parentheses
-   - Basic Python syntax verification
-
-2. **Future Enhancements:**
-   - Python AST (Abstract Syntax Tree) parsing
-   - Airflow DAG parsing without execution
-   - Custom linting rules
-   - Security scanning for malicious code
-
-#### 7.5 Git Integration
-
-DAGs can optionally be associated with Git repositories:
-
-**Current Implementation:**
-- Git repository URL, branch, and path stored in database
-- Manual configuration per DAG
-- Metadata only (no automatic sync yet)
-
-**Planned Features:**
-- Automatic Git-sync sidecar container
-- Two-way sync (UI changes → Git, Git changes → Airflow)
-- Commit tracking and version history
-- Pull request integration
-
-#### 7.6 DAG Deployment Process
-
-**Current Flow:**
-1. User creates/edits DAG in UI
-2. DAG code validated by backend
-3. Status set to VALID or INVALID
-4. User clicks "Deploy" button
-5. Status changes to DEPLOYING
-6. DAG file written to Airflow DAG folder (based on deployment provider)
-7. Status changes to DEPLOYED
-
-**Deployment by Provider:**
-- **Local:** Writes DAG file to `~/airflow-deployments/{tenant-id}/{deployment-id}/dags/`
-- **Kubernetes:** Planned - ConfigMap/Secret or PVC deployment
-- **ECS:** Planned - Write to EFS volume
-- **EC2:** Planned - Write via SSM commands
-
-**Planned Enhancements:**
-- Kubernetes ConfigMap/Secret deployment
-- Git-sync integration for automatic syncing
-- S3/GCS bucket deployment
-- Persistent Volume (PV) deployment
-
-#### 7.7 DAG Run Triggering
-
-The platform provides the ability to trigger DAG runs directly through the UI and API.
-
-**Trigger Flow:**
-1. User clicks "Run" button on a DEPLOYED DAG
-2. Backend extracts Airflow DAG ID from Python code
-3. Backend calls Airflow REST API: `POST /api/v1/dags/{dag_id}/dagRuns`
-4. Airflow queues the DAG run
-5. User receives success/failure response
-
-**Implementation Details:**
-- Uses Spring RestTemplate to call Airflow API
-- Automatic DAG ID extraction via regex patterns
-- Basic authentication with Airflow (admin/admin)
-- Generates unique run ID: `manual_{timestamp}`
-- Returns Airflow's response to user
-
-**API Integration:**
-```java
-// Airflow REST API endpoint
-POST {webserver-url}/api/v1/dags/{dag_id}/dagRuns
-
-// Request body
-{
-  "conf": {},
-  "dag_run_id": "manual_1234567890"
-}
-```
-
-**Error Handling:**
-- Validates DAG is DEPLOYED before triggering
-- Checks webserver URL is available
-- Returns user-friendly error messages
-- Logs failures for troubleshooting
+**Frontend:** Users author DAGs in the project browser / project code editor; **Trigger DAGs** actions live on project and deployed-project screens.
 
 ### 8. Data Model
 
@@ -420,7 +285,8 @@ POST {webserver-url}/api/v1/dags/{dag_id}/dagRuns
 
 ```
 Tenant (1) ──────< (N) AirflowDeployment
-AirflowDeployment (1) ──────< (N) Dag
+Project (1) ──────< (N) ProjectFile
+(Projects link to deployments via project–deployment association; see `ProjectService` / controllers.)
 ```
 
 #### 8.2 Database Schema
@@ -470,33 +336,6 @@ airflow_deployments (
   created_at TIMESTAMP,
   updated_at TIMESTAMP,
   deployed_at TIMESTAMP
-)
-```
-
-**DAGs Table:**
-```sql
-dags (
-  id BIGINT PRIMARY KEY,
-  dag_id VARCHAR(100) UNIQUE,
-  deployment_id BIGINT FOREIGN KEY,
-  name VARCHAR(200),
-  description VARCHAR(1000),
-  dag_code TEXT,
-  git_repository VARCHAR(500),
-  git_branch VARCHAR(100),
-  git_path VARCHAR(500),
-  git_commit_hash VARCHAR(100),
-  status VARCHAR(50),
-  file_name VARCHAR(100),
-  validation_errors TEXT,
-  is_paused BOOLEAN,
-  is_active BOOLEAN,
-  owner VARCHAR(100),
-  tags VARCHAR(500),
-  created_at TIMESTAMP,
-  updated_at TIMESTAMP,
-  last_synced_at TIMESTAMP,
-  last_deployed_at TIMESTAMP
 )
 ```
 

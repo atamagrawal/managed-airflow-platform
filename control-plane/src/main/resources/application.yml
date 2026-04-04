@@ -64,9 +64,9 @@ springdoc:
 # DAG deployment strategy configuration
 dag:
   deployment:
-    # Strategy for organizing DAG files: UNIFIED or SEPARATED
-    # UNIFIED: All DAGs (standalone and project-based) go to {deployment}/dags/
-    # SEPARATED: Standalone DAGs go to {deployment}/dags/, project DAGs go to {deployment}/projects/{project}/dags/
+    # Strategy for organizing project DAG files: UNIFIED or SEPARATED
+    # UNIFIED: project DAGs go to {deployment}/dags/
+    # SEPARATED: project DAGs go to {deployment}/projects/{projectId}/dags/
     strategy: UNIFIED
 
     # Whether to prefix project name in DAG filenames (only applies to UNIFIED strategy)
