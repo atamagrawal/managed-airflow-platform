@@ -57,7 +57,7 @@ public class LocalDeploymentStatusReconciler {
                     d.setDeployedAt(LocalDateTime.now());
                 }
                 deploymentRepository.save(d);
-                log.info("Reconciled deployment {} to RUNNING (Docker reports apiserver up)", d.getDeploymentId());
+                log.info("Reconciled deployment {} to RUNNING (apiserver HTTP health OK)", d.getDeploymentId());
             } catch (Exception e) {
                 log.debug("Status reconcile skipped for {}: {}", d.getDeploymentId(), e.getMessage());
             }
@@ -83,7 +83,7 @@ public class LocalDeploymentStatusReconciler {
                 d.setDeployedAt(LocalDateTime.now());
             }
             deploymentRepository.save(d);
-            log.info("Reconciled deployment {} to RUNNING (Docker reports apiserver up)", deploymentId);
+            log.info("Reconciled deployment {} to RUNNING (apiserver HTTP health OK)", deploymentId);
         } catch (Exception e) {
             log.debug("Status reconcile skipped for {}: {}", deploymentId, e.getMessage());
         }

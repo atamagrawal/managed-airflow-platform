@@ -272,6 +272,13 @@ deployment:
 local:
   base-directory: ${user.home}/airflow-deployments
   docker-compose-timeout: 300
+  # Faster image builds when a rebuild is required (Docker BuildKit + compose CLI build).
+  docker-buildkit: true
+  # Build multiple compose services concurrently (docker compose v2).
+  docker-compose-build-parallel: true
+  # After compose up, wait until Airflow apiserver answers GET /api/v2/monitor/health before DB shows RUNNING (0 = skip).
+  apiserver-ready-timeout-seconds: 600
+  apiserver-ready-poll-interval-ms: 2000
   # When false, new deployments only write compose files; use Start test cluster (API/UI) to run Docker.
   auto-start-docker-on-create: false
   # Stop local Docker after this many minutes without deploy/trigger/Open Airflow (0 = disable auto-stop).

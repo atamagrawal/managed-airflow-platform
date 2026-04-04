@@ -18,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -57,6 +59,18 @@ public class LocalDeploymentProvider implements DeploymentProvider {
     @Value("${local.airflow-handoff.restart-apiserver-on-settings-change:true}")
     private boolean restartApiserverOnLocalSettingsChange;
 
+    @Value("${local.docker-buildkit:true}")
+    private boolean dockerBuildkit;
+
+    @Value("${local.docker-compose-build-parallel:true}")
+    private boolean dockerComposeBuildParallel;
+
+    @Value("${local.apiserver-ready-timeout-seconds:600}")
+    private int apiserverReadyTimeoutSeconds;
+
+    @Value("${local.apiserver-ready-poll-interval-ms:2000}")
+    private long apiserverReadyPollIntervalMs;
+
     @Override
     public void deploy(AirflowDeployment deployment) {
         log.info("Deploying Airflow locally: {}", deployment.getDeploymentId());
@@ -92,8 +106,8 @@ public class LocalDeploymentProvider implements DeploymentProvider {
     }
 
     /**
-     * {@code docker compose build} then {@code up -d}. Always regenerates compose first so {@code build:} vs
-     * {@code image:} matches the current {@code Dockerfile} on disk (e.g. after syncing a project Dockerfile).
+     * Regenerates compose, runs {@code docker compose build} only when Dockerfile / requirements / deployment
+     * settings changed since the last stamp (same rules as {@link #syncAfterProjectDeploy}), then {@code up -d}.
      */
     public void startComposeStack(AirflowDeployment deployment) {
         try {
@@ -103,8 +117,9 @@ public class LocalDeploymentProvider implements DeploymentProvider {
                 Files.createDirectories(deploymentPath);
             }
             provisionComposeArtifactsOnly(deployment);
-            executeDockerCompose(deploymentDir, "build");
+            ensureComposeImageUpToDate(deployment, deploymentDir, deploymentPath, "stack start");
             executeDockerCompose(deploymentDir, "up", "-d");
+            waitForAirflowApiserverReady(deployment);
             persistBuildInputsStampSafe(deployment, deploymentPath);
             log.info("Local compose stack started: {}", deployment.getDeploymentId());
         } catch (Exception e) {
@@ -149,7 +164,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             executeDockerCompose(deploymentDir, "down");
 
             // Rebuild once, then start containers.
-            executeDockerCompose(deploymentDir, "build");
+            runDockerComposeBuild(deploymentDir);
             executeDockerCompose(deploymentDir, "up", "-d");
 
             persistBuildInputsStampSafe(deployment, deploymentPath);
@@ -187,39 +202,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             }
             boolean handoffSettingsChanged = persistAirflowLocalSettingsPy(deploymentPath);
 
-            Path stampPath = deploymentPath.resolve(BUILD_INPUTS_STAMP);
-            BuildInputsSnapshot current = BuildInputsSnapshot.capture(deployment, deploymentPath);
-            String combinedFingerprint = current.combinedFingerprint(deploymentPath).toLowerCase();
-            Optional<BuildInputsSnapshot> previousSnap = readBuildInputsStamp(stampPath);
-            String legacyCombined = readLegacyCombinedStamp(stampPath, previousSnap);
-
-            boolean needsBuild = previousSnap
-                    .map(prev -> !prev.equals(current))
-                    .orElseGet(() -> !combinedFingerprint.equals(legacyCombined));
-
-            if (needsBuild) {
-                if (previousSnap.isPresent()) {
-                    logBuildInputChanges(previousSnap.get(), current, deployment.getDeploymentId());
-                } else if (legacyCombined.isEmpty()) {
-                    log.info("Compose build for {}: no build-input stamp (upgrade from older control-plane, stamp deleted, "
-                            + "or deploy path skipped persist); establishing stamp with compose build",
-                            deployment.getDeploymentId());
-                    log.info("Compose build inputs for {}: {}", deployment.getDeploymentId(), current.describe());
-                } else if (!combinedFingerprint.equals(legacyCombined)) {
-                    log.info("Compose build for {}: build inputs changed (legacy single-hash stamp; no per-field diff). "
-                            + "previousCombinedDigest={} currentCombinedDigest={}",
-                            deployment.getDeploymentId(), legacyCombined, combinedFingerprint);
-                }
-                executeDockerCompose(deploymentDir, "build");
-                writeBuildInputsStamp(stampPath, current);
-            } else {
-                log.info("Build inputs unchanged for {}; bind-mounted files are visible without rebuild",
-                        deployment.getDeploymentId());
-                if (previousSnap.isEmpty() && !legacyCombined.isEmpty()
-                        && combinedFingerprint.equals(legacyCombined)) {
-                    writeBuildInputsStamp(stampPath, current);
-                }
-            }
+            boolean needsBuild = ensureComposeImageUpToDate(deployment, deploymentDir, deploymentPath, "after project deploy");
 
             if (needsBuild || composeChanged) {
                 log.info("Applying docker compose up (Airflow services only) for {} (composeChanged={}, needsBuild={}); "
@@ -325,6 +308,79 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             log.warn("Could not persist build-input stamp for {} (next project deploy may run an extra compose build): {}",
                     deployment.getDeploymentId(), e.getMessage());
         }
+    }
+
+    /**
+     * Runs {@code docker compose build} when Dockerfile, requirements, packages, or core deployment fields changed
+     * since the last stamp. Returns whether a build was executed.
+     */
+    private boolean ensureComposeImageUpToDate(
+            AirflowDeployment deployment,
+            String deploymentDir,
+            Path deploymentPath,
+            String contextForLog) throws IOException, InterruptedException, NoSuchAlgorithmException {
+        Path stampPath = deploymentPath.resolve(BUILD_INPUTS_STAMP);
+        BuildInputsSnapshot current = BuildInputsSnapshot.capture(deployment, deploymentPath);
+        String combinedFingerprint = current.combinedFingerprint(deploymentPath).toLowerCase();
+        Optional<BuildInputsSnapshot> previousSnap = readBuildInputsStamp(stampPath);
+        String legacyCombined = readLegacyCombinedStamp(stampPath, previousSnap);
+
+        boolean needsBuild = previousSnap
+                .map(prev -> !prev.equals(current))
+                .orElseGet(() -> !combinedFingerprint.equals(legacyCombined));
+
+        if (needsBuild) {
+            if (previousSnap.isPresent()) {
+                logBuildInputChanges(previousSnap.get(), current, deployment.getDeploymentId());
+            } else if (legacyCombined.isEmpty()) {
+                log.info(
+                        "Compose build for {} ({}): no build-input stamp (upgrade from older control-plane, stamp deleted, "
+                                + "or first build); establishing stamp with compose build",
+                        deployment.getDeploymentId(),
+                        contextForLog);
+                log.info("Compose build inputs for {}: {}", deployment.getDeploymentId(), current.describe());
+            } else if (!combinedFingerprint.equals(legacyCombined)) {
+                log.info(
+                        "Compose build for {} ({}): build inputs changed (legacy single-hash stamp). "
+                                + "previousCombinedDigest={} currentCombinedDigest={}",
+                        deployment.getDeploymentId(),
+                        contextForLog,
+                        legacyCombined,
+                        combinedFingerprint);
+            }
+            runDockerComposeBuild(deploymentDir);
+            writeBuildInputsStamp(stampPath, current);
+            return true;
+        }
+
+        log.info("Build inputs unchanged for {} ({}); reuse existing compose images",
+                deployment.getDeploymentId(), contextForLog);
+        if (previousSnap.isEmpty() && !legacyCombined.isEmpty()
+                && combinedFingerprint.equals(legacyCombined)) {
+            writeBuildInputsStamp(stampPath, current);
+        }
+        return false;
+    }
+
+    private void runDockerComposeBuild(String deploymentDir) throws IOException, InterruptedException {
+        if (dockerComposeBuildParallel) {
+            try {
+                executeDockerCompose(deploymentDir, "build", "--parallel");
+                return;
+            } catch (DeploymentException e) {
+                log.warn("Compose build --parallel failed ({}); retrying without --parallel", e.getMessage());
+            }
+        }
+        executeDockerCompose(deploymentDir, "build");
+    }
+
+    private void applyDockerBuildOptimizationEnv(ProcessBuilder pb) {
+        if (!dockerBuildkit) {
+            return;
+        }
+        Map<String, String> env = pb.environment();
+        env.put("DOCKER_BUILDKIT", "1");
+        env.put("COMPOSE_DOCKER_CLI_BUILD", "1");
     }
 
     private static Optional<BuildInputsSnapshot> readBuildInputsStamp(Path stampPath) throws IOException {
@@ -518,7 +574,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             String output = executeDockerCompose(deploymentDir, "ps", "--services", "--filter", "status=running");
 
             if (output != null && output.toLowerCase().contains("apiserver")) {
-                return "RUNNING";
+                return isApiserverMonitorHealthy(deployment) ? "RUNNING" : "STARTING";
             } else if (output != null && !output.trim().isEmpty()) {
                 return "STARTING";
             } else {
@@ -535,6 +591,61 @@ public class LocalDeploymentProvider implements DeploymentProvider {
         int port = getApiserverHostPort(deployment);
         // Use IPv4 loopback so JVM clients match Docker-published ports (see AirflowApiUrlUtils).
         return "http://127.0.0.1:" + port;
+    }
+
+    /** Same path as Docker Compose healthcheck for {@code airflow-apiserver}. */
+    private String apiserverMonitorHealthUrl(AirflowDeployment deployment) {
+        return getWebserverUrl(deployment) + "/api/v2/monitor/health";
+    }
+
+    private boolean isApiserverMonitorHealthy(AirflowDeployment deployment) {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(apiserverMonitorHealthUrl(deployment)).openConnection();
+            c.setRequestMethod("GET");
+            c.setConnectTimeout(2000);
+            c.setReadTimeout(3000);
+            c.setInstanceFollowRedirects(false);
+            int code = c.getResponseCode();
+            return code >= 200 && code < 400;
+        } catch (Exception e) {
+            log.trace("Apiserver health check failed for {}: {}", deployment.getDeploymentId(), e.getMessage());
+            return false;
+        } finally {
+            if (c != null) {
+                c.disconnect();
+            }
+        }
+    }
+
+    /**
+     * Blocks until {@link #isApiserverMonitorHealthy} succeeds or timeout. Skipped when
+     * {@code local.apiserver-ready-timeout-seconds} is 0.
+     */
+    private void waitForAirflowApiserverReady(AirflowDeployment deployment) {
+        if (apiserverReadyTimeoutSeconds <= 0) {
+            return;
+        }
+        String healthUrl = apiserverMonitorHealthUrl(deployment);
+        long deadline = System.currentTimeMillis() + apiserverReadyTimeoutSeconds * 1000L;
+        int attempt = 0;
+        while (System.currentTimeMillis() < deadline) {
+            attempt++;
+            if (isApiserverMonitorHealthy(deployment)) {
+                log.info("Airflow apiserver ready for {} after {} probe(s): {}",
+                        deployment.getDeploymentId(), attempt, healthUrl);
+                return;
+            }
+            long sleep = Math.min(apiserverReadyPollIntervalMs, 500L + attempt * 50L);
+            try {
+                Thread.sleep(sleep);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new DeploymentException("Interrupted while waiting for Airflow apiserver");
+            }
+        }
+        throw new DeploymentException("Airflow apiserver did not become healthy within " + apiserverReadyTimeoutSeconds
+                + "s (expected GET " + healthUrl + ")");
     }
 
     @Override
@@ -746,6 +857,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(new File(workingDir));
         pb.redirectErrorStream(true);
+        applyDockerBuildOptimizationEnv(pb);
 
         Process process = pb.start();
 

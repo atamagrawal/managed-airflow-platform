@@ -480,18 +480,7 @@ public class ProjectService {
                     localBaseDirectory,
                     deployment.getTenant().getTenantId(),
                     deployment.getDeploymentId());
-            Files.createDirectories(deploymentRoot);
-            String requirements = StringUtils.hasText(project.getRequirementsTxt())
-                    ? project.getRequirementsTxt()
-                    : getDefaultRequirements();
-            Files.writeString(deploymentRoot.resolve("requirements.txt"), requirements);
-            if (project.getPackagesTxt() != null) {
-                Files.writeString(deploymentRoot.resolve("packages.txt"), project.getPackagesTxt());
-            }
-            String dockerfile = StringUtils.hasText(project.getDockerfile())
-                    ? project.getDockerfile().trim()
-                    : getDefaultDockerfile(project.getAirflowVersion());
-            Files.writeString(deploymentRoot.resolve("Dockerfile"), dockerfile);
+            writeDeploymentRootDockerBuildContext(project, deploymentRoot);
             log.info("Materialized project {} Docker build context for local deployment {}", projectId, deploymentId);
         } catch (IOException e) {
             throw new DeploymentException("Failed to write project build files: " + e.getMessage(), e);
@@ -652,15 +641,19 @@ public class ProjectService {
         Files.createDirectories(projectPath.resolve("include"));
         Files.createDirectories(projectPath.resolve("tests"));
 
-        // Write configuration files
-        if (project.getRequirementsTxt() != null) {
-            Files.writeString(projectPath.resolve("requirements.txt"), project.getRequirementsTxt());
-        }
-        if (project.getPackagesTxt() != null) {
-            Files.writeString(projectPath.resolve("packages.txt"), project.getPackagesTxt());
-        }
-        if (project.getDockerfile() != null) {
-            Files.writeString(projectPath.resolve("Dockerfile"), project.getDockerfile());
+        // Per-project copies under projectPath (SEPARATED only). UNIFIED uses deploymentRoot == projectPath;
+        // Dockerfile/requirements/packages for the image must match materialize (trim + defaults) — see
+        // writeDeploymentRootDockerBuildContext below.
+        if (!dagDeploymentConfig.isUnified()) {
+            if (project.getRequirementsTxt() != null) {
+                Files.writeString(projectPath.resolve("requirements.txt"), project.getRequirementsTxt());
+            }
+            if (project.getPackagesTxt() != null) {
+                Files.writeString(projectPath.resolve("packages.txt"), project.getPackagesTxt());
+            }
+            if (project.getDockerfile() != null) {
+                Files.writeString(projectPath.resolve("Dockerfile"), project.getDockerfile());
+            }
         }
         if (project.getAirflowSettingsYaml() != null) {
             Files.writeString(projectPath.resolve("airflow_settings.yaml"), project.getAirflowSettingsYaml());
@@ -672,17 +665,10 @@ public class ProjectService {
             Files.writeString(projectPath.resolve(".env"), project.getEnvFile());
         }
 
-        // Runtime config is always written at deployment root so docker build/compose can use it.
+        // Image build context at deployment root — must be byte-identical to materializeLocalDeploymentBuildFromProject
+        // so syncAfterProjectDeploy does not treat the Dockerfile as changed and rebuild/recreate all Airflow containers.
         Files.createDirectories(deploymentRoot);
-        if (project.getRequirementsTxt() != null) {
-            Files.writeString(deploymentRoot.resolve("requirements.txt"), project.getRequirementsTxt());
-        }
-        if (project.getPackagesTxt() != null) {
-            Files.writeString(deploymentRoot.resolve("packages.txt"), project.getPackagesTxt());
-        }
-        if (project.getDockerfile() != null) {
-            Files.writeString(deploymentRoot.resolve("Dockerfile"), project.getDockerfile());
-        }
+        writeDeploymentRootDockerBuildContext(project, deploymentRoot);
 
         // Write project files (DAGs, plugins, etc.)
         List<ProjectFile> files = projectFileRepository.findByProject(project);
@@ -738,6 +724,26 @@ public class ProjectService {
         }
 
         return uniqueId;
+    }
+
+    /**
+     * Writes {@code requirements.txt}, optional {@code packages.txt}, and {@code Dockerfile} at the deployment root
+     * using the same rules as {@link #materializeLocalDeploymentBuildFromProject} so Docker build-input stamps stay stable
+     * across materialize → stack start → project deploy.
+     */
+    private void writeDeploymentRootDockerBuildContext(Project project, Path deploymentRoot) throws IOException {
+        Files.createDirectories(deploymentRoot);
+        String requirements = StringUtils.hasText(project.getRequirementsTxt())
+                ? project.getRequirementsTxt()
+                : getDefaultRequirements();
+        Files.writeString(deploymentRoot.resolve("requirements.txt"), requirements);
+        if (project.getPackagesTxt() != null) {
+            Files.writeString(deploymentRoot.resolve("packages.txt"), project.getPackagesTxt());
+        }
+        String dockerfile = StringUtils.hasText(project.getDockerfile())
+                ? project.getDockerfile().trim()
+                : getDefaultDockerfile(project.getAirflowVersion());
+        Files.writeString(deploymentRoot.resolve("Dockerfile"), dockerfile);
     }
 
     private String getDefaultRequirements() {
