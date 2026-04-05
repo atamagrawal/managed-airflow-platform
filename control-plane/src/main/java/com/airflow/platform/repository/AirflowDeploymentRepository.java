@@ -30,4 +30,7 @@ public interface AirflowDeploymentRepository extends JpaRepository<AirflowDeploy
     List<AirflowDeployment> findByStatus(AirflowDeployment.DeploymentStatus status);
 
     List<AirflowDeployment> findByStatusIn(Collection<AirflowDeployment.DeploymentStatus> statuses);
+
+    List<AirflowDeployment> findByStatusInAndWebserverUrlIsNotNull(
+            Collection<AirflowDeployment.DeploymentStatus> statuses);
 }

@@ -140,6 +140,20 @@ export const deployedDagsAPI = {
     }),
 };
 
+/** Cached DAG runs + debug metadata (synced from Airflow REST API into control-plane DB) */
+export const dagInsightsAPI = {
+  listRuns: (params) => api.get('/dag-insights/runs', { params }),
+  listDebug: (params) => api.get('/dag-insights/debug', { params }),
+  listImportErrors: (params) => api.get('/dag-insights/import-errors', { params }),
+  syncStatus: (params) => api.get('/dag-insights/sync-status', { params }),
+  sync: (deploymentId) =>
+    api.post(
+      '/dag-insights/sync',
+      null,
+      deploymentId && deploymentId !== 'all' ? { params: { deploymentId } } : {}
+    ),
+};
+
 // Project APIs
 export const projectAPI = {
   getAll: () => api.get('/projects'),

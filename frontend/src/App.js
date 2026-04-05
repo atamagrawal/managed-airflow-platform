@@ -14,6 +14,8 @@ import Users from './pages/Users';
 import Deployments from './pages/Deployments';
 import DeploymentDetails from './pages/DeploymentDetails';
 import Dags from './pages/Dags';
+import DagRuns from './pages/DagRuns';
+import DagDebug from './pages/DagDebug';
 import Projects from './pages/Projects';
 import DeployedProjects from './pages/DeployedProjects';
 import EnvironmentLayout from './pages/EnvironmentLayout';
@@ -98,6 +100,8 @@ function AppRoutes() {
           <Route path="variables" element={<EnvironmentVariables />} />
         </Route>
         <Route path="/dags" element={<Dags />} />
+        <Route path="/dag-runs" element={<DagRuns />} />
+        <Route path="/dag-debug" element={<DagDebug />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/deployed-projects" element={<DeployedProjects />} />
         <Route path="/projects/:projectId" element={<ProjectDetails />} />
