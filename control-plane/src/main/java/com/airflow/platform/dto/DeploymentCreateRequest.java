@@ -21,6 +21,9 @@ public class DeploymentCreateRequest {
     @Size(max = 500, message = "Description must not exceed 500 characters")
     private String description;
 
+    @Size(max = 100, message = "Tag must not exceed 100 characters")
+    private String tag;
+
     @NotBlank(message = "Airflow version is required")
     private String airflowVersion;
 

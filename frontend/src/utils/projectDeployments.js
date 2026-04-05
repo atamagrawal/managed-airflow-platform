@@ -4,12 +4,32 @@ function deploymentsForProjectTenant(project, allDeployments) {
   return (allDeployments || []).filter((d) => d.tenantId === tid);
 }
 
-/** Options when deploying: choose any Airflow deployment (deploy creates the project↔deployment link if needed). */
+function deployOptionSortKey(status) {
+  if (status === 'RUNNING') return 0;
+  if (status === 'DEPLOYING' || status === 'PENDING') return 1;
+  return 2;
+}
+
+/**
+ * Options when deploying: any tenant deployment counts (including STOPPED — you can sync files before starting).
+ * Labels include status so a running test env and a stopped second deployment are easy to tell apart.
+ */
 export function getDeploymentSelectOptionsForDeploy(allDeployments) {
-  return (allDeployments || []).map((d) => ({
-    label: d.name ? `${d.name} (${d.deploymentId})` : d.deploymentId,
-    value: d.deploymentId,
-  }));
+  const list = [...(allDeployments || [])];
+  list.sort(
+    (a, b) =>
+      deployOptionSortKey(a.status) - deployOptionSortKey(b.status) ||
+      String(a.name || '').localeCompare(String(b.name || '')) ||
+      String(a.deploymentId || '').localeCompare(String(b.deploymentId || ''))
+  );
+  return list.map((d) => {
+    const rawTag = d.tag != null && String(d.tag).trim() !== '' ? String(d.tag).trim() : null;
+    const base = d.name ? `${d.name} (${d.deploymentId})` : d.deploymentId;
+    const titled = rawTag ? `${rawTag} · ${base}` : base;
+    const st = d.status != null && String(d.status).trim() !== '' ? String(d.status).trim() : null;
+    const label = st ? `${titled} — ${st}` : titled;
+    return { label, value: d.deploymentId };
+  });
 }
 
 /** Options when triggering: only deployments the project is linked to (deploy there first). */
@@ -54,10 +74,10 @@ export function resolveDeploymentForTrigger(project, allDeployments) {
 }
 
 /**
- * Deploy: show a picker only when:
- * - the project is linked to multiple deployments (choose which to sync to), or
- * - the project has no links yet and there is more than one Airflow deployment (first-time target).
- * If the project is linked to exactly one deployment, deploy there without a modal.
+ * Deploy: show a picker whenever this tenant has more than one Airflow deployment row (including STOPPED),
+ * so e.g. test env (RUNNING) + second env (STOPPED) still opens "Choose deployment…" instead of syncing only
+ * to the linked test deployment. Single deployment row for the tenant → deploy there with no modal.
+ * {@link getDeploymentSelectOptionsForDeploy} — deploy may create the project↔deployment link if needed.
  */
 export function resolveDeploymentForDeploy(project, allDeployments) {
   const scoped = deploymentsForProjectTenant(project, allDeployments);
@@ -65,25 +85,6 @@ export function resolveDeploymentForDeploy(project, allDeployments) {
   if (allOpts.length === 0) {
     return { ok: false, reason: 'none' };
   }
-  const linked = project?.linkedDeploymentIds || [];
-
-  if (linked.length === 1) {
-    const allowed = scoped.some((d) => d.deploymentId === linked[0]);
-    if (!allowed) {
-      return { ok: false, reason: 'none' };
-    }
-    return { ok: true, deploymentId: linked[0], needsPicker: false };
-  }
-
-  if (linked.length > 1) {
-    const options = allOpts.filter((o) => linked.includes(o.value));
-    if (options.length === 0) {
-      return { ok: false, reason: 'none' };
-    }
-    return { ok: true, needsPicker: true, options };
-  }
-
-  // No links yet — first deploy
   if (allOpts.length === 1) {
     return { ok: true, deploymentId: allOpts[0].value, needsPicker: false };
   }

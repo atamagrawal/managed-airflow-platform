@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -82,6 +83,7 @@ public class AirflowDeploymentService {
         deployment.setTenant(tenant);
         deployment.setName(request.getName());
         deployment.setDescription(request.getDescription());
+        deployment.setTag(normalizeDeploymentTag(request.getTag()));
         deployment.setAirflowVersion(request.getAirflowVersion());
         deployment.setExecutorType(AirflowDeployment.ExecutorType.valueOf(request.getExecutorType().toUpperCase()));
         deployment.setStatus(AirflowDeployment.DeploymentStatus.PENDING);
@@ -266,6 +268,7 @@ public class AirflowDeploymentService {
 
         deployment.setName(request.getName());
         deployment.setDescription(request.getDescription());
+        deployment.setTag(normalizeDeploymentTag(request.getTag()));
         deployment.setMinWorkers(request.getMinWorkers());
         deployment.setMaxWorkers(request.getMaxWorkers());
         deployment.setSchedulerCpu(request.getSchedulerCpu());
@@ -302,6 +305,14 @@ public class AirflowDeploymentService {
 
     private void assertDeploymentAccess(AirflowDeployment deployment) {
         SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
+    }
+
+    private static String normalizeDeploymentTag(String tag) {
+        if (!StringUtils.hasText(tag)) {
+            return null;
+        }
+        String t = tag.trim();
+        return t.isEmpty() ? null : t;
     }
 
     private String generateDeploymentId(String name) {
