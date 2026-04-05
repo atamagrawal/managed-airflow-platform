@@ -6,6 +6,8 @@ import {
   UserOutlined,
   CloudServerOutlined,
   CodeOutlined,
+  HistoryOutlined,
+  BugOutlined,
   FolderOpenOutlined,
   RocketOutlined,
   ExperimentOutlined,
@@ -66,6 +68,16 @@ const Sidebar = () => {
         label: 'DAGs',
       },
       {
+        key: '/dag-runs',
+        icon: <HistoryOutlined />,
+        label: 'DAG runs',
+      },
+      {
+        key: '/dag-debug',
+        icon: <BugOutlined />,
+        label: 'DAG debug',
+      },
+      {
         key: '/projects',
         icon: <FolderOpenOutlined />,
         label: BRAND.navProjects,
@@ -104,6 +116,8 @@ const Sidebar = () => {
   const getSelectedKey = () => {
     const path = location.pathname;
     if (path.startsWith('/deployed-projects')) return '/deployed-projects';
+    if (path.startsWith('/dag-runs')) return '/dag-runs';
+    if (path.startsWith('/dag-debug')) return '/dag-debug';
     if (path.startsWith('/dags')) return '/dags';
     if (path.startsWith('/projects')) return '/projects';
     if (path.startsWith('/environment/variables')) return '/environment/variables';

@@ -111,6 +111,15 @@ dag:
     # Example: "/opt/airflow/dags,/opt/airflow/projects/*/dags"
     additional-dag-folders:
 
+# Cache DAG runs + debug metadata from each deployment's Airflow REST API into the control-plane DB.
+dag-insights:
+  sync-interval-ms: 300000
+  sync:
+    scheduler-enabled: true
+    page-size: 100
+    max-dags-per-deployment: 500
+    max-runs-per-dag: 25
+
 # Files copied into every new project (DAGs, contracts, etc.). Edit resources under default-project/ — not ProjectService.
 project:
   default-template:

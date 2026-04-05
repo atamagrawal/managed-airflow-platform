@@ -20,6 +20,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -188,5 +189,32 @@ public class AirflowRemoteApiService {
             throw new DeploymentException("Airflow auth response missing access_token");
         }
         return respBody.get("access_token").toString();
+    }
+
+    /**
+     * Authenticated GET returning parsed JSON object (Airflow stable REST). Used for DAG insights sync.
+     *
+     * @param pathAndQuery path starting with {@code /api/v1} or {@code /api/v2}, including query string if any
+     */
+    public Map<String, Object> getJson(String webserverUrl, String airflowVersion, String pathAndQuery) {
+        String baseUrl = AirflowApiUrlUtils.normalizeAirflowBaseUrl(webserverUrl);
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new DeploymentException("Airflow base URL is empty");
+        }
+        if (pathAndQuery == null || !pathAndQuery.startsWith("/")) {
+            throw new DeploymentException("path must start with /");
+        }
+        String url = baseUrl + pathAndQuery;
+        if (AirflowVersionUtils.isAirflow3OrLater(airflowVersion)) {
+            HttpHeaders headers = bearerHeaders(baseUrl);
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(headers), new ParameterizedTypeReference<>() {});
+            return response.getBody() != null ? response.getBody() : Collections.emptyMap();
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBasicAuth(airflowApiUsername, airflowApiPassword);
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(headers), new ParameterizedTypeReference<>() {});
+        return response.getBody() != null ? response.getBody() : Collections.emptyMap();
     }
 }

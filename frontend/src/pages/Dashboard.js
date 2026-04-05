@@ -264,6 +264,12 @@ const Dashboard = () => {
               <Button type="link" onClick={() => navigate('/dags')}>
                 DAGs
               </Button>
+              <Button type="link" onClick={() => navigate('/dag-runs')}>
+                DAG runs
+              </Button>
+              <Button type="link" onClick={() => navigate('/dag-debug')}>
+                DAG debug
+              </Button>
             </Space>
           </Card>
         </Col>
