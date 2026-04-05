@@ -148,6 +148,7 @@ const Deployments = () => {
           tenantId: values.tenantId,
           name: values.name,
           description: values.description,
+          tag: values.tag,
           airflowVersion: values.airflowVersion,
           executorType: values.executorType,
           status: 'DEPLOYING',
@@ -315,14 +316,24 @@ const Deployments = () => {
     key: 'tag',
     width: 118,
     align: 'center',
-    render: (_, record) =>
-      isFlowDeckTestDeploymentName(record.name) ? (
-        <Tag icon={<ExperimentOutlined />} color="processing" style={{ margin: 0 }}>
-          Test env
-        </Tag>
-      ) : (
-        <span className="deployments-tag-empty">—</span>
-      ),
+    render: (_, record) => {
+      const custom = record.tag && String(record.tag).trim() !== '' ? String(record.tag).trim() : null;
+      if (custom) {
+        return (
+          <Tag color="geekblue" style={{ margin: 0 }}>
+            {custom}
+          </Tag>
+        );
+      }
+      if (isFlowDeckTestDeploymentName(record.name)) {
+        return (
+          <Tag icon={<ExperimentOutlined />} color="processing" style={{ margin: 0 }}>
+            Test env
+          </Tag>
+        );
+      }
+      return <span className="deployments-tag-empty">—</span>;
+    },
   };
 
   const actionsColumn = {
@@ -590,6 +601,15 @@ const Deployments = () => {
             rules={[{ required: true, message: 'Please enter deployment name' }]}
           >
             <Input placeholder="Enter deployment name" />
+          </Form.Item>
+
+          <Form.Item
+            name="tag"
+            label="Tag"
+            rules={[{ max: 100, message: 'Tag must be 100 characters or less' }]}
+            extra="Short label for this row in the deployments table (e.g. Prod, Staging, Dev). Not a Docker image tag."
+          >
+            <Input placeholder="e.g. Staging, Prod" allowClear />
           </Form.Item>
 
           <Form.Item name="description" label="Description">

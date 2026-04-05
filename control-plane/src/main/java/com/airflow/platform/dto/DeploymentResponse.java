@@ -22,6 +22,7 @@ public class DeploymentResponse {
     private String tenantId;
     private String name;
     private String description;
+    private String tag;
     private String airflowVersion;
     private String executorType;
     private String status;
@@ -49,6 +50,7 @@ public class DeploymentResponse {
                 .tenantId(deployment.getTenant().getTenantId())
                 .name(deployment.getName())
                 .description(deployment.getDescription())
+                .tag(deployment.getTag())
                 .airflowVersion(deployment.getAirflowVersion())
                 .executorType(deployment.getExecutorType().name())
                 .status(deployment.getStatus().name())

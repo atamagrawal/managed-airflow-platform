@@ -36,6 +36,10 @@ public class AirflowDeployment {
     @Column(length = 500)
     private String description;
 
+    /** Optional short label for lists (e.g. Prod, Staging). Distinct from Kubernetes/docker tags. */
+    @Column(length = 100)
+    private String tag;
+
     @Column(nullable = false, length = 50)
     private String airflowVersion;
 

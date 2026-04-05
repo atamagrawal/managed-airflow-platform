@@ -102,6 +102,9 @@ const DeploymentDetails = () => {
         <Descriptions column={2} bordered>
           <Descriptions.Item label="Deployment ID">{deployment.deploymentId}</Descriptions.Item>
           <Descriptions.Item label="Name">{deployment.name || deployment.deploymentId}</Descriptions.Item>
+          {deployment.tag ? (
+            <Descriptions.Item label="Tag">{deployment.tag}</Descriptions.Item>
+          ) : null}
           <Descriptions.Item label="Tenant ID">{deployment.tenantId}</Descriptions.Item>
           <Descriptions.Item label="Status">
             <Tag color={getStatusColor(deployment.status)}>{deployment.status}</Tag>
