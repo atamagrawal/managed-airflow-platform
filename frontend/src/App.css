@@ -10,6 +10,15 @@ body {
   font-family: var(--brand-font);
 }
 
+/* Single flex column from #root so Ant Layout gets real height (not % of auto). */
+.app-viewport {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .App {
   text-align: center;
 }
@@ -367,4 +376,37 @@ body {
   margin-top: 12px !important;
   margin-bottom: 0 !important;
   font-size: 14px !important;
+}
+
+/* ---- Flow Deck IDE route: fill viewport under header ---- */
+.flow-deck-ide-app-root.ant-layout {
+  align-items: stretch;
+}
+
+/* Right column: fill #root / outer layout height so editor + Allotment aren’t ~half viewport. */
+.flow-deck-ide-app-inner.ant-layout {
+  flex: 1 1 0% !important;
+  min-width: 0 !important;
+  min-height: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.flow-deck-ide-app-content.ant-layout-content {
+  /* flex-basis: 0 + flex-grow: 1 = exact remainder under header (avoids bottom slack on macOS). */
+  flex: 1 1 0 !important;
+  flex-basis: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+}
+
+.flow-deck-ide-app-content > * {
+  flex: 1 1 0;
+  flex-basis: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
