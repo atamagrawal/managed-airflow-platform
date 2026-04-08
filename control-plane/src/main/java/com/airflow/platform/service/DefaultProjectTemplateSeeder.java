@@ -26,16 +26,15 @@ import java.util.Properties;
 import java.util.function.Predicate;
 
 /**
- * Seeds {@link ProjectFile} rows from a template directory (classpath or file). To change the default project,
- * edit files under {@code src/main/resources/default-project/} or point
- * {@code project.default-template.location} elsewhere — no Java code changes required.
+ * Seeds {@link ProjectFile} rows from the configured template ({@code project.default-template.active}).
+ * Add templates by registering a root in YAML and placing files under {@code src/main/resources/...} (or a {@code file:} tree).
+ * Optional {@code extra-requirements.txt} at the template root merges non-duplicate lines into the project's
+ * {@code requirements.txt} (comment lines {@code #} and blanks skipped).
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class DefaultProjectTemplateSeeder {
-
-    private static final String ROOT_DIR = "default-project";
 
     private final DefaultProjectTemplateProperties properties;
     private final ProjectFileRepository projectFileRepository;
@@ -58,9 +57,11 @@ public class DefaultProjectTemplateSeeder {
             return;
         }
 
-        String root = normalizeRoot(properties.getLocation());
+        String root = properties.resolveLocation(null);
+        String rootFolderName = templateRootFolderName(root);
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
 
+        mergeExtraRequirements(project, resolver, root);
         applyDefaultAirflowSettings(project, resolver, root);
 
         Properties descriptions = loadDescriptions(resolver, root);
@@ -78,7 +79,7 @@ public class DefaultProjectTemplateSeeder {
                 if (!resource.isReadable()) {
                     continue;
                 }
-                String relative = pathUnderTemplateRoot(resource);
+                String relative = pathUnderTemplateRoot(resource, rootFolderName);
                 if (relative == null || !relative.startsWith(rule.prefix + "/")) {
                     continue;
                 }
@@ -90,7 +91,7 @@ public class DefaultProjectTemplateSeeder {
         }
 
         if (unique.isEmpty()) {
-            log.warn("No dags/contracts/plugins template files under {} — check project.default-template.location",
+            log.warn("No dags/contracts/plugins template files under {} — check project.default-template.templates",
                     root);
             project.setDagCount(0);
             return;
@@ -119,7 +120,8 @@ public class DefaultProjectTemplateSeeder {
             }
         }
         project.setDagCount(dagFiles);
-        log.info("Seeded {} template file(s) ({} DAG(s)) for project {}", unique.size(), dagFiles, project.getProjectId());
+        log.info("Seeded {} template file(s) ({} DAG(s)) for project {} from {}",
+                unique.size(), dagFiles, project.getProjectId(), root);
     }
 
     /**
@@ -138,7 +140,44 @@ public class DefaultProjectTemplateSeeder {
         try (InputStream in = r.getInputStream()) {
             String yaml = applyPlaceholders(StreamUtils.copyToString(in, StandardCharsets.UTF_8), project);
             project.setAirflowSettingsYaml(yaml);
-            log.info("Applied template airflow_settings.yaml to project {}", project.getProjectId());
+                log.info("Applied template airflow_settings.yaml to project {}", project.getProjectId());
+        }
+    }
+
+    /**
+     * If the template contains {@code extra-requirements.txt}, append any lines not already present in the project
+     * requirements (simple substring check per line).
+     */
+    private void mergeExtraRequirements(Project project, PathMatchingResourcePatternResolver resolver, String root)
+            throws IOException {
+        Resource r = resolver.getResource(root + "extra-requirements.txt");
+        if (!r.exists()) {
+            return;
+        }
+        String extra;
+        try (InputStream in = r.getInputStream()) {
+            extra = StreamUtils.copyToString(in, StandardCharsets.UTF_8);
+        }
+        String current = project.getRequirementsTxt() != null ? project.getRequirementsTxt() : "";
+        String merged = current;
+        boolean changed = false;
+        for (String line : extra.split("\\R")) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            if (merged.contains(t)) {
+                continue;
+            }
+            if (!merged.isEmpty() && !merged.endsWith("\n")) {
+                merged += "\n";
+            }
+            merged += t + "\n";
+            changed = true;
+        }
+        if (changed) {
+            project.setRequirementsTxt(merged.stripTrailing());
+            log.info("Merged extra-requirements.txt from template into project {}", project.getProjectId());
         }
     }
 
@@ -152,10 +191,21 @@ public class DefaultProjectTemplateSeeder {
         return false;
     }
 
-    private static String normalizeRoot(String location) {
-        String t = Objects.requireNonNullElse(location, "classpath:default-project/").trim();
-        if (!t.endsWith("/")) {
-            return t + "/";
+    /**
+     * Last path segment of the template root (e.g. {@code default-project} from {@code classpath:default-project/}).
+     */
+    static String templateRootFolderName(String normalizedRoot) {
+        String t = Objects.requireNonNull(normalizedRoot, "normalizedRoot").trim();
+        if (t.endsWith("/")) {
+            t = t.substring(0, t.length() - 1);
+        }
+        int lastSlash = t.lastIndexOf('/');
+        if (lastSlash >= 0) {
+            return t.substring(lastSlash + 1);
+        }
+        int colon = t.indexOf(':');
+        if (colon >= 0 && colon < t.length() - 1) {
+            return t.substring(colon + 1);
         }
         return t;
     }
@@ -212,10 +262,10 @@ public class DefaultProjectTemplateSeeder {
     }
 
     /**
-     * Returns path relative to {@code default-project/}, e.g. {@code dags/foo.py}.
+     * Returns path relative to the template root folder, e.g. {@code dags/foo.py}.
      */
-    static String pathUnderTemplateRoot(Resource resource) {
-        String marker = ROOT_DIR + "/";
+    static String pathUnderTemplateRoot(Resource resource, String rootFolderName) {
+        String marker = rootFolderName + "/";
         String path;
         try {
             path = resource.getURL().getPath();

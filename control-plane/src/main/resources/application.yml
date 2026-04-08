@@ -120,11 +120,15 @@ dag-insights:
     max-dags-per-deployment: 500
     max-runs-per-dag: 25
 
-# Files copied into every new project (DAGs, contracts, etc.). Edit resources under default-project/ — not ProjectService.
+# Starter project content: add a folder under src/main/resources/ and register it in templates; pick one with active.
+# Optional extra-requirements.txt at the template root merges pip lines into new projects (see DefaultProjectTemplateSeeder).
 project:
   default-template:
     enabled: true
-    location: classpath:default-project/
+    active: taskflow-contracts
+    templates:
+      classic: classpath:default-project/
+      taskflow-contracts: classpath:default-project-taskflow-contracts/
 
 ---
 # Production profile configuration

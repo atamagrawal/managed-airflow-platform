@@ -1,0 +1,9 @@
+# Local-only dummy catalog: URNs resolve to YAML files under /opt/airflow (no DataHub, no external APIs).
+# Matches connection "local_dummy_data_contract_catalog" created by local deployment docker-compose (airflow-init).
+# If you recreate the stack or use another environment, run the same `airflow connections add` or import from here.
+connections:
+  - conn_id: local_dummy_data_contract_catalog
+    conn_type: data_contract_yaml
+    host: /opt/airflow
+    extra: |
+      {"contracts":{"urn:example:sample_dataset":"contracts/sample_dataset.yaml"}}

@@ -16,4 +16,4 @@ can be re-imported if needed.
 
 Placeholders in any template file: ${projectId}, ${projectName}
 
-Config: project.default-template.* in application.yml
+Config: project.default-template.templates + active in application.yml. Optional extra-requirements.txt per template folder.
