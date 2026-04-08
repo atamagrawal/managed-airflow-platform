@@ -1,29 +1,46 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
-import { ConfigProvider, Layout } from 'antd';
+import { ConfigProvider, Layout, Spin } from 'antd';
 import './App.css';
 import { AuthProvider } from './context/AuthContext';
 import RequireAuth from './components/RequireAuth';
 import RequireAdmin from './components/RequireAdmin';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Tenants from './pages/Tenants';
-import Users from './pages/Users';
-import Deployments from './pages/Deployments';
-import DeploymentDetails from './pages/DeploymentDetails';
-import Dags from './pages/Dags';
-import DagRuns from './pages/DagRuns';
-import DagDebug from './pages/DagDebug';
-import Projects from './pages/Projects';
-import DeployedProjects from './pages/DeployedProjects';
-import EnvironmentLayout from './pages/EnvironmentLayout';
-import EnvironmentConnections from './pages/EnvironmentConnections';
-import EnvironmentVariables from './pages/EnvironmentVariables';
-import ProjectDetails from './pages/ProjectDetails';
-import ProjectCodeEditor from './pages/ProjectCodeEditor';
-import NotFound from './pages/NotFound';
+
+const Login = lazy(() => import('./pages/Login'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Tenants = lazy(() => import('./pages/Tenants'));
+const Users = lazy(() => import('./pages/Users'));
+const Deployments = lazy(() => import('./pages/Deployments'));
+const DeploymentDetails = lazy(() => import('./pages/DeploymentDetails'));
+const Dags = lazy(() => import('./pages/Dags'));
+const DagRuns = lazy(() => import('./pages/DagRuns'));
+const DagDebug = lazy(() => import('./pages/DagDebug'));
+const Projects = lazy(() => import('./pages/Projects'));
+const DeployedProjects = lazy(() => import('./pages/DeployedProjects'));
+const EnvironmentLayout = lazy(() => import('./pages/EnvironmentLayout'));
+const EnvironmentConnections = lazy(() => import('./pages/EnvironmentConnections'));
+const EnvironmentVariables = lazy(() => import('./pages/EnvironmentVariables'));
+const ProjectDetails = lazy(() => import('./pages/ProjectDetails'));
+const ProjectCodeEditor = lazy(() => import('./pages/ProjectCodeEditor'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+
+function RouteFallback() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        minHeight: '40vh',
+      }}
+    >
+      <Spin size="large" />
+    </div>
+  );
+}
 
 const { Content } = Layout;
 
@@ -32,16 +49,54 @@ function AppLayout() {
   const isFlowDeckIde =
     location.pathname.includes('/projects/') && location.pathname.includes('/editor');
 
+  const ideShellLayoutStyle = isFlowDeckIde
+    ? {
+        flex: '1 1 0%',
+        minWidth: 0,
+        minHeight: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        background: '#f0f2f5',
+      }
+    : { background: '#f0f2f5' };
+
+  const ideContentStyle = isFlowDeckIde
+    ? {
+        padding: 0,
+        background: '#fff',
+        flex: '1 1 0px',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }
+    : undefined;
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout
+      className={isFlowDeckIde ? 'flow-deck-ide-app-root' : undefined}
+      style={{
+        display: 'flex',
+        flex: '1 1 0%',
+        minHeight: 0,
+        height: '100%',
+        width: '100%',
+        ...(isFlowDeckIde ? { overflow: 'hidden' } : {}),
+      }}
+    >
       <Sidebar />
-      <Layout style={{ background: '#f0f2f5' }}>
+      <Layout
+        className={isFlowDeckIde ? 'flow-deck-ide-app-inner' : undefined}
+        style={ideShellLayoutStyle}
+      >
         <Header />
         <Content
-          className={isFlowDeckIde ? undefined : 'app-main-content'}
+          className={isFlowDeckIde ? 'flow-deck-ide-app-content' : 'app-main-content'}
           style={
             isFlowDeckIde
-              ? { padding: 0, background: '#fff' }
+              ? ideContentStyle
               : {
                   margin: '20px 16px 32px',
                   padding: '24px 24px 32px',
@@ -72,6 +127,7 @@ function AuthenticatedShell() {
 
 function AppRoutes() {
   return (
+    <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route element={<AuthenticatedShell />}>
@@ -110,25 +166,28 @@ function AppRoutes() {
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
+    </Suspense>
   );
 }
 
 function App() {
   return (
-    <ConfigProvider
-      theme={{
-        token: {
-          borderRadiusLG: 10,
-          fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif",
-        },
-      }}
-    >
-      <Router>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </Router>
-    </ConfigProvider>
+    <div className="app-viewport">
+      <ConfigProvider
+        theme={{
+          token: {
+            borderRadiusLG: 10,
+            fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif",
+          },
+        }}
+      >
+        <Router>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </Router>
+      </ConfigProvider>
+    </div>
   );
 }
 

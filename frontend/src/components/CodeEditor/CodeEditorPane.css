@@ -1,17 +1,19 @@
 .code-editor-pane {
-  height: 100%;
+  flex: 1 1 0;
   min-height: 0;
   width: 100%;
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.monaco-editor-wrapper {
-  height: 100%;
-  width: 100%;
-  /* Monaco wrapper sometimes gets a tiny height; absolute fill stabilizes it. */
-  position: absolute;
-  inset: 0;
+.code-editor-pane .cm-editor {
+  flex: 1;
+}
+
+.code-editor-pane .cm-scroller {
+  overflow: auto;
 }
 
 .code-editor-fallback {

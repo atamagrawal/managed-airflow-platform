@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { message, Modal, Input, Select, Form } from 'antd';
 import { Allotment } from 'allotment';
@@ -46,6 +46,7 @@ const ProjectCodeEditor = () => {
   const [localStackPhase, setLocalStackPhase] = useState(null);
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFileForm] = Form.useForm();
+  const ideShellRef = useRef(null);
 
   const currentFile = openFiles.find((f) => f.fileId === activeFileId);
   const isCurrentFileModified = modifiedFiles.has(activeFileId);
@@ -124,6 +125,71 @@ const ProjectCodeEditor = () => {
       document.title = BRAND.name;
     };
   }, [project?.name]);
+
+  /**
+   * Fullscreen only: pin box to visualViewport. Normal mode relies on #root → app-viewport → Layout
+   * flex (flex-basis: 0) so we don’t under-size the shell vs the content panel on desktop.
+   */
+  useLayoutEffect(() => {
+    const shell = ideShellRef.current;
+    if (!shell || !isFullscreen) {
+      return undefined;
+    }
+
+    let rafId = 0;
+
+    const clearShellBox = () => {
+      shell.style.top = '';
+      shell.style.left = '';
+      shell.style.right = '';
+      shell.style.bottom = '';
+      shell.style.width = '';
+      shell.style.height = '';
+      shell.style.minHeight = '';
+    };
+
+    const schedule = (fn) => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        fn();
+      });
+    };
+
+    const syncFs = () => {
+      const vv = window.visualViewport;
+      const h = Math.ceil((vv?.height ?? window.innerHeight) || 0);
+      if (h <= 0) {
+        return;
+      }
+      const top = Math.floor(vv?.offsetTop ?? 0);
+      const left = Math.floor(vv?.offsetLeft ?? 0);
+      shell.style.top = `${top}px`;
+      shell.style.left = `${left}px`;
+      shell.style.right = 'auto';
+      shell.style.bottom = 'auto';
+      shell.style.width = vv ? `${Math.ceil(vv.width)}px` : '100%';
+      shell.style.height = `${h}px`;
+      shell.style.minHeight = `${h}px`;
+    };
+
+    syncFs();
+    schedule(syncFs);
+
+    const vv = window.visualViewport;
+    const onVv = () => schedule(syncFs);
+    vv?.addEventListener('resize', onVv);
+    vv?.addEventListener('scroll', onVv);
+    window.addEventListener('resize', onVv);
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      vv?.removeEventListener('resize', onVv);
+      vv?.removeEventListener('scroll', onVv);
+      window.removeEventListener('resize', onVv);
+      clearShellBox();
+    };
+  }, [isFullscreen]);
 
   const handleFileSelect = (file) => {
     const fileId = file.isConfig ? file.fileId : file.id.toString();
@@ -529,6 +595,7 @@ schema_compatibility: BACKWARD
 
   return (
     <div
+      ref={ideShellRef}
       className={`code-editor-container flow-deck-ide ${isFullscreen ? 'fullscreen' : ''}`}
     >
       <ProjectToolbar
@@ -557,7 +624,7 @@ schema_compatibility: BACKWARD
       />
 
       <div className="code-editor-content">
-        <Allotment style={{ height: '100%' }}>
+        <Allotment className="flow-deck-allotment">
           <Allotment.Pane minSize={200} preferredSize={250} maxSize={400}>
             <ProjectFileTree
               project={project}
@@ -582,16 +649,17 @@ schema_compatibility: BACKWARD
                 <div className="editor-content-area">
                   <CodeEditorPane
                     key={activeFileId}
+                    file={currentFile}
+                    isFullscreen={isFullscreen}
                     value={fileContents[activeFileId] || ''}
                     onChange={handleCodeChange}
                     readOnly={false}
                     settings={{
                       theme: editorSettings.theme,
                       fontSize: editorSettings.fontSize,
-                      minimap: { enabled: editorSettings.minimap },
+                      minimap: editorSettings.minimap,
                       lineNumbers: editorSettings.lineNumbers,
                       wordWrap: editorSettings.wordWrap,
-                      readOnly: false,
                     }}
                     onMount={{
                       onSave: () => handleSave(),
