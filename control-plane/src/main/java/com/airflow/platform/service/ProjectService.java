@@ -776,6 +776,13 @@ public class ProjectService {
                 ? project.getDockerfile().trim()
                 : getDefaultDockerfile(project.getAirflowVersion());
         Files.writeString(deploymentRoot.resolve("Dockerfile"), dockerfile);
+        Files.writeString(deploymentRoot.resolve("import_airflow_settings.py"), getAirflowSettingsImportScript());
+        Path airflowSettingsPath = deploymentRoot.resolve("airflow_settings.yaml");
+        if (StringUtils.hasText(project.getAirflowSettingsYaml())) {
+            Files.writeString(airflowSettingsPath, project.getAirflowSettingsYaml());
+        } else {
+            Files.deleteIfExists(airflowSettingsPath);
+        }
     }
 
     private String getDefaultRequirements() {
@@ -824,6 +831,81 @@ public class ProjectService {
 
                 # Ignore test files
                 tests/
+                """;
+    }
+
+    private String getAirflowSettingsImportScript() {
+        return """
+                from __future__ import annotations
+
+                import json
+                import subprocess
+                import sys
+                from pathlib import Path
+
+                import yaml
+
+
+                def main() -> int:
+                    settings_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/opt/airflow/airflow_settings.yaml")
+                    if not settings_path.exists():
+                        return 0
+
+                    cfg = yaml.safe_load(settings_path.read_text(encoding="utf-8")) or {}
+                    for conn in cfg.get("connections") or []:
+                        if not isinstance(conn, dict):
+                            continue
+
+                        conn_id = str(conn.get("conn_id") or "").strip()
+                        conn_type = str(conn.get("conn_type") or "").strip()
+                        if not conn_id or not conn_type:
+                            continue
+
+                        subprocess.run(
+                            ["/entrypoint", "airflow", "connections", "delete", conn_id],
+                            check=False,
+                        )
+
+                        cmd = [
+                            "/entrypoint",
+                            "airflow",
+                            "connections",
+                            "add",
+                            conn_id,
+                            "--conn-type",
+                            conn_type,
+                        ]
+
+                        host = conn.get("host")
+                        if host:
+                            cmd.extend(["--conn-host", str(host)])
+                        login = conn.get("login")
+                        if login:
+                            cmd.extend(["--conn-login", str(login)])
+                        password = conn.get("password")
+                        if password:
+                            cmd.extend(["--conn-password", str(password)])
+                        schema = conn.get("schema")
+                        if schema:
+                            cmd.extend(["--conn-schema", str(schema)])
+                        port = conn.get("port")
+                        if port is not None and str(port).strip():
+                            cmd.extend(["--conn-port", str(port)])
+                        description = conn.get("description")
+                        if description:
+                            cmd.extend(["--conn-description", str(description)])
+                        extra = conn.get("extra")
+                        if extra is not None:
+                            if isinstance(extra, (dict, list)):
+                                extra = json.dumps(extra)
+                            cmd.extend(["--conn-extra", str(extra)])
+
+                        subprocess.run(cmd, check=True)
+                    return 0
+
+
+                if __name__ == "__main__":
+                    raise SystemExit(main())
                 """;
     }
 

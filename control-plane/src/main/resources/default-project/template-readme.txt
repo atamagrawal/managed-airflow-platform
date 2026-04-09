@@ -6,13 +6,14 @@ change what new projects get — no Java changes.
 
 Dummy catalog connection (no external services)
 -----------------------------------------------
-All demo DAGs use connection id: local_dummy_data_contract_catalog
+All contract demos use the system-managed default connection id:
+  - data_contract_yaml_default
   - conn_type: data_contract_yaml
-  - Points URN urn:example:sample_dataset → contracts/sample_dataset.yaml under /opt/airflow
+  - Maps URN urn:example:sample_dataset -> contracts/sample_dataset.yaml under /opt/airflow
 
-Local docker-compose runs `airflow connections add` for that id (airflow-init).
-The template also ships airflow_settings.yaml on the Project so the definition is visible and
-can be re-imported if needed.
+Local docker-compose runs `airflow connections add` during airflow-init.
+The template also ships airflow_settings.yaml on the project so this connection definition is visible
+and can be re-imported if needed.
 
 Placeholders in any template file: ${projectId}, ${projectName}
 
