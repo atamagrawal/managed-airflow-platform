@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -136,6 +137,22 @@ public class AuthService {
         }
         String fallback = securityProperties.getDefaultTenantIdForUsers();
         return StringUtils.hasText(fallback) ? fallback.trim() : null;
+    }
+
+    /**
+     * Same secret as {@link #resolveAirflowHandoffPassword(String)} when available, for server-side Airflow REST calls
+     * (e.g. DAG triggers as the logged-in Flow Deck user). Empty when the password cannot be recovered.
+     */
+    public Optional<String> tryResolvePasswordForAirflowApi(String username) {
+        if (!StringUtils.hasText(username)) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(resolveAirflowHandoffPassword(username.trim()));
+        } catch (IllegalArgumentException ex) {
+            log.debug("Airflow API password not available for user '{}': {}", username, ex.getMessage());
+            return Optional.empty();
+        }
     }
 
     /**

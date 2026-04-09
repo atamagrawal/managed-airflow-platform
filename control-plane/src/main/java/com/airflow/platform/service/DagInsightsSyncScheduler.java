@@ -17,7 +17,7 @@ public class DagInsightsSyncScheduler {
 
     private final DagInsightsSyncService dagInsightsSyncService;
 
-    @Scheduled(fixedDelayString = "${dag-insights.sync-interval-ms:300000}")
+    @Scheduled(fixedDelayString = "${dag-insights.sync-interval-ms:90000}")
     public void runSync() {
         log.debug("DAG insights scheduled sync");
         try {

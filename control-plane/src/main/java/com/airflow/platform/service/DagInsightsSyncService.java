@@ -31,9 +31,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Pulls DAG metadata, import errors, and recent DAG runs from each deployment's Airflow API into the control-plane DB.
@@ -208,6 +210,7 @@ public class DagInsightsSyncService {
         Instant now = Instant.now();
         List<CachedDagMeta> metaList = new ArrayList<>();
         List<CachedDagRun> runs = new ArrayList<>();
+        Set<String> seenDagIds = new HashSet<>();
 
         int dagCount = 0;
         for (Map<String, Object> dag : dagMaps) {
@@ -216,6 +219,9 @@ public class DagInsightsSyncService {
             }
             String dagId = stringVal(dag.get("dag_id"));
             if (dagId == null || dagId.isBlank()) {
+                continue;
+            }
+            if (!seenDagIds.add(dagId)) {
                 continue;
             }
             dagCount++;

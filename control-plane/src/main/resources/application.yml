@@ -113,12 +113,25 @@ dag:
 
 # Cache DAG runs + debug metadata from each deployment's Airflow REST API into the control-plane DB.
 dag-insights:
-  sync-interval-ms: 300000
+  # How often the scheduler pulls from Airflow (ms). Lower = fresher cache, more API load.
+  sync-interval-ms: 90000
   sync:
     scheduler-enabled: true
     page-size: 100
     max-dags-per-deployment: 500
     max-runs-per-dag: 25
+
+# Airflow REST: username/password below are used for Dag insights sync and connection sync.
+# DAG triggers (POST .../dagRuns) by default authenticate as the logged-in Flow Deck user (same password as Open Airflow;
+# DB users need one successful login to store the bootstrap secret). @contract_trigger_user_guard then sees that username.
+# Fallback when no session password: trigger-username or username. Set use-logged-in-user-for-dag-triggers: false for fixed API user only.
+airflow:
+  api:
+    username: admin
+    password: admin
+    use-logged-in-user-for-dag-triggers: true
+    # trigger-username: data_eng_service
+    # trigger-password: changeme
 
 # Starter project content: add a folder under src/main/resources/ and register it in templates; pick one with active.
 # Optional extra-requirements.txt at the template root merges pip lines into new projects (see DefaultProjectTemplateSeeder).
@@ -158,6 +171,10 @@ logging:
   level:
     com.airflow.platform: INFO
     org.springframework: WARN
+
+# Larger fleets: raise interval to limit Airflow API traffic (e.g. 300000 = 5 min).
+dag-insights:
+  sync-interval-ms: 300000
 
 ---
 # ECS deployment profile configuration (for test deployments)

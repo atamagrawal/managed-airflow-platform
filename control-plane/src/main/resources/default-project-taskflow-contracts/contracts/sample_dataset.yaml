@@ -4,7 +4,11 @@ dataset_urn: "urn:example:sample_dataset"
 dataset_name: sample_dataset
 version: 1
 status: ACTIVE
+# triggering_user_name = REST user for the trigger (Flow Deck: logged-in user after FAB sync). List those names here.
+# dag_run.conf["managed_platform"]["triggered_by_username"] duplicates identity for custom policies.
 allowed_trigger_users:
+  - admin
+  - user
   - alice
   - data_eng_service
 
