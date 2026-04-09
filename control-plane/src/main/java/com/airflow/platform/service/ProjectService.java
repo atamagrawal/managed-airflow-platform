@@ -115,6 +115,12 @@ public class ProjectService {
     @Value("${airflow.api.use-logged-in-user-for-dag-triggers:true}")
     private boolean useLoggedInUserForDagTriggers;
 
+    @Value("${dag-insights.sync-after-project-trigger:true}")
+    private boolean syncDagInsightsAfterProjectTrigger;
+
+    @Autowired(required = false)
+    private DagInsightsSyncService dagInsightsSyncService;
+
     public ProjectService(ProjectRepository projectRepository,
                           ProjectFileRepository projectFileRepository,
                           ProjectDeploymentRepository projectDeploymentRepository,
@@ -607,6 +613,9 @@ public class ProjectService {
         summary.put("results", results);
         if (localDockerStackLifecycleService != null && successCount > 0) {
             localDockerStackLifecycleService.touchLastActivityTrusted(deploymentId);
+        }
+        if (dagInsightsSyncService != null && syncDagInsightsAfterProjectTrigger && successCount > 0) {
+            dagInsightsSyncService.triggerSyncDeployment(deploymentId);
         }
         return summary;
     }

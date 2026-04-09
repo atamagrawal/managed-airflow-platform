@@ -27,11 +27,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -178,24 +180,123 @@ public class DagInsightsSyncService {
         cachedDagImportErrorRepository.deleteByDeploymentId(deploymentId);
         cachedDagMetaRepository.deleteByDeploymentId(deploymentId);
         cachedDagRunRepository.deleteByDeploymentId(deploymentId);
+        cachedDagImportErrorRepository.flush();
+        cachedDagMetaRepository.flush();
+        cachedDagRunRepository.flush();
 
-        for (CachedDagImportError e : snap.importErrors()) {
+        List<CachedDagImportError> importErrors = dedupeImportErrorsByFilename(snap.importErrors());
+        for (CachedDagImportError e : importErrors) {
             e.setDeploymentId(deploymentId);
             e.setSyncedAt(syncedAt);
         }
-        cachedDagImportErrorRepository.saveAll(snap.importErrors());
+        cachedDagImportErrorRepository.saveAll(importErrors);
 
-        for (CachedDagMeta m : snap.meta()) {
+        List<CachedDagMeta> metaRows = dedupeCachedMetaByDagId(snap.meta());
+        for (CachedDagMeta m : metaRows) {
             m.setDeploymentId(deploymentId);
             m.setSyncedAt(syncedAt);
         }
-        cachedDagMetaRepository.saveAll(snap.meta());
+        cachedDagMetaRepository.saveAll(metaRows);
 
-        for (CachedDagRun r : snap.runs()) {
+        List<CachedDagRun> runRows = dedupeCachedRuns(snap.runs());
+        for (CachedDagRun r : runRows) {
             r.setDeploymentId(deploymentId);
             r.setSyncedAt(syncedAt);
         }
-        cachedDagRunRepository.saveAll(snap.runs());
+        cachedDagRunRepository.saveAll(runRows);
+    }
+
+    private static List<CachedDagImportError> dedupeImportErrorsByFilename(List<CachedDagImportError> in) {
+        Map<String, CachedDagImportError> byKey = new LinkedHashMap<>();
+        for (CachedDagImportError e : in) {
+            if (e.getFilename() == null) {
+                continue;
+            }
+            String k = e.getFilename().trim();
+            if (k.isEmpty()) {
+                continue;
+            }
+            byKey.putIfAbsent(k, e);
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
+    private static List<CachedDagMeta> dedupeCachedMetaByDagId(List<CachedDagMeta> in) {
+        Map<String, CachedDagMeta> byKey = new LinkedHashMap<>();
+        for (CachedDagMeta m : in) {
+            if (m.getDagId() == null) {
+                continue;
+            }
+            String k = m.getDagId().trim();
+            if (k.isEmpty()) {
+                continue;
+            }
+            byKey.putIfAbsent(k, m);
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
+    private static List<CachedDagRun> dedupeCachedRuns(List<CachedDagRun> in) {
+        Map<String, CachedDagRun> byKey = new LinkedHashMap<>();
+        for (CachedDagRun r : in) {
+            if (r.getDagId() == null || r.getDagRunId() == null) {
+                continue;
+            }
+            String k = r.getDagId().trim() + "\0" + r.getDagRunId().trim();
+            CachedDagRun existing = byKey.get(k);
+            if (existing == null) {
+                byKey.put(k, r);
+            } else {
+                byKey.put(k, pickBetterCachedDagRun(existing, r));
+            }
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
+    /**
+     * API responses can include duplicate dag runs (e.g. pagination/quirks). Prefer the snapshot that reflects a
+     * terminal failure/success over an older "running" row so the cache does not show stuck runs.
+     */
+    private static CachedDagRun pickBetterCachedDagRun(CachedDagRun a, CachedDagRun b) {
+        int ra = dagRunStateTrustRank(a.getState());
+        int rb = dagRunStateTrustRank(b.getState());
+        if (ra != rb) {
+            return ra > rb ? a : b;
+        }
+        if (a.getEndDate() != null && b.getEndDate() == null) {
+            return a;
+        }
+        if (b.getEndDate() != null && a.getEndDate() == null) {
+            return b;
+        }
+        if (a.getEndDate() != null) {
+            int c = a.getEndDate().compareTo(b.getEndDate());
+            if (c != 0) {
+                return c >= 0 ? a : b;
+            }
+        }
+        if (a.getStartDate() != null && b.getStartDate() != null) {
+            int c = a.getStartDate().compareTo(b.getStartDate());
+            if (c != 0) {
+                return c >= 0 ? a : b;
+            }
+        }
+        return b;
+    }
+
+    private static int dagRunStateTrustRank(String state) {
+        if (state == null || state.isBlank()) {
+            return 0;
+        }
+        return switch (state.trim().toLowerCase(Locale.ROOT)) {
+            case "failed", "upstream_failed" -> 400;
+            case "success" -> 300;
+            case "skipped", "removed" -> 250;
+            case "restarting", "up_for_retry" -> 120;
+            case "running", "deferred" -> 80;
+            case "queued" -> 60;
+            default -> 40;
+        };
     }
 
     private Snapshot collectSnapshot(AirflowDeployment dep) {
@@ -217,8 +318,12 @@ public class DagInsightsSyncService {
             if (dagCount >= maxDagsPerDeployment) {
                 break;
             }
-            String dagId = stringVal(dag.get("dag_id"));
-            if (dagId == null || dagId.isBlank()) {
+            String dagIdRaw = stringVal(firstNonNull(dag.get("dag_id"), dag.get("dagId")));
+            if (dagIdRaw == null || dagIdRaw.isBlank()) {
+                continue;
+            }
+            String dagId = dagIdRaw.trim();
+            if (dagId.isEmpty()) {
                 continue;
             }
             if (!seenDagIds.add(dagId)) {
@@ -394,18 +499,23 @@ public class DagInsightsSyncService {
         List<Map<String, Object>> drs = extractObjectList(body, "dag_runs");
         List<CachedDagRun> out = new ArrayList<>();
         for (Map<String, Object> dr : drs) {
-            String runId = stringVal(dr.get("dag_run_id"));
-            if (runId == null) {
+            String runIdRaw = stringVal(firstNonNull(dr.get("dag_run_id"), dr.get("dagRunId")));
+            if (runIdRaw == null || runIdRaw.isBlank()) {
                 continue;
             }
+            String runId = runIdRaw.trim();
             CachedDagRun row = new CachedDagRun();
             row.setDagId(dagId);
             row.setDagRunId(truncate(runId, 250));
-            row.setState(stringVal(dr.get("state")));
-            row.setLogicalDate(firstNonNullInstant(dr.get("logical_date"), dr.get("execution_date")));
-            row.setStartDate(parseInstant(dr.get("start_date")));
-            row.setEndDate(parseInstant(dr.get("end_date")));
-            row.setRunType(stringVal(dr.get("run_type")));
+            row.setState(normalizeDagRunState(stringVal(firstNonNull(
+                    dr.get("state"),
+                    firstNonNull(dr.get("dag_run_state"), dr.get("dagRunState"))))));
+            row.setLogicalDate(firstNonNullInstant(
+                    firstNonNull(dr.get("logical_date"), dr.get("logicalDate")),
+                    firstNonNull(dr.get("execution_date"), dr.get("executionDate"))));
+            row.setStartDate(parseInstant(firstNonNull(dr.get("start_date"), dr.get("startDate"))));
+            row.setEndDate(parseInstant(firstNonNull(dr.get("end_date"), dr.get("endDate"))));
+            row.setRunType(stringVal(firstNonNull(dr.get("run_type"), dr.get("runType"))));
             row.setSyncedAt(syncedAt);
             out.add(row);
         }
@@ -420,8 +530,20 @@ public class DagInsightsSyncService {
         return parseInstant(b);
     }
 
+    private static Object firstNonNull(Object a, Object b) {
+        return a != null ? a : b;
+    }
+
     private static String stringVal(Object o) {
         return o == null ? null : Objects.toString(o, null);
+    }
+
+    /** Lower-case state for stable UI mapping (Airflow may send FAILED / failed interchangeably). */
+    private static String normalizeDagRunState(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        return raw.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String truncate(String s, int max) {

@@ -86,6 +86,11 @@ platform:
         roles:
           - USER
         tenant-id: local-default
+      atam:
+        password: "{noop}atam"
+        roles:
+          - USER
+        tenant-id: local-default
       # Example second tenant (uncomment after creating that tenant in Admin → Tenants):
       # analyst:
       #   password: "{noop}changeme"
@@ -115,6 +120,8 @@ dag:
 dag-insights:
   # How often the scheduler pulls from Airflow (ms). Lower = fresher cache, more API load.
   sync-interval-ms: 90000
+  # After a successful project "Trigger DAGs", queue an async refresh so DAG runs appear without waiting for the scheduler.
+  sync-after-project-trigger: true
   sync:
     scheduler-enabled: true
     page-size: 100
