@@ -9,7 +9,7 @@ from __future__ import annotations
 # Experiment: set `status: BREACHED` in that file, trigger this DAG — the guard fails.
 # Break-glass: Airflow Variable `demo_contract_guard_bypass` = true.
 #
-# Connection: local_dummy_data_contract_catalog (local files only).
+# Connection: data_contract_yaml_default (local files only).
 #
 # Flow: guard checks contract status from YAML → if not BREACHED, consumer placeholder runs.
 from datetime import datetime
@@ -18,7 +18,7 @@ from airflow.operators.python import PythonOperator
 from airflow.providers.data.contracts.operators.contract_breach_guard import ContractBreachGuardOperator
 from airflow.sdk import DAG
 
-CATALOG_CONN_ID = "local_dummy_data_contract_catalog"
+CATALOG_CONN_ID = "data_contract_yaml_default"
 DATASET_URN = "urn:example:sample_dataset"
 
 
@@ -46,7 +46,7 @@ If status is `BREACHED`, `on_breach="fail"` stops the DAG; set to `"skip"` or `"
 1. Set `status: BREACHED` in `contracts/sample_dataset.yaml`, deploy/sync files, trigger DAG → guard fails.
 2. Add Variable `demo_contract_guard_bypass` = `true` → guard passes (see operator `override_var`).
 
-**Prereqs:** Connection `local_dummy_data_contract_catalog`.
+**Prereqs:** Connection `data_contract_yaml_default`.
 """,
 ) as dag:
     guard = ContractBreachGuardOperator(

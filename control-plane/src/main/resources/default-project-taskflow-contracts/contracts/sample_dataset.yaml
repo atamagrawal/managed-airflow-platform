@@ -1,4 +1,4 @@
-# Local file only (URN mapped by connection local_dummy_data_contract_catalog). Try status: BREACHED for guard/sensor demos.
+# Local file only (URN mapped by system default connection data_contract_yaml_default). Try status: BREACHED for guard/sensor demos.
 contract_id: sample-dataset-v1
 dataset_urn: "urn:example:sample_dataset"
 dataset_name: sample_dataset

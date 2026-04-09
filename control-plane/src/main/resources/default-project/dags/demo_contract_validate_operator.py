@@ -6,7 +6,7 @@ from __future__ import annotations
 # Compares task output (XCom "stats": row_count + schema) to the contract loaded
 # via the LOCAL dummy connection below — YAML on disk only, no external catalog.
 #
-# Connection: local_dummy_data_contract_catalog (see airflow_settings.yaml).
+# Connection: data_contract_yaml_default (see airflow_settings.yaml).
 # Try lowering row_count in build_contract_stats below minimum in the contract to see a failure.
 #
 # Flow: build_contract_stats pushes a dict to XCom → validate pulls it and checks schema + row count
@@ -16,7 +16,7 @@ from datetime import datetime
 from airflow.providers.data.contracts.operators.contract_validate import ContractValidateOperator
 from airflow.sdk import DAG, task
 
-CATALOG_CONN_ID = "local_dummy_data_contract_catalog"
+CATALOG_CONN_ID = "data_contract_yaml_default"
 DATASET_URN = "urn:example:sample_dataset"
 
 
@@ -53,7 +53,7 @@ with DAG(
 
 **Try this:** Set `row_count` below `min_row_count` in the contract YAML, or return an extra/missing column in `schema`, then trigger the DAG and show the task failure.
 
-**Prereqs:** Connection `local_dummy_data_contract_catalog` exists (local docker-compose `airflow-init` creates it).
+**Prereqs:** Connection `data_contract_yaml_default` exists (configured via airflow_settings.yaml).
 """,
 ) as dag:
     stats = build_contract_stats()

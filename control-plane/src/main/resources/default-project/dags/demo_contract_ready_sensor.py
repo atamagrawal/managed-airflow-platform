@@ -9,7 +9,7 @@ from __future__ import annotations
 # Try setting status to something other than ACTIVE in contracts/sample_dataset.yaml to watch
 # the sensor wait or fail (BREACHED + fail_on_breach=True raises).
 #
-# Connection: local_dummy_data_contract_catalog.
+# Connection: data_contract_yaml_default.
 #
 # Flow: sensor pokes until status is ACTIVE → then consumer_after_ready runs.
 from datetime import datetime
@@ -18,7 +18,7 @@ from airflow.operators.python import PythonOperator
 from airflow.providers.data.contracts.sensors.contract_ready import ContractReadySensor
 from airflow.sdk import DAG
 
-CATALOG_CONN_ID = "local_dummy_data_contract_catalog"
+CATALOG_CONN_ID = "data_contract_yaml_default"
 DATASET_URN = "urn:example:sample_dataset"
 
 
@@ -47,7 +47,7 @@ observe the sensor in **reschedule** / poke until timeout, or failure on `BREACH
 
 **Params here:** `poke_interval=15`, `timeout=120` — shortened for demos (tune in production).
 
-**Prereqs:** Connection `local_dummy_data_contract_catalog`.
+**Prereqs:** Connection `data_contract_yaml_default`.
 """,
 ) as dag:
     wait = ContractReadySensor(

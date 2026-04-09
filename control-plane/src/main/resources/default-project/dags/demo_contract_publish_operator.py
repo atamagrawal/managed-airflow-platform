@@ -7,7 +7,7 @@ from __future__ import annotations
 # catalog hook (emit lineage, update status). With the YAML "dummy" connection,
 # calls are effectively no-ops / logs only — still useful to show the producer pattern.
 #
-# Connection: local_dummy_data_contract_catalog (file-backed, no external service).
+# Connection: data_contract_yaml_default (file-backed, no external service).
 #
 # Flow: build_output_stats → publish pushes stats XCom into the hook’s publish path (YAML hook is mostly a no-op).
 from datetime import datetime
@@ -15,7 +15,7 @@ from datetime import datetime
 from airflow.providers.data.contracts.operators.contract_publish import ContractPublishOperator
 from airflow.sdk import DAG, task
 
-CATALOG_CONN_ID = "local_dummy_data_contract_catalog"
+CATALOG_CONN_ID = "data_contract_yaml_default"
 DATASET_URN = "urn:example:sample_dataset"
 
 
@@ -47,7 +47,7 @@ with DAG(
 
 **Try this:** Run the DAG and inspect task logs for publish; compare to a real DataHub connection in a future environment.
 
-**Prereqs:** Connection `local_dummy_data_contract_catalog`.
+**Prereqs:** Connection `data_contract_yaml_default`.
 """,
 ) as dag:
     stats = build_output_stats()
