@@ -33,9 +33,9 @@ public class AsyncConfig {
     @Bean(name = DAG_INSIGHTS_EXECUTOR)
     public Executor dagInsightsExecutor() {
         ThreadPoolTaskExecutor ex = new ThreadPoolTaskExecutor();
-        ex.setCorePoolSize(1);
-        ex.setMaxPoolSize(2);
-        ex.setQueueCapacity(50);
+        ex.setCorePoolSize(2);
+        ex.setMaxPoolSize(6);
+        ex.setQueueCapacity(100);
         ex.setThreadNamePrefix("dag-insights-");
         ex.initialize();
         return ex;

@@ -48,6 +48,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -69,6 +70,7 @@ public class ProjectService {
     private final DagDeploymentConfig dagDeploymentConfig;
     private final DefaultProjectTemplateSeeder defaultProjectTemplateSeeder;
     private final RestTemplate restTemplate;
+    private final AuthService authService;
 
     @Autowired(required = false)
     private DeploymentProvider deploymentProviderImpl;
@@ -95,6 +97,24 @@ public class ProjectService {
     @Value("${airflow.api.password:admin}")
     private String airflowApiPassword;
 
+    /**
+     * When set, overrides {@link #airflowApiUsername} / {@link #airflowApiPassword} for triggers only if
+     * {@link #useLoggedInUserForDagTriggers} cannot use the session user (missing bootstrap secret, automation, etc.).
+     */
+    @Value("${airflow.api.trigger-username:}")
+    private String airflowApiTriggerUsername;
+
+    @Value("${airflow.api.trigger-password:}")
+    private String airflowApiTriggerPassword;
+
+    /**
+     * When true (default), POST .../dagRuns uses the JWT principal and the same recoverable password as Open Airflow
+     * ({@link AuthService#tryResolvePasswordForAirflowApi}), so {@code dag_run.triggering_user_name} matches the Flow Deck user
+     * after FAB sync. When false or password unavailable, falls back to {@code trigger-username} or {@code username}.
+     */
+    @Value("${airflow.api.use-logged-in-user-for-dag-triggers:true}")
+    private boolean useLoggedInUserForDagTriggers;
+
     public ProjectService(ProjectRepository projectRepository,
                           ProjectFileRepository projectFileRepository,
                           ProjectDeploymentRepository projectDeploymentRepository,
@@ -102,7 +122,8 @@ public class ProjectService {
                           TenantService tenantService,
                           DagDeploymentConfig dagDeploymentConfig,
                           DefaultProjectTemplateSeeder defaultProjectTemplateSeeder,
-                          RestTemplate restTemplate) {
+                          RestTemplate restTemplate,
+                          AuthService authService) {
         this.projectRepository = projectRepository;
         this.projectFileRepository = projectFileRepository;
         this.projectDeploymentRepository = projectDeploymentRepository;
@@ -111,6 +132,7 @@ public class ProjectService {
         this.dagDeploymentConfig = dagDeploymentConfig;
         this.defaultProjectTemplateSeeder = defaultProjectTemplateSeeder;
         this.restTemplate = restTemplate;
+        this.authService = authService;
     }
 
     @Transactional
@@ -556,7 +578,8 @@ public class ProjectService {
             }
 
             try {
-                ResponseEntity<Map<String, Object>> response = postTriggerDagRun(baseUrl, airflowDagId, airflowVersion);
+                ResponseEntity<Map<String, Object>> response =
+                        postTriggerDagRun(baseUrl, airflowDagId, airflowVersion, buildManagedPlatformTriggerConf(project));
                 entry.put("success", true);
                 entry.put("airflowDagId", airflowDagId);
                 entry.put("response", response.getBody());
@@ -795,18 +818,62 @@ public class ProjectService {
                 """;
     }
 
-    private ResponseEntity<Map<String, Object>> postTriggerDagRun(String baseUrl, String airflowDagId, String airflowVersion) {
-        if (AirflowVersionUtils.isAirflow3OrLater(airflowVersion)) {
-            return postTriggerDagRunAirflow3(baseUrl, airflowDagId);
-        }
-        return postTriggerDagRunAirflow2(baseUrl, airflowDagId);
+    /**
+     * Identity of the Flow Deck / control-plane user who requested the trigger (JWT principal).
+     * Sent in each DAG run {@code conf} under {@code managed_platform}. Airflow sets {@code triggering_user_name}
+     * from REST auth (normally the logged-in Flow Deck user when {@code airflow.api.use-logged-in-user-for-dag-triggers}
+     * is true and a bootstrap password exists).
+     */
+    private Map<String, Object> buildManagedPlatformTriggerConf(Project project) {
+        Map<String, Object> managed = new HashMap<>();
+        managed.put(
+                "triggered_by_username",
+                SecurityUtils.getCurrentUsername().orElse("unknown"));
+        managed.put("tenant_id", project.getTenant() != null ? project.getTenant().getTenantId() : null);
+        managed.put("is_platform_admin", SecurityUtils.isAdmin());
+        Map<String, Object> conf = new HashMap<>();
+        conf.put("managed_platform", managed);
+        return conf;
     }
 
-    private String obtainAirflowAccessToken(String baseUrl) {
+    private ResponseEntity<Map<String, Object>> postTriggerDagRun(
+            String baseUrl, String airflowDagId, String airflowVersion, Map<String, Object> triggerConf) {
+        TriggerAuth auth = resolveTriggerAuth();
+        if (AirflowVersionUtils.isAirflow3OrLater(airflowVersion)) {
+            return postTriggerDagRunAirflow3(baseUrl, airflowDagId, triggerConf, auth);
+        }
+        return postTriggerDagRunAirflow2(baseUrl, airflowDagId, triggerConf, auth);
+    }
+
+    private record TriggerAuth(String username, String password) {}
+
+    private TriggerAuth resolveTriggerAuth() {
+        if (useLoggedInUserForDagTriggers) {
+            Optional<String> principal = SecurityUtils.getCurrentUsername();
+            if (principal.isPresent()) {
+                Optional<String> pwd = authService.tryResolvePasswordForAirflowApi(principal.get());
+                if (pwd.isPresent()) {
+                    return new TriggerAuth(principal.get(), pwd.get());
+                }
+                log.debug(
+                        "DAG trigger: cannot use logged-in user '{}' for Airflow auth (sign in again to refresh secret, or use airflow.api.trigger-username); falling back",
+                        principal.get());
+            }
+        }
+        String u = StringUtils.hasText(airflowApiTriggerUsername)
+                ? airflowApiTriggerUsername.trim()
+                : airflowApiUsername;
+        String p = StringUtils.hasText(airflowApiTriggerUsername)
+                ? (StringUtils.hasText(airflowApiTriggerPassword) ? airflowApiTriggerPassword : airflowApiPassword)
+                : airflowApiPassword;
+        return new TriggerAuth(u, p);
+    }
+
+    private String obtainAirflowAccessToken(String baseUrl, TriggerAuth auth) {
         String tokenUrl = baseUrl + "/auth/token";
         Map<String, String> body = new HashMap<>();
-        body.put("username", airflowApiUsername);
-        body.put("password", airflowApiPassword);
+        body.put("username", auth.username());
+        body.put("password", auth.password());
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -821,36 +888,46 @@ public class ProjectService {
         return respBody.get("access_token").toString();
     }
 
-    private ResponseEntity<Map<String, Object>> postTriggerDagRunAirflow3(String baseUrl, String airflowDagId) {
+    private ResponseEntity<Map<String, Object>> postTriggerDagRunAirflow3(
+            String baseUrl, String airflowDagId, Map<String, Object> triggerConf, TriggerAuth auth) {
         String encodedDagId = UriUtils.encodePathSegment(airflowDagId, StandardCharsets.UTF_8);
         String triggerUrl = baseUrl + "/api/v2/dags/" + encodedDagId + "/dagRuns";
-        log.info("Triggering DAG run for {} at {} (Airflow 3+)", airflowDagId, triggerUrl);
+        log.info(
+                "Triggering DAG run for {} at {} (Airflow 3+, trigger user={})",
+                airflowDagId,
+                triggerUrl,
+                auth.username());
 
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("conf", new HashMap<>());
+        requestBody.put("conf", triggerConf != null ? triggerConf : new HashMap<>());
         requestBody.put("logical_date", DateTimeFormatter.ISO_INSTANT.format(Instant.now().atOffset(ZoneOffset.UTC)));
         requestBody.put("dag_run_id", "manual_" + System.currentTimeMillis());
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(obtainAirflowAccessToken(baseUrl));
+        headers.setBearerAuth(obtainAirflowAccessToken(baseUrl, auth));
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
         return restTemplate.exchange(triggerUrl, HttpMethod.POST, request, new ParameterizedTypeReference<>() {});
     }
 
-    private ResponseEntity<Map<String, Object>> postTriggerDagRunAirflow2(String baseUrl, String airflowDagId) {
+    private ResponseEntity<Map<String, Object>> postTriggerDagRunAirflow2(
+            String baseUrl, String airflowDagId, Map<String, Object> triggerConf, TriggerAuth auth) {
         String encodedDagId = UriUtils.encodePathSegment(airflowDagId, StandardCharsets.UTF_8);
         String triggerUrl = baseUrl + "/api/v1/dags/" + encodedDagId + "/dagRuns";
-        log.info("Triggering DAG run for {} at {} (Airflow 2.x)", airflowDagId, triggerUrl);
+        log.info(
+                "Triggering DAG run for {} at {} (Airflow 2.x, trigger user={})",
+                airflowDagId,
+                triggerUrl,
+                auth.username());
 
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("conf", new HashMap<>());
+        requestBody.put("conf", triggerConf != null ? triggerConf : new HashMap<>());
         requestBody.put("dag_run_id", "manual__" + Instant.now().toEpochMilli());
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBasicAuth(airflowApiUsername, airflowApiPassword);
+        headers.setBasicAuth(auth.username(), auth.password());
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
         return restTemplate.exchange(triggerUrl, HttpMethod.POST, request, new ParameterizedTypeReference<>() {});

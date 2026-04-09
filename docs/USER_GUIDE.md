@@ -475,6 +475,22 @@ curl -X POST "http://localhost:8080/api/v1/projects/{projectId}/trigger?deployme
 curl -X POST "http://localhost:8080/api/v1/projects/{projectId}/trigger?deploymentId={deploymentId}&fileName=my_etl_dag.py"
 ```
 
+Each triggered DAG run includes **Flow Deck identity** in Airflow `conf` (in addition to whatever Airflow records for the REST call):
+
+```json
+{
+  "managed_platform": {
+    "triggered_by_username": "user",
+    "tenant_id": "local-default",
+    "is_platform_admin": false
+  }
+}
+```
+
+Use `dag_run.conf["managed_platform"]["triggered_by_username"]` (TaskFlow: `get_current_context()["dag_run"].conf`) in your own task logic or policies.
+
+**Note:** Airflow still authenticates the trigger using the control plane’s `airflow.api.username` / `airflow.api.password` (defaults `admin` / `admin` in `application.yml`), so `dag_run.triggering_user_name` in Airflow remains that **API** user. Built-in decorators such as `@contract_trigger_user_guard` that only read `triggering_user_name` do **not** automatically see the Flow Deck login; include the API username in contract allow-lists if you use those decorators as-is, or enforce policy from `conf` in custom code.
+
 ### Troubleshooting
 
 - **DAG not in Airflow UI:** confirm the project **Deploy** succeeded and the deployment is **RUNNING**; check file path and `dags/` layout for your `dag.deployment.strategy` (see [DAG_DEPLOYMENT_STRATEGIES.md](DAG_DEPLOYMENT_STRATEGIES.md)).

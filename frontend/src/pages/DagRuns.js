@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Table,
   Button,
@@ -13,6 +13,10 @@ import {
 import { ReloadOutlined, CloudSyncOutlined } from '@ant-design/icons';
 import { dagInsightsAPI, deploymentAPI } from '../services/api';
 import { getApiErrorMessage } from '../utils/apiError';
+import {
+  allDeploymentsAdvanced,
+  snapshotLastSyncCompletedByDeployment,
+} from '../utils/dagInsightsSync';
 import PageHeader from '../components/PageHeader';
 import dayjs from 'dayjs';
 
@@ -32,6 +36,7 @@ const DagRuns = () => {
   const [loading, setLoading] = useState(false);
   const [syncStatuses, setSyncStatuses] = useState([]);
   const [syncing, setSyncing] = useState(false);
+  const syncPollRef = useRef(null);
 
   const fetchDeployments = useCallback(async () => {
     try {
@@ -75,9 +80,34 @@ const DagRuns = () => {
     }
   }, [selectedDeployment, dagIdFilter, page, size]);
 
+  const reloadRunsQuiet = useCallback(async () => {
+    try {
+      const dep =
+        selectedDeployment && selectedDeployment !== 'all' ? selectedDeployment : undefined;
+      const params = { page, size };
+      if (dep) params.deploymentId = dep;
+      if (dagIdFilter.trim()) params.dagId = dagIdFilter.trim();
+      const { data } = await dagInsightsAPI.listRuns(params);
+      setRows(data?.content || []);
+      setTotal(data?.totalElements ?? 0);
+    } catch (e) {
+      console.error('reloadRunsQuiet', e);
+    }
+  }, [selectedDeployment, dagIdFilter, page, size]);
+
   useEffect(() => {
     fetchDeployments();
   }, [fetchDeployments]);
+
+  useEffect(
+    () => () => {
+      if (syncPollRef.current) {
+        clearInterval(syncPollRef.current);
+        syncPollRef.current = null;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     setPage(0);
@@ -89,16 +119,60 @@ const DagRuns = () => {
   }, [fetchRuns, fetchSyncStatus]);
 
   const handleSync = async () => {
+    if (syncPollRef.current) {
+      clearInterval(syncPollRef.current);
+      syncPollRef.current = null;
+    }
+    const syncParams =
+      selectedDeployment && selectedDeployment !== 'all' ? { deploymentId: selectedDeployment } : {};
     try {
       setSyncing(true);
+      const { data: statusBefore } = await dagInsightsAPI.syncStatus(syncParams);
+      const priorCompleted = snapshotLastSyncCompletedByDeployment(statusBefore || []);
+
       await dagInsightsAPI.sync(
         selectedDeployment && selectedDeployment !== 'all' ? selectedDeployment : undefined
       );
-      message.success('Sync queued. Data updates after Airflow responds.');
+      message.success('Sync queued. Updating the table as Airflow responds…');
+
+      const started = Date.now();
+      const tick = async () => {
+        try {
+          const { data: st } = await dagInsightsAPI.syncStatus(syncParams);
+          setSyncStatuses(st || []);
+          await reloadRunsQuiet();
+          const timedOut = Date.now() - started > 120000;
+          if (allDeploymentsAdvanced(priorCompleted, st) || timedOut) {
+            if (syncPollRef.current) {
+              clearInterval(syncPollRef.current);
+              syncPollRef.current = null;
+            }
+            setSyncing(false);
+            if (!timedOut) {
+              message.success('DAG runs cache updated.');
+            } else {
+              message.warning('Sync is still running or timed out. Use Reload or try Sync again.');
+            }
+            return true;
+          }
+        } catch (e) {
+          console.error('sync poll', e);
+          if (syncPollRef.current) {
+            clearInterval(syncPollRef.current);
+            syncPollRef.current = null;
+          }
+          setSyncing(false);
+          return true;
+        }
+        return false;
+      };
+      const doneImmediately = await tick();
+      if (!doneImmediately) {
+        syncPollRef.current = setInterval(() => void tick(), 3000);
+      }
     } catch (error) {
       const msg = getApiErrorMessage(error, 'Failed to queue sync');
       if (msg) message.error(msg);
-    } finally {
       setSyncing(false);
     }
   };
@@ -178,7 +252,7 @@ const DagRuns = () => {
     <div>
       <PageHeader
         title="DAG runs"
-        description="Recent DAG runs cached from each deployment's Airflow API. Use sync to refresh; the control plane also refreshes on a schedule."
+        description="Recent DAG runs cached from each deployment's Airflow API. Sync pulls from Airflow and refreshes this table automatically; the control plane also syncs on a schedule."
         extra={
           <Space wrap>
             <Select
