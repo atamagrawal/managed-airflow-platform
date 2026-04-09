@@ -200,14 +200,15 @@ const DagRuns = () => {
       key: 'state',
       width: 100,
       render: (s) => {
+        const key = s != null && s !== '' ? String(s).trim().toLowerCase() : '';
         const color =
-          s === 'success'
+          key === 'success'
             ? 'green'
-            : s === 'failed'
+            : key === 'failed' || key === 'upstream_failed'
               ? 'red'
-              : s === 'running'
-                ? 'processing'
-                : 'default';
+              : key === 'running' || key === 'queued' || key === 'restarting' || key === 'up_for_retry'
+              ? 'processing'
+              : 'default';
         return s ? <Tag color={color}>{s}</Tag> : '—';
       },
     },
