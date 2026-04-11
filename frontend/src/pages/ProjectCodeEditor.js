@@ -7,7 +7,8 @@ import ProjectFileTree from '../components/ProjectCodeEditor/ProjectFileTree';
 import EditorTabs from '../components/CodeEditor/EditorTabs';
 import ProjectToolbar from '../components/ProjectCodeEditor/ProjectToolbar';
 import CodeEditorPane from '../components/CodeEditor/CodeEditorPane';
-import { projectAPI, deploymentAPI } from '../services/api';
+import { projectAPI, deploymentAPI, aiAPI } from '../services/api';
+import AiChatPanel from '../components/ProjectCodeEditor/AiChatPanel';
 import { triggerProjectWithDagSelection } from '../utils/triggerProjectDag';
 import { resolveDeploymentForDeploy, resolveDeploymentForTrigger } from '../utils/projectDeployments';
 import { pickDeploymentId } from '../utils/pickDeploymentModal';
@@ -46,6 +47,9 @@ const ProjectCodeEditor = () => {
   const [localStackPhase, setLocalStackPhase] = useState(null);
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFileForm] = Form.useForm();
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [aiServerKeyConfigured, setAiServerKeyConfigured] = useState(false);
   const ideShellRef = useRef(null);
 
   const currentFile = openFiles.find((f) => f.fileId === activeFileId);
@@ -81,6 +85,29 @@ const ProjectCodeEditor = () => {
     }
   }, []);
 
+  const fetchAiStatus = useCallback(async () => {
+    try {
+      const { data } = await aiAPI.status();
+      setAiEnabled(!!data?.enabled);
+      setAiServerKeyConfigured(!!data?.serverKeyConfigured);
+    } catch {
+      setAiEnabled(false);
+    }
+  }, []);
+
+  const handleAiApplyFileChange = useCallback((fileId, newContent) => {
+    setFileContents((prev) => ({ ...prev, [fileId]: newContent }));
+    setModifiedFiles((prev) => new Set(prev).add(fileId));
+    // If the file isn't already open, open it in a new tab
+    setOpenFiles((prev) => {
+      const alreadyOpen = prev.some((f) => f.fileId === fileId);
+      if (alreadyOpen) return prev;
+      const file = files.find((f) => f.fileId === fileId);
+      return file ? [...prev, file] : prev;
+    });
+    setActiveFileId(fileId);
+  }, [files]);
+
   const fetchProject = useCallback(async () => {
     try {
       const response = await projectAPI.getById(projectId);
@@ -114,7 +141,8 @@ const ProjectCodeEditor = () => {
     fetchProjectFiles();
     fetchDeployments();
     fetchDeploymentConfig();
-  }, [fetchProject, fetchProjectFiles, fetchDeployments, fetchDeploymentConfig]);
+    fetchAiStatus();
+  }, [fetchProject, fetchProjectFiles, fetchDeployments, fetchDeploymentConfig, fetchAiStatus]);
 
   useEffect(() => {
     const title = project?.name
@@ -621,11 +649,14 @@ schema_compatibility: BACKWARD
         onStartLocalTest={handleStartLocalTest}
         onStopLocalTest={handleStopLocalTest}
         localTestDeployment={localTestDeployment}
+        aiEnabled={aiEnabled}
+        aiPanelOpen={aiPanelOpen}
+        onToggleAiPanel={() => setAiPanelOpen((v) => !v)}
       />
 
       <div className="code-editor-content">
         <Allotment className="flow-deck-allotment">
-          <Allotment.Pane minSize={200} preferredSize={250} maxSize={400}>
+          <Allotment.Pane minSize={160} preferredSize={220} maxSize={360}>
             <ProjectFileTree
               project={project}
               files={files}
@@ -693,6 +724,20 @@ schema_compatibility: BACKWARD
               )}
             </div>
           </Allotment.Pane>
+
+          {aiEnabled && aiPanelOpen && (
+            <Allotment.Pane minSize={260} preferredSize={340} maxSize={560}>
+              <AiChatPanel
+                projectId={projectId}
+                fileContent={currentFile ? (fileContents[activeFileId] || '') : null}
+                fileName={currentFile?.filePath || currentFile?.fileName || null}
+                files={files}
+                fileContents={fileContents}
+                onApplyFileChange={handleAiApplyFileChange}
+                serverKeyConfigured={aiServerKeyConfigured}
+              />
+            </Allotment.Pane>
+          )}
         </Allotment>
       </div>
 

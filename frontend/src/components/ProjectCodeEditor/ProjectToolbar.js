@@ -23,6 +23,7 @@ import {
   ExperimentOutlined,
   LoadingOutlined,
   MinusCircleOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { BRAND } from '../../brand';
 import './ProjectToolbar.css';
@@ -71,6 +72,9 @@ const ProjectToolbar = ({
   onStartLocalTest,
   onStopLocalTest,
   localTestDeployment,
+  aiEnabled,
+  aiPanelOpen,
+  onToggleAiPanel,
 }) => {
   const linkedCount = project?.linkedDeploymentIds?.length ?? 0;
   const canRunDags = linkedCount > 0;
@@ -396,6 +400,18 @@ const ProjectToolbar = ({
           </Button>
         </div>
         <span className="flow-deck-ide-toolbar-divider flow-deck-ide-toolbar-divider--vertical" aria-hidden />
+        {aiEnabled && (
+          <Tooltip title={aiPanelOpen ? 'Close AI assistant' : 'Open AI assistant'}>
+            <Button
+              icon={<RobotOutlined />}
+              onClick={onToggleAiPanel}
+              size="small"
+              type="text"
+              className={`flow-deck-ide-toolbar-btn-ghost${aiPanelOpen ? ' flow-deck-ide-toolbar-btn-ghost--active' : ''}`}
+              aria-label="AI assistant"
+            />
+          </Tooltip>
+        )}
         <Button
           icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
           onClick={onFullscreen}

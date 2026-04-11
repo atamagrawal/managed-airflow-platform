@@ -187,4 +187,22 @@ export const projectAPI = {
   stopLocalTest: (projectId) => api.post(`/projects/${projectId}/local-test/stop`),
 };
 
+// AI coding assistant
+export const aiAPI = {
+  /** Check if the AI assistant is configured on the server. */
+  status: () => api.get('/ai/status'),
+  /**
+   * Send a chat turn (supports tool use).
+   * @param {Array} messages - full conversation history
+   * @param {string|null} fileContent - content of the currently open file
+   * @param {string|null} fileName - file name for context
+   * @param {string|null} userApiKey - optional user-supplied API key
+   * @param {boolean} useTools - whether to include project tool definitions
+   * @param {string|null} userProvider - "groq" | "anthropic" | "ollama" | "openai"
+   * @param {string|null} userModel - optional model override
+   */
+  chat: (messages, fileContent, fileName, userApiKey, useTools = false, userProvider, userModel) =>
+    api.post('/ai/chat', { messages, fileContent, fileName, userApiKey, useTools, userProvider, userModel }),
+};
+
 export default api;

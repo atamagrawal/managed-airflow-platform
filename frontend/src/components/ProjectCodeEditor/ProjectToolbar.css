@@ -73,6 +73,11 @@
   background: var(--ide-accent-soft) !important;
 }
 
+.flow-deck-ide-toolbar-btn-ghost--active {
+  color: var(--ide-accent) !important;
+  background: var(--ide-accent-soft) !important;
+}
+
 .flow-deck-ide-toolbar-divider {
   display: inline-block;
   width: 1px;
