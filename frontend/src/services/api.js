@@ -130,6 +130,8 @@ export const deploymentAPI = {
     }),
   /** Local provider only: stop the deployment’s local runtime. */
   stopLocalStack: (deploymentId) => api.post(`/deployments/${deploymentId}/local-stack/stop`),
+  /** Local provider only: reset the idle-stop timer without doing a full deploy/trigger. */
+  keepAliveLocalStack: (deploymentId) => api.post(`/deployments/${deploymentId}/local-stack/keep-alive`),
 };
 
 // Deployed DAGs (project DAG files with a successful deploy to a deployment)

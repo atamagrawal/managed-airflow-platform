@@ -30,11 +30,15 @@ public class DeploymentController {
     @Value("${deployment.provider:kubernetes}")
     private String deploymentProvider;
 
+    @Value("${local.test-cluster-idle-timeout-minutes:60}")
+    private long localIdleTimeoutMinutes;
+
     @GetMapping("/config")
     @Operation(summary = "Get deployment provider configuration")
-    public ResponseEntity<Map<String, String>> getDeploymentConfig() {
-        Map<String, String> config = new HashMap<>();
+    public ResponseEntity<Map<String, Object>> getDeploymentConfig() {
+        Map<String, Object> config = new HashMap<>();
         config.put("provider", deploymentProvider);
+        config.put("localIdleTimeoutMinutes", localIdleTimeoutMinutes);
         return ResponseEntity.ok(config);
     }
 

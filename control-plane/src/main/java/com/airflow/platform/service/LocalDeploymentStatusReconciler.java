@@ -56,6 +56,9 @@ public class LocalDeploymentStatusReconciler {
                 if (d.getDeployedAt() == null) {
                     d.setDeployedAt(LocalDateTime.now());
                 }
+                if (d.getLocalStackLastActivityAt() == null) {
+                    d.setLocalStackLastActivityAt(idleBaselineForLocalStack(d));
+                }
                 deploymentRepository.save(d);
                 log.info("Reconciled deployment {} to RUNNING (apiserver HTTP health OK)", d.getDeploymentId());
             } catch (Exception e) {
@@ -82,10 +85,27 @@ public class LocalDeploymentStatusReconciler {
             if (d.getDeployedAt() == null) {
                 d.setDeployedAt(LocalDateTime.now());
             }
+            if (d.getLocalStackLastActivityAt() == null) {
+                d.setLocalStackLastActivityAt(idleBaselineForLocalStack(d));
+            }
             deploymentRepository.save(d);
             log.info("Reconciled deployment {} to RUNNING (apiserver HTTP health OK)", deploymentId);
         } catch (Exception e) {
             log.debug("Status reconcile skipped for {}: {}", deploymentId, e.getMessage());
         }
+    }
+
+    /**
+     * When promoting to RUNNING, seed idle tracking if missing so auto-stop can apply (same fallback as
+     * {@link LocalDockerStackLifecycleService}).
+     */
+    private static LocalDateTime idleBaselineForLocalStack(AirflowDeployment d) {
+        if (d.getDeployedAt() != null) {
+            return d.getDeployedAt();
+        }
+        if (d.getCreatedAt() != null) {
+            return d.getCreatedAt();
+        }
+        return LocalDateTime.now();
     }
 }

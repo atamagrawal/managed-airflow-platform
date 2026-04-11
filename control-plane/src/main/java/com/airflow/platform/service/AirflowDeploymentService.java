@@ -138,6 +138,9 @@ public class AirflowDeploymentService {
             // Set webserver URL
             String webserverUrl = deploymentProvider.getWebserverUrl(deployment);
             deployment.setWebserverUrl(webserverUrl);
+            if (localDeploymentProvider != null) {
+                deployment.setLocalStackLastActivityAt(LocalDateTime.now());
+            }
 
             deployment = deploymentRepository.save(deployment);
             log.info("Airflow deployment created successfully: {}", deploymentId);
@@ -291,6 +294,9 @@ public class AirflowDeploymentService {
             }
 
             deployment.setStatus(AirflowDeployment.DeploymentStatus.RUNNING);
+            if (localDeploymentProvider != null) {
+                deployment.setLocalStackLastActivityAt(LocalDateTime.now());
+            }
             deployment = deploymentRepository.save(deployment);
             log.info("Airflow deployment updated successfully: {}", deploymentId);
         } catch (Exception e) {
