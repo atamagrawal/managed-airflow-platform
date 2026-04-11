@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Table,
   Button,
@@ -26,6 +26,7 @@ import {
   ExperimentOutlined,
   CopyOutlined,
   FolderOpenOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { deploymentAPI, tenantAPI, openAirflowHandoffInNewTab } from '../services/api';
@@ -50,9 +51,12 @@ const Deployments = () => {
   const [creatingDeployment, setCreatingDeployment] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [deploymentProvider, setDeploymentProvider] = useState('kubernetes');
+  const [localIdleTimeoutMinutes, setLocalIdleTimeoutMinutes] = useState(60);
+  const [now, setNow] = useState(() => Date.now());
   const [form] = Form.useForm();
   const [openingAirflowDeploymentId, setOpeningAirflowDeploymentId] = useState(null);
   const [localStackBusyId, setLocalStackBusyId] = useState(null);
+  const [keepAliveBusyId, setKeepAliveBusyId] = useState(null);
   const openAirflowHandoffLockRef = useRef(false);
 
   useEffect(() => {
@@ -74,6 +78,12 @@ const Deployments = () => {
     }, 8000);
     return () => clearInterval(id);
   }, [deployments]);
+
+  // Tick every 30 s so idle countdown labels stay fresh without refetching.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const fetchDeployments = async () => {
     try {
@@ -102,10 +112,43 @@ const Deployments = () => {
     try {
       const response = await deploymentAPI.getConfig();
       setDeploymentProvider(response.data.provider || 'kubernetes');
+      if (response.data.localIdleTimeoutMinutes != null) {
+        setLocalIdleTimeoutMinutes(Number(response.data.localIdleTimeoutMinutes));
+      }
     } catch (error) {
       console.error('Error fetching deployment config:', error);
     }
   };
+
+  /**
+   * Returns a human-readable string describing how long until the local stack idles out,
+   * or null when the feature is off / not applicable.
+   */
+  const getIdleShutdownLabel = useCallback(
+    (record) => {
+      if (deploymentProvider !== 'local') return null;
+      if (record.status !== 'RUNNING') return null;
+      if (!localIdleTimeoutMinutes || localIdleTimeoutMinutes <= 0) return null;
+
+      const lastActivity =
+        record.localStackLastActivityAt ||
+        record.deployedAt ||
+        record.createdAt;
+      if (!lastActivity) return null;
+
+      const shutdownAt = dayjs(lastActivity).add(localIdleTimeoutMinutes, 'minute');
+      const diffMs = shutdownAt.valueOf() - now;
+
+      if (diffMs <= 0) return { label: 'Stopping soon', urgent: true, warning: false };
+
+      const diffMin = Math.ceil(diffMs / 60_000);
+      if (diffMin < 60) return { label: `Stops in ${diffMin}m`, urgent: diffMin <= 10, warning: diffMin <= 20 };
+      const h = Math.floor(diffMin / 60);
+      const m = diffMin % 60;
+      return { label: m > 0 ? `Stops in ${h}h ${m}m` : `Stops in ${h}h`, urgent: false, warning: false };
+    },
+    [deploymentProvider, localIdleTimeoutMinutes, now]
+  );
 
   const handleOpenAirflow = async (deploymentId) => {
     if (openAirflowHandoffLockRef.current) return;
@@ -254,6 +297,20 @@ const Deployments = () => {
     }
   };
 
+  const handleKeepAlive = async (deploymentId) => {
+    try {
+      setKeepAliveBusyId(deploymentId);
+      await deploymentAPI.keepAliveLocalStack(deploymentId);
+      await fetchDeployments();
+      message.success('Timer reset — idle clock restarted.');
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Failed to reset timer');
+      if (msg) message.error(msg);
+    } finally {
+      setKeepAliveBusyId(null);
+    }
+  };
+
   const getStatusColor = (status) => {
     const colors = {
       RUNNING: 'green',
@@ -395,6 +452,18 @@ const Deployments = () => {
           placement="bottomRight"
           menu={{
             items: [
+              ...(deploymentProvider === 'local' && record.status === 'RUNNING'
+                ? [
+                    {
+                      key: 'keep-alive',
+                      icon: keepAliveBusyId === record.deploymentId
+                        ? <ClockCircleOutlined spin />
+                        : <ClockCircleOutlined />,
+                      label: 'Reset idle timer',
+                    },
+                    { type: 'divider' },
+                  ]
+                : []),
               {
                 key: 'remove',
                 danger: true,
@@ -404,7 +473,9 @@ const Deployments = () => {
             ],
             onClick: ({ key, domEvent }) => {
               domEvent?.stopPropagation();
-              if (key === 'remove') {
+              if (key === 'keep-alive') {
+                handleKeepAlive(record.deploymentId);
+              } else if (key === 'remove') {
                 confirmRemoveDeployment(record);
               }
             },
@@ -426,7 +497,64 @@ const Deployments = () => {
   const columns = [
     deploymentColumn,
     tagColumn,
-    ...(isAdmin ? [tenantColumn] : []),
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 108,
+      render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag>,
+    },
+    ...(deploymentProvider === 'local'
+      ? [
+          {
+            title: 'Idle',
+            key: 'autoStop',
+            width: 130,
+            render: (_, record) => {
+              const idleInfo = getIdleShutdownLabel(record);
+              if (!idleInfo) {
+                return <span className="deployments-autostop-na">—</span>;
+              }
+
+              const lastActivity =
+                record.localStackLastActivityAt || record.deployedAt || record.createdAt;
+              const elapsedMs = lastActivity ? now - dayjs(lastActivity).valueOf() : 0;
+              const totalMs = localIdleTimeoutMinutes * 60 * 1000;
+              const pct = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100));
+
+              const barColor = idleInfo.urgent
+                ? '#cf1322'
+                : idleInfo.warning
+                ? '#d46b08'
+                : '#52c41a';
+              const textColor = idleInfo.urgent
+                ? '#cf1322'
+                : idleInfo.warning
+                ? '#d46b08'
+                : 'rgba(0,0,0,0.55)';
+
+              return (
+                <Tooltip
+                  title={`Auto-stops after ${localIdleTimeoutMinutes} min of inactivity — activity: deploy, trigger, or Open Airflow`}
+                >
+                  <div className="deployments-autostop-cell">
+                    <span className="deployments-autostop-label" style={{ color: textColor }}>
+                      <ClockCircleOutlined />
+                      {idleInfo.label}
+                    </span>
+                    <div className="deployments-autostop-bar-track">
+                      <div
+                        className="deployments-autostop-bar-fill"
+                        style={{ width: `${pct}%`, background: barColor }}
+                      />
+                    </div>
+                  </div>
+                </Tooltip>
+              );
+            },
+          },
+        ]
+      : []),
     {
       title: 'Version',
       dataIndex: 'airflowVersion',
@@ -438,28 +566,27 @@ const Deployments = () => {
       title: 'Executor',
       dataIndex: 'executorType',
       key: 'executorType',
-      width: 88,
+      width: 96,
       ellipsis: true,
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      width: 108,
-      render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag>,
     },
     {
       title: 'Workers',
       key: 'workers',
       width: 84,
-      render: (_, record) => `${record.minWorkers}–${record.maxWorkers}`,
+      render: (_, record) => {
+        const min = record.minWorkers;
+        const max = record.maxWorkers;
+        if (min == null && max == null) return <span style={{ color: 'rgba(0,0,0,0.25)' }}>—</span>;
+        return `${min ?? '?'}–${max ?? '?'}`;
+      },
     },
+    ...(isAdmin ? [tenantColumn] : []),
     {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      width: 132,
-      render: (date) => dayjs(date).format('YYYY-MM-DD HH:mm'),
+      width: 128,
+      render: (date) => dayjs(date).format('MM-DD HH:mm'),
     },
     actionsColumn,
   ];
@@ -496,7 +623,7 @@ const Deployments = () => {
         dataSource={deployments}
         loading={loading}
         rowKey="id"
-        scroll={{ x: 1240 }}
+        scroll={{ x: deploymentProvider === 'local' ? 1200 : 1060 }}
         tableLayout="fixed"
         locale={{
           emptyText: (

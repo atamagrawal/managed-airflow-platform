@@ -44,4 +44,11 @@ public class LocalDockerStackController {
     public ResponseEntity<DeploymentResponse> stop(@PathVariable String deploymentId) {
         return ResponseEntity.ok(lifecycleService.stopCluster(deploymentId));
     }
+
+    @PostMapping("/{deploymentId}/local-stack/keep-alive")
+    @Operation(summary = "Reset idle-stop timer for a running local stack")
+    public ResponseEntity<Void> keepAlive(@PathVariable String deploymentId) {
+        lifecycleService.recordUserActivity(deploymentId);
+        return ResponseEntity.noContent().build();
+    }
 }

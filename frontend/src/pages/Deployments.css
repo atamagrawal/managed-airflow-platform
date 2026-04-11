@@ -73,3 +73,40 @@
 .deployments-row-actions .ant-btn.ant-btn-text.ant-dropdown-trigger {
   padding: 4px 8px;
 }
+
+.deployments-autostop-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: default;
+}
+
+.deployments-autostop-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.deployments-autostop-bar-track {
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+  width: 100%;
+}
+
+.deployments-autostop-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 2s linear, background 0.3s ease;
+}
+
+.deployments-autostop-na {
+  color: rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+  user-select: none;
+}

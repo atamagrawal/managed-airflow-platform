@@ -104,6 +104,7 @@ public class LocalDockerStackLifecycleService {
     }
 
     @Scheduled(fixedDelayString = "${local.idle-stop.check-interval-ms:60000}")
+    @Transactional
     public void stopIdleLocalStacks() {
         if (testClusterIdleTimeoutMinutes <= 0) {
             return;
@@ -119,10 +120,14 @@ public class LocalDockerStackLifecycleService {
                 if (d.getStatus() != AirflowDeployment.DeploymentStatus.RUNNING) {
                     continue;
                 }
-                if (d.getLocalStackLastActivityAt() == null) {
+                LocalDateTime lastActivity = d.getLocalStackLastActivityAt();
+                if (lastActivity == null) {
+                    lastActivity = d.getDeployedAt() != null ? d.getDeployedAt() : d.getCreatedAt();
+                }
+                if (lastActivity == null) {
                     continue;
                 }
-                if (d.getLocalStackLastActivityAt().isAfter(cutoff)) {
+                if (lastActivity.isAfter(cutoff)) {
                     continue;
                 }
                 try {
