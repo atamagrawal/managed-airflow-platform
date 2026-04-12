@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Managed Airflow Platform now supports AWS ECS (Elastic Container Service) as an alternative deployment target alongside Kubernetes. This implementation provides a lighter-weight, more cost-effective option for test deployments, similar to Astronomer's approach.
+The Managed Airflow Platform supports AWS ECS (Elastic Container Service) as an alternative deployment target alongside Kubernetes. This implementation provides a lighter-weight, more cost-effective option for test and non-Kubernetes environments.
 
 ## Architecture
 

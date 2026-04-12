@@ -1,6 +1,6 @@
 # Managed Airflow Platform
 
-A production-ready, multi-cloud, multi-tenant platform for deploying and managing Apache Airflow instances across **Local, AWS EC2, AWS ECS, and Kubernetes**, similar to Astronomer.
+A production-ready, multi-cloud, multi-tenant platform for deploying and managing Apache Airflow instances across **Local, AWS EC2, AWS ECS, and Kubernetes**.
 
 ## Overview
 
@@ -42,7 +42,7 @@ Choose the deployment option that fits your needs:
 
 ### Management & Monitoring
 - **Control Plane UI** - React-based web interface for managing tenants and deployments
-- **Project Management** - Astronomer-style project structure with dags/, plugins/, include/, tests/ directories
+- **Project Management** - Structured Airflow projects with `dags/`, `plugins/`, `include/`, `tests/`, and related metadata
 - **DAG Management** - Web-based DAG creation with code editor, Git integration, and deployment
 - **REST API** - Complete API for programmatic management
 - **Multiple Executor Support** - Local, Celery, Kubernetes, and hybrid executors
@@ -276,7 +276,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
 - ECS: ~5-7 minutes
 - Kubernetes: ~5-10 minutes
 
-### Creating and Managing Projects (Astronomer-Style)
+### Creating and managing projects
 
 **Via UI:**
 1. Navigate to Projects page
@@ -314,7 +314,7 @@ curl -X POST http://localhost:8080/api/v1/projects \
 - `.env` - Environment variables
 
 **Features:**
-- Complete Astronomer-compatible project structure
+- Complete, opinionated project layout for Airflow code and dependencies
 - Manage multiple DAGs within a project
 - Shared dependencies and utilities
 - Custom Docker images
@@ -885,7 +885,7 @@ terraform apply
 - [x] Multi-tenant architecture
 - [x] REST API and Web UI
 - [x] Comprehensive documentation
-- [x] **Project Management** - Astronomer-style project structure with full CRUD operations
+- [x] **Project Management** - Structured multi-file Airflow projects with full CRUD operations
 - [x] **Project File Management** - Manage DAGs, plugins, includes, tests within projects
 - [x] **DAG Management UI** - Create, edit, and deploy DAGs from web interface
 - [x] **Code Editor** - Monaco editor with Python syntax highlighting
@@ -970,7 +970,6 @@ This project is licensed under the Apache License 2.0 - see the LICENSE file for
 ## Acknowledgments
 
 - [Apache Airflow](https://airflow.apache.org/) - The amazing workflow orchestration platform
-- [Astronomer](https://www.astronomer.io/) - Inspiration for managed Airflow
 - [KEDA](https://keda.sh/) - Kubernetes event-driven autoscaling
 - [Spring Boot](https://spring.io/projects/spring-boot) - Application framework
 - [React](https://reactjs.org/) - UI framework

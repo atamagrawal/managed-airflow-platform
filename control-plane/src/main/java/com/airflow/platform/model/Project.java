@@ -10,7 +10,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 /**
- * Entity representing an Astronomer-like Airflow project
+ * Entity representing a structured Airflow project (DAGs, plugins, config, and metadata)
  * A project contains multiple DAGs, plugins, includes, tests, and configuration files
  */
 @Entity
