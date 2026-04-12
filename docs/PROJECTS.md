@@ -2,11 +2,11 @@
 
 ## Overview
 
-The Managed Airflow Platform now supports **Astronomer-style projects**, allowing you to organize your Airflow workflows using a structured directory-based approach. Projects provide a complete development environment for your DAGs, plugins, dependencies, and configurations - all managed through an intuitive UI and REST API.
+The Managed Airflow Platform supports **Airflow projects**: a structured, directory-based way to organize workflows. Projects provide a complete development environment for your DAGs, plugins, dependencies, and configurations, managed through the UI and REST API.
 
 ## What is a Project?
 
-An Airflow project is a structured collection of files and configurations that define a complete Airflow application, similar to how Astronomer organizes Airflow deployments. Instead of managing individual DAG files, you can now create projects that contain:
+An Airflow project is a structured collection of files and configurations that define a complete Airflow application. Instead of managing individual DAG files in isolation, you create projects that contain:
 
 - **DAGs** - Multiple DAG files organized in a `dags/` directory
 - **Plugins** - Custom Airflow plugins in a `plugins/` directory
@@ -17,7 +17,7 @@ An Airflow project is a structured collection of files and configurations that d
 
 ## Project Structure
 
-Each project follows the standard Astronomer directory structure:
+Each project follows this directory layout:
 
 ```
 my-airflow-project/
@@ -353,7 +353,7 @@ Use projects when you:
 - Require specific Python or OS-level packages
 - Want to organize your DAGs in a structured way
 - Need to version control your entire Airflow application
-- Want to follow Astronomer's best practices
+- Want a clear layout and lifecycle for DAGs, plugins, and dependencies together
 
 ### When to Use Individual DAGs
 

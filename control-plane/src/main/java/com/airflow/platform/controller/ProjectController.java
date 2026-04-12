@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.List;
 
 /**
- * REST controller for Project management (Astronomer-style)
+ * REST controller for Airflow project management
  */
 @RestController
 @RequestMapping("/api/v1/projects")

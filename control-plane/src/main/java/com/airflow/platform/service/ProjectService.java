@@ -54,7 +54,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Service for managing Airflow projects (Astronomer-style)
+ * Service for managing Airflow projects (structured multi-file workspaces)
  * Supports project creation, file management, and deployment.
  * Projects are not owned by a single deployment; use {@link ProjectDeployment} to link a project to one or more deployments.
  */
