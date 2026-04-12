@@ -16,10 +16,11 @@ This guide explains how to use the Managed Airflow Platform to create and manage
 
 ## Getting Started
 
-### Accessing the Platform
+### Accessing the platform
 
-1. Navigate to the platform URL (e.g., `https://airflow-platform.example.com`)
-2. You'll see the dashboard with platform statistics
+1. Navigate to the platform URL (for local dev, `http://localhost:3000` when the React app is running, or the host where the UI is deployed).
+2. Sign in with a control-plane account (default dev users are defined under `platform.security.users` in `control-plane/src/main/resources/application.yml`, for example `admin` / `admin`).
+3. After login, the dashboard shows platform statistics for your allowed scope (admins see all tenants; other users see only their home tenant’s data).
 
 ### Dashboard Overview
 
@@ -126,22 +127,31 @@ The process is the same regardless of deployment option.
 
 #### Via UI
 
-1. Click **Tenants** in the sidebar
+1. Click **Tenants** in the sidebar (admin only)
 2. Click the **Create Tenant** button
-3. Fill in the tenant details:
-   - **Tenant ID** - Unique identifier (e.g., "data-team")
-   - **Organization Name** - Organization name (e.g., "Data Engineering Team")
+3. Fill in the tenant details (the API persists `name`, `email`, `organization`, `cloudProvider`, etc.; a URL-safe **`tenantId` is generated** from the name)
 4. Click **OK** to create the tenant
 
 #### Via API
 
+Tenant APIs require an **ADMIN** JWT. `tenantId` is **generated** from `name`.
+
 ```bash
-curl -X POST http://localhost:8080/api/v1/tenants \
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
+
+curl -s -X POST http://localhost:8080/api/v1/tenants \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "tenantId": "data-team",
-    "organizationName": "Data Engineering Team"
-  }'
+    "name": "Data Engineering Team",
+    "email": "data-eng@example.com",
+    "organization": "Data Engineering",
+    "cloudProvider": "AWS",
+    "clusterName": "dev",
+    "region": "us-east-1"
+  }' | jq .
 ```
 
 ### What Happens After Creation?
@@ -174,9 +184,9 @@ The Tenants page displays:
 
 1. Click the **Delete** button next to the tenant
 2. Confirm the deletion
-3. The tenant and **all its deployments** will be deleted
+3. The tenant is marked deleted and the provider attempts namespace teardown
 
-**Warning:** This action cannot be undone. All Airflow deployments for this tenant will be permanently deleted.
+**Warning:** You **cannot** delete a tenant while **projects** still exist for that tenant (remove or reassign projects first). Delete or tear down Airflow deployments separately if they should be removed from the platform.
 
 ## Managing Deployments
 
@@ -192,8 +202,8 @@ Deployments are Apache Airflow instances. The deployment process differs slightl
 
 ##### Basic Information
 - **Tenant** - Select the tenant (required)
-- **Deployment ID** - Unique ID (e.g., "prod-etl")
-- **Deployment Name** - Display name (e.g., "Production ETL Pipeline")
+- **Deployment name** - Human-readable name; the control plane **generates** a unique `deploymentId` from this (shown in the table after create)
+- **Tag** - Optional short label (stored on the deployment row)
 - **Description** - Brief description (optional)
 
 ##### Airflow Configuration
@@ -229,32 +239,36 @@ Deployments are Apache Airflow instances. The deployment process differs slightl
 
 #### Via API
 
-**Local Example:**
+Use a JWT from `POST /api/v1/auth/login` on every call below (`Authorization: Bearer …`). Non-admin users may only create deployments for their own `tenantId`.
+
+**`deploymentId` is generated** from the human-readable `name` (with a short random suffix). Only **supported Airflow versions** (today: **3.1.8**) are accepted.
+
+**Local example:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments \
+curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "tenantId": "my-company",
-    "deploymentId": "local-dev",
     "name": "Local Development",
     "description": "Local development environment",
     "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
-    "schedulerCpu": "500",
-    "schedulerMemory": "1024",
-    "webserverCpu": "500",
-    "webserverMemory": "1024",
-    "workerCpu": "500",
-    "workerMemory": "1024",
+    "schedulerCpu": "500m",
+    "schedulerMemory": "1Gi",
+    "webserverCpu": "500m",
+    "webserverMemory": "1Gi",
+    "workerCpu": "500m",
+    "workerMemory": "1Gi",
     "minWorkers": 1,
     "maxWorkers": 3
-  }'
+  }' | jq .
 ```
 
-**Response:**
+**Response shape:**
 ```json
 {
-  "deploymentId": "local-dev",
+  "deploymentId": "local-development-a1b2c3d4",
   "tenantId": "my-company",
   "status": "DEPLOYING",
   "airflowVersion": "3.1.8",
@@ -262,67 +276,67 @@ curl -X POST http://localhost:8080/api/v1/deployments \
 }
 ```
 
-**Kubernetes Example:**
+**Kubernetes example:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments \
+curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "tenantId": "data-team",
-    "deploymentId": "prod-etl",
     "name": "Production ETL",
     "description": "Main production ETL pipeline",
     "airflowVersion": "3.1.8",
     "executorType": "CELERY",
-    "schedulerCpu": "1024",
-    "schedulerMemory": "2048",
-    "webserverCpu": "512",
-    "webserverMemory": "1024",
-    "workerCpu": "1024",
-    "workerMemory": "2048",
+    "schedulerCpu": "1000m",
+    "schedulerMemory": "2Gi",
+    "webserverCpu": "500m",
+    "webserverMemory": "1Gi",
+    "workerCpu": "1000m",
+    "workerMemory": "2Gi",
     "minWorkers": 2,
     "maxWorkers": 10,
     "ingressHost": "airflow-prod.example.com"
-  }'
+  }' | jq .
 ```
 
-**ECS Example:**
+**ECS example:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments \
+curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "tenantId": "data-team",
-    "deploymentId": "staging-etl",
     "name": "Staging ETL",
     "description": "Staging environment",
     "airflowVersion": "3.1.8",
     "executorType": "CELERY",
-    "schedulerCpu": "512",
-    "schedulerMemory": "1024",
-    "webserverCpu": "256",
-    "webserverMemory": "512",
-    "workerCpu": "512",
-    "workerMemory": "1024",
+    "schedulerCpu": "500m",
+    "schedulerMemory": "1Gi",
+    "webserverCpu": "250m",
+    "webserverMemory": "512Mi",
+    "workerCpu": "500m",
+    "workerMemory": "1Gi",
     "minWorkers": 1,
     "maxWorkers": 5
-  }'
+  }' | jq .
 ```
 
-**EC2 Example:**
+**EC2 example:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments \
+curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "tenantId": "data-team",
-    "deploymentId": "dev-etl",
     "name": "Development ETL",
     "description": "Development environment",
     "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
-    "schedulerCpu": "1000",
-    "schedulerMemory": "2048",
-    "webserverCpu": "500",
-    "webserverMemory": "1024"
-  }'
+    "schedulerCpu": "1000m",
+    "schedulerMemory": "2Gi",
+    "webserverCpu": "500m",
+    "webserverMemory": "1Gi"
+  }' | jq .
 ```
 
 ### What Happens During Deployment?
@@ -375,11 +389,14 @@ The Deployments page displays:
 | STOPPED | Deployment is stopped |
 | DELETED | Deployment has been removed |
 
-### Updating a Deployment
+### Updating a deployment (includes worker limits)
+
+There is **no** `POST .../scale` endpoint. Use **`PUT /api/v1/deployments/{deploymentId}`** with the full `DeploymentCreateRequest` shape (same fields as create, including `tenantId`, `name`, executor, and `minWorkers` / `maxWorkers`).
 
 ```bash
-curl -X PUT http://localhost:8080/api/v1/deployments/{deploymentId} \
+curl -s -X PUT http://localhost:8080/api/v1/deployments/{deploymentId} \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "tenantId": "data-team",
     "name": "Production ETL",
@@ -388,9 +405,13 @@ curl -X PUT http://localhost:8080/api/v1/deployments/{deploymentId} \
     "executorType": "CELERY",
     "minWorkers": 3,
     "maxWorkers": 15,
-    "schedulerCpu": "2048",
-    "schedulerMemory": "4096"
-  }'
+    "schedulerCpu": "2000m",
+    "schedulerMemory": "4Gi",
+    "webserverCpu": "500m",
+    "webserverMemory": "1Gi",
+    "workerCpu": "1000m",
+    "workerMemory": "2Gi"
+  }' | jq .
 ```
 
 **Update behavior by option:**
@@ -398,23 +419,7 @@ curl -X PUT http://localhost:8080/api/v1/deployments/{deploymentId} \
 - **ECS:** Task definitions updated, services updated with rolling deployment
 - **EC2:** Docker Compose file regenerated, containers recreated
 
-### Scaling Workers
-
-```bash
-curl -X POST http://localhost:8080/api/v1/deployments/{deploymentId}/scale \
-  -H "Content-Type: application/json" \
-  -d '{
-    "minWorkers": 2,
-    "maxWorkers": 10
-  }'
-```
-
-**Scaling behavior:**
-- **Kubernetes:** KEDA ScaledObject updated
-- **ECS:** Application Auto Scaling target updated
-- **EC2:** Docker Compose updated, requires restart
-
-### Deleting a Deployment
+### Deleting a deployment
 
 1. Click the **Delete** button next to the deployment
 2. Confirm the deletion
@@ -508,10 +513,11 @@ Use `dag_run.conf["managed_platform"]["triggered_by_username"]` (TaskFlow: `get_
 
 **Via API:**
 ```bash
-curl http://localhost:8080/api/v1/deployments/{deploymentId}
+curl -s http://localhost:8080/api/v1/deployments/{deploymentId} \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
-Look for the `webserverUrl` field in the response.
+Look for the `webserverUrl` field in the response (requires the same JWT you used for other deployment calls).
 
 ### Accessing Airflow by Deployment Option
 
@@ -521,7 +527,8 @@ For local deployments, the webserver URL is returned when creating the deploymen
 
 ```bash
 # Get webserver URL
-curl http://localhost:8080/api/v1/deployments/{deployment-id} | jq .webserverUrl
+curl -s http://localhost:8080/api/v1/deployments/{deployment-id} \
+  -H "Authorization: Bearer $TOKEN" | jq -r .webserverUrl
 
 # Example output: http://localhost:8093
 ```
@@ -745,7 +752,8 @@ Clone your DAGs repo on the EC2 instance and set up git-sync or cron job.
 
 **Via API:**
 ```bash
-curl http://localhost:8080/api/v1/deployments/{deploymentId}
+curl -s http://localhost:8080/api/v1/deployments/{deploymentId} \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 ### Viewing Logs
@@ -1117,111 +1125,34 @@ OpenAPI Spec: `http://localhost:8080/v3/api-docs`
 
 ### Authentication
 
-Currently, authentication is disabled for MVP. Production deployments should implement JWT or OAuth2.
+Sign in with `POST /api/v1/auth/login` (`username`, `password`). Responses include `accessToken` (JWT), `roles`, and `tenantScope` for non-admins.
 
-### Endpoints
+- Send `Authorization: Bearer <accessToken>` on all other `/api/v1/**` calls.
+- **`/api/v1/tenants/**` and `/api/v1/admin/**` require `ADMIN`.**
+- **`GET /api/v1/auth/me`** returns the current principal derived from the JWT.
 
-#### Tenants
+### Endpoints (summary)
 
-**List all tenants:**
-```bash
-GET /api/v1/tenants
-```
+See Swagger (`/swagger-ui.html`) for authoritative schemas.
 
-**Get tenant by ID:**
-```bash
-GET /api/v1/tenants/{tenantId}
-```
+#### Tenants (ADMIN only)
 
-**Create tenant:**
-```bash
-POST /api/v1/tenants
-Content-Type: application/json
-
-{
-  "tenantId": "engineering-team",
-  "organizationName": "Engineering Team"
-}
-```
-
-**Delete tenant:**
-```bash
-DELETE /api/v1/tenants/{tenantId}
-```
+- `GET /api/v1/tenants` — list
+- `GET /api/v1/tenants/{tenantId}` — get
+- `POST /api/v1/tenants` — create (`TenantCreateRequest`: `name`, `email`, `organization`, `cloudProvider`, optional `clusterName` / `region`; **`tenantId` is generated**)
+- `DELETE /api/v1/tenants/{tenantId}` — soft-delete / teardown (cannot delete while projects still reference the tenant)
 
 #### Deployments
 
-**List all deployments:**
-```bash
-GET /api/v1/deployments
-```
-
-**Get deployment by ID:**
-```bash
-GET /api/v1/deployments/{deploymentId}
-```
-
-**Get deployments by tenant:**
-```bash
-GET /api/v1/deployments/tenant/{tenantId}
-```
-
-**Create deployment:**
-```bash
-POST /api/v1/deployments
-Content-Type: application/json
-
-{
-  "tenantId": "engineering-team",
-  "deploymentId": "prod-airflow",
-  "name": "Production Airflow",
-  "description": "Main production instance",
-  "airflowVersion": "3.1.8",
-  "executorType": "CELERY",
-  "minWorkers": 1,
-  "maxWorkers": 5,
-  "schedulerCpu": "1024",
-  "schedulerMemory": "2048",
-  "workerCpu": "1024",
-  "workerMemory": "2048",
-  "webserverCpu": "512",
-  "webserverMemory": "1024",
-  "ingressHost": "airflow.example.com"
-}
-```
-
-**Update deployment:**
-```bash
-PUT /api/v1/deployments/{deploymentId}
-Content-Type: application/json
-
-{
-  "tenantId": "engineering-team",
-  "name": "Production Airflow",
-  "description": "Updated description",
-  "airflowVersion": "3.1.8",
-  "executorType": "CELERY",
-  "minWorkers": 2,
-  "maxWorkers": 10,
-  ...
-}
-```
-
-**Delete deployment:**
-```bash
-DELETE /api/v1/deployments/{deploymentId}
-```
-
-**Scale deployment:**
-```bash
-POST /api/v1/deployments/{deploymentId}/scale
-Content-Type: application/json
-
-{
-  "minWorkers": 2,
-  "maxWorkers": 10
-}
-```
+- `GET /api/v1/deployments/config` — active provider + local idle-timeout hint
+- `GET /api/v1/deployments` — list (tenant-filtered for non-admins)
+- `GET /api/v1/deployments/{deploymentId}` — get
+- `GET /api/v1/deployments/tenant/{tenantId}` — by tenant
+- `POST /api/v1/deployments` — create (`DeploymentCreateRequest`; **`deploymentId` generated**)
+- `PUT /api/v1/deployments/{deploymentId}` — update (use this to change worker counts)
+- `DELETE /api/v1/deployments/{deploymentId}` — delete
+- `POST /api/v1/deployments/{deploymentId}/local-stack/start|stop|keep-alive` — local Docker lifecycle
+- `POST /api/v1/deployments/{deploymentId}/airflow-ui-handoff` — browser handoff into Airflow
 
 #### Projects (DAG files live here)
 
@@ -1261,64 +1192,77 @@ POST /api/v1/projects/{projectId}/deploy?deploymentId={deploymentId}
 POST /api/v1/projects/{projectId}/trigger?deploymentId={deploymentId}
 ```
 
-### Complete Example: Create Tenant, Deployment, Project, and DAG
+**Also available:** `PUT /api/v1/projects/{projectId}/files/{fileId}`, `POST|DELETE /api/v1/projects/{projectId}/deployments/{deploymentId}` to link/unlink deployments.
+
+### Complete example: create tenant, deployment, project, and DAG
 
 ```bash
-# 1. Create tenant
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
+AUTH="Authorization: Bearer $TOKEN"
+
+# 1. Create tenant (ADMIN)
 TENANT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "$AUTH" \
   -d '{
-    "tenantId": "data-team",
-    "organizationName": "Data Team"
+    "name": "Data Team",
+    "email": "data-team@example.com",
+    "organization": "Data Team",
+    "cloudProvider": "AWS",
+    "clusterName": "dev",
+    "region": "us-east-1"
   }')
-
 echo "Tenant created: $TENANT_RESPONSE"
+TENANT_ID=$(echo "$TENANT_RESPONSE" | jq -r '.tenantId')
 
-# 2. Wait for tenant to be ready
-sleep 10
+sleep 2
 
-# 3. Create deployment
+# 2. Create deployment (deploymentId generated from name)
 DEPLOYMENT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
-  -d '{
-    "tenantId": "data-team",
-    "deploymentId": "my-airflow",
-    "name": "My Airflow Instance",
-    "airflowVersion": "3.1.8",
-    "executorType": "CELERY",
-    "minWorkers": 1,
-    "maxWorkers": 5,
-    "schedulerCpu": "1024",
-    "schedulerMemory": "2048",
-    "webserverCpu": "512",
-    "webserverMemory": "1024",
-    "workerCpu": "1024",
-    "workerMemory": "2048"
-  }')
-
+  -H "$AUTH" \
+  -d "{
+    \"tenantId\": \"$TENANT_ID\",
+    \"name\": \"My Airflow Instance\",
+    \"description\": \"Demo stack\",
+    \"airflowVersion\": \"3.1.8\",
+    \"executorType\": \"CELERY\",
+    \"minWorkers\": 1,
+    \"maxWorkers\": 5,
+    \"schedulerCpu\": \"1000m\",
+    \"schedulerMemory\": \"2Gi\",
+    \"webserverCpu\": \"500m\",
+    \"webserverMemory\": \"1Gi\",
+    \"workerCpu\": \"1000m\",
+    \"workerMemory\": \"2Gi\"
+  }")
 echo "Deployment created: $DEPLOYMENT_RESPONSE"
-DEPLOYMENT_ID=$(echo $DEPLOYMENT_RESPONSE | jq -r '.deploymentId')
+DEPLOYMENT_ID=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.deploymentId')
 
-# 4. Wait for deployment to be ready
+# 3. Wait for deployment to be ready
 while true; do
-  STATUS=$(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID | jq -r '.status')
+  STATUS=$(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID -H "$AUTH" | jq -r '.status')
   echo "Deployment status: $STATUS"
-  if [ "$STATUS" = "RUNNING" ]; then
+  if [ "$STATUS" = "RUNNING" ] || [ "$STATUS" = "STOPPED" ]; then
     break
   fi
   sleep 30
 done
 
-# 5. Create project
+# 4. Create project
 PROJECT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/projects \
   -H "Content-Type: application/json" \
+  -H "$AUTH" \
   -d '{"name":"Demo","description":"Example","airflowVersion":"3.1.8"}')
 echo "Project created: $PROJECT_RESPONSE"
-PROJECT_ID=$(echo $PROJECT_RESPONSE | jq -r '.projectId')
+PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r '.projectId')
 
-# 6. Add a DAG file (template may already include dags — add or update as needed)
+# 5. Add a DAG file (template may already include DAGs)
 curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT_ID/files" \
   -H "Content-Type: application/json" \
+  -H "$AUTH" \
   -d '{
     "filePath": "dags/my_first_dag.py",
     "fileName": "my_first_dag.py",
@@ -1326,74 +1270,75 @@ curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT_ID/files" \
     "content": "from airflow import DAG\nfrom datetime import datetime\nfrom airflow.operators.bash import BashOperator\n\ndag = DAG(\"my_first_dag\", start_date=datetime(2024, 1, 1), schedule=\"@daily\")\nBashOperator(task_id=\"hello\", bash_command=\"echo Hello Airflow\", dag=dag)\n"
   }' | jq .
 
-# 7. Deploy project
-curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT_ID/deploy?deploymentId=$DEPLOYMENT_ID" | jq .
+# 6. Deploy project
+curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT_ID/deploy?deploymentId=$DEPLOYMENT_ID" -H "$AUTH" | jq .
 
 sleep 5
 
-# 8. Trigger DAG run via Airflow API (through control plane)
-curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT_ID/trigger?deploymentId=$DEPLOYMENT_ID&fileName=my_first_dag.py" | jq .
-echo "Airflow UI: $(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID | jq -r '.webserverUrl')"
+# 7. Trigger DAG run
+curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT_ID/trigger?deploymentId=$DEPLOYMENT_ID&fileName=my_first_dag.py" -H "$AUTH" | jq .
+echo "Airflow UI: $(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID -H "$AUTH" | jq -r '.webserverUrl')"
 ```
 
-### Complete Example: Create Tenant and Deployment
+### Complete example: create tenant and deployment
 
 ```bash
-# 1. Create tenant
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
+AUTH="Authorization: Bearer $TOKEN"
+
 TENANT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "$AUTH" \
   -d '{
-    "tenantId": "data-team",
-    "organizationName": "Data Team"
+    "name": "Data Team",
+    "email": "data-team@example.com",
+    "organization": "Data Team",
+    "cloudProvider": "AWS",
+    "clusterName": "dev",
+    "region": "us-east-1"
   }')
-
 echo "Tenant created: $TENANT_RESPONSE"
+TENANT_ID=$(echo "$TENANT_RESPONSE" | jq -r '.tenantId')
 
-# 2. Wait for tenant to be ready (optional)
-sleep 10
+sleep 2
 
-# 3. Create deployment
 DEPLOYMENT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
-  -d '{
-    "tenantId": "data-team",
-    "deploymentId": "my-airflow",
-    "name": "My Airflow Instance",
-    "airflowVersion": "3.1.8",
-    "executorType": "CELERY",
-    "minWorkers": 1,
-    "maxWorkers": 5,
-    "schedulerCpu": "1024",
-    "schedulerMemory": "2048",
-    "webserverCpu": "512",
-    "webserverMemory": "1024",
-    "workerCpu": "1024",
-    "workerMemory": "2048"
-  }')
-
+  -H "$AUTH" \
+  -d "{
+    \"tenantId\": \"$TENANT_ID\",
+    \"name\": \"My Airflow Instance\",
+    \"description\": \"Demo stack\",
+    \"airflowVersion\": \"3.1.8\",
+    \"executorType\": \"CELERY\",
+    \"minWorkers\": 1,
+    \"maxWorkers\": 5,
+    \"schedulerCpu\": \"1000m\",
+    \"schedulerMemory\": \"2Gi\",
+    \"webserverCpu\": \"500m\",
+    \"webserverMemory\": \"1Gi\",
+    \"workerCpu\": \"1000m\",
+    \"workerMemory\": \"2Gi\"
+  }")
 echo "Deployment created: $DEPLOYMENT_RESPONSE"
+DEPLOYMENT_ID=$(echo "$DEPLOYMENT_RESPONSE" | jq -r '.deploymentId')
 
-# 4. Get deployment ID from response
-DEPLOYMENT_ID=$(echo $DEPLOYMENT_RESPONSE | jq -r '.deploymentId')
-
-# 5. Check deployment status
 while true; do
-  STATUS=$(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID | jq -r '.status')
+  STATUS=$(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID -H "$AUTH" | jq -r '.status')
   echo "Status: $STATUS"
-
-  if [ "$STATUS" = "RUNNING" ]; then
-    echo "Deployment is ready!"
+  if [ "$STATUS" = "RUNNING" ] || [ "$STATUS" = "STOPPED" ]; then
+    echo "Deployment is ready (or compose-only STOPPED in local defer-docker mode)!"
     break
   elif [ "$STATUS" = "FAILED" ]; then
     echo "Deployment failed!"
     exit 1
   fi
-
   sleep 30
 done
 
-# 6. Get Airflow UI URL
-WEBSERVER_URL=$(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID | jq -r '.webserverUrl')
+WEBSERVER_URL=$(curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID -H "$AUTH" | jq -r '.webserverUrl')
 echo "Airflow UI: $WEBSERVER_URL"
 ```
 

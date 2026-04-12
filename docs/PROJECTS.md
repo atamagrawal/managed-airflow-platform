@@ -56,10 +56,11 @@ my-airflow-project/
 3. Fill in the project details:
    - **Name**: A unique identifier for your project (e.g., `my-data-project`)
    - **Description**: Optional description of your project
-   - **Deployment**: Select the Airflow deployment to associate with this project
-   - **Airflow Version**: Specify the Airflow version (e.g., `2.8.1`)
+   - **Airflow Version**: Must be a **supported** control-plane version (currently **3.1.8**)
    - **Owner**: Project owner name
    - **Tags**: Comma-separated tags for organization
+
+   Projects belong to a **tenant** (from your login scope). Linking to a specific Airflow deployment happens when you **Deploy** (or via `POST /api/v1/projects/{projectId}/deployments/{deploymentId}`).
 
 4. Configure project files in the tabs:
    - **Basic Info**: Core project details
@@ -70,21 +71,23 @@ my-airflow-project/
 
 ### Via REST API
 
+Authenticate first (`POST /api/v1/auth/login` → `Authorization: Bearer …`). Admins may set `"tenantId": "…"` explicitly; tenant users inherit scope from the JWT.
+
 ```bash
-curl -X POST http://localhost:8080/api/v1/projects \
+curl -s -X POST http://localhost:8080/api/v1/projects \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "deploymentId": "prod-etl",
     "name": "my-data-project",
     "description": "Production data pipelines",
-    "airflowVersion": "2.8.1",
+    "airflowVersion": "3.1.8",
     "requirementsTxt": "pandas==2.0.0\nrequests==2.31.0\nsqlalchemy==2.0.0",
     "packagesTxt": "gcc\nlibpq-dev\nunixodbc-dev",
-    "dockerfile": "FROM apache/airflow:2.8.1\n\nCOPY requirements.txt /requirements.txt\nRUN pip install --no-cache-dir -r /requirements.txt\n\nCOPY . /opt/airflow/",
+    "dockerfile": "FROM apache/airflow:3.1.8\n\nCOPY requirements.txt /requirements.txt\nRUN pip install --no-cache-dir -r /requirements.txt\n\nCOPY . /opt/airflow/",
     "airflowIgnore": "__pycache__/\n*.pyc\nvenv/\ntests/",
     "owner": "data-team",
     "tags": "production,etl"
-  }'
+  }' | jq .
 ```
 
 ## Managing Project Files
@@ -106,8 +109,9 @@ curl -X POST http://localhost:8080/api/v1/projects \
 ### Adding Files via API
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/projects/{projectId}/files \
+curl -s -X POST http://localhost:8080/api/v1/projects/{projectId}/files \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "filePath": "dags/my_etl_dag.py",
     "fileName": "my_etl_dag.py",
@@ -138,8 +142,11 @@ curl -X POST http://localhost:8080/api/v1/projects/{projectId}/files \
 
 ### Via API
 
+`deploymentId` is a **query parameter** (the deploy endpoint also creates the project↔deployment link if needed):
+
 ```bash
-curl -X POST http://localhost:8080/api/v1/projects/{projectId}/deploy
+curl -s -X POST "http://localhost:8080/api/v1/projects/{projectId}/deploy?deploymentId={deploymentId}" \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 ### What Happens During Deployment
@@ -217,7 +224,7 @@ git
 Customize the Docker image for your project:
 
 ```dockerfile
-FROM apache/airflow:2.8.1
+FROM apache/airflow:3.1.8
 
 # Install system packages
 USER root
@@ -498,19 +505,35 @@ PUT /api/v1/projects/{projectId}
 DELETE /api/v1/projects/{projectId}
 ```
 
-### Deploy Project
+### Deploy project
 ```
-POST /api/v1/projects/{projectId}/deploy
+POST /api/v1/projects/{projectId}/deploy?deploymentId={deploymentId}
 ```
 
-### Add File to Project
+### Link / unlink deployment
+```
+POST   /api/v1/projects/{projectId}/deployments/{deploymentId}
+DELETE /api/v1/projects/{projectId}/deployments/{deploymentId}
+```
+
+### Add file to project
 ```
 POST /api/v1/projects/{projectId}/files
 ```
 
-### List Project Files
+### List project files
 ```
 GET /api/v1/projects/{projectId}/files
+```
+
+### Update project file
+```
+PUT /api/v1/projects/{projectId}/files/{fileId}
+```
+
+### Trigger DAG runs (via deployment’s Airflow API)
+```
+POST /api/v1/projects/{projectId}/trigger?deploymentId={deploymentId}&fileName={optional}
 ```
 
 ## Troubleshooting
@@ -544,29 +567,37 @@ GET /api/v1/projects/{projectId}/files
 ### Example 1: Simple ETL Project
 
 ```bash
-# Create project
-curl -X POST http://localhost:8080/api/v1/projects \
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
+
+# Create project (projectId is generated from name, e.g. simple-etl-xxxxxxxx)
+CREATE=$(curl -s -X POST http://localhost:8080/api/v1/projects \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "deploymentId": "prod",
     "name": "simple-etl",
     "description": "Simple ETL pipeline",
     "requirementsTxt": "pandas==2.0.0\nsqlalchemy==2.0.0",
-    "airflowVersion": "2.8.1"
-  }'
+    "airflowVersion": "3.1.8"
+  }')
+echo "$CREATE" | jq .
+PROJECT_ID=$(echo "$CREATE" | jq -r '.projectId')
 
 # Add DAG file
-curl -X POST http://localhost:8080/api/v1/projects/simple-etl/files \
+curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT_ID/files" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "filePath": "dags/etl_pipeline.py",
     "fileName": "etl_pipeline.py",
     "fileType": "DAG",
     "content": "from airflow import DAG\n..."
-  }'
+  }' | jq .
 
-# Deploy
-curl -X POST http://localhost:8080/api/v1/projects/simple-etl/deploy
+# Deploy to an existing deployment id from the Deployments UI/API
+curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT_ID/deploy?deploymentId=<your-deployment-id>" \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 ### Example 2: ML Pipeline Project

@@ -615,12 +615,16 @@ terraform apply
 
 ### 8.2 Tenant Creation
 
-**API Request**:
+**API request** (real path: `POST /api/v1/tenants`, **ADMIN** JWT required; `tenantId` is generated from `name`):
 ```bash
-POST /api/tenants
+POST /api/v1/tenants
 {
-  "tenantId": "acme-corp",
-  "organizationName": "ACME Corporation"
+  "name": "ACME Corporation",
+  "email": "admin@acme.example.com",
+  "organization": "ACME Corporation",
+  "cloudProvider": "AWS",
+  "clusterName": "managed-airflow",
+  "region": "us-east-1"
 }
 ```
 
@@ -634,20 +638,21 @@ POST /api/tenants
 
 ### 8.3 Airflow Deployment
 
-**API Request**:
+**API request** (`POST /api/v1/deployments`, authenticated; **`deploymentId` is generated** from `name`):
 ```bash
-POST /api/deployments
+POST /api/v1/deployments
 {
   "tenantId": "acme-corp",
-  "deploymentId": "prod-airflow",
+  "name": "prod-airflow",
+  "description": "Production",
   "airflowVersion": "3.1.8",
   "executorType": "CELERY",
-  "schedulerCpu": "1024",
-  "schedulerMemory": "2048",
-  "webserverCpu": "512",
-  "webserverMemory": "1024",
-  "workerCpu": "1024",
-  "workerMemory": "2048",
+  "schedulerCpu": "1000m",
+  "schedulerMemory": "2Gi",
+  "webserverCpu": "500m",
+  "webserverMemory": "1Gi",
+  "workerCpu": "1000m",
+  "workerMemory": "2Gi",
   "minWorkers": 1,
   "maxWorkers": 5
 }
@@ -713,13 +718,23 @@ POST /api/deployments
 
 ### 8.4 Upgrade
 
-**API Request**:
+**API request** (`PUT /api/v1/deployments/{deploymentId}` with full `DeploymentCreateRequest` body, not a partial patch):
 ```bash
-PUT /api/deployments/{deploymentId}
+PUT /api/v1/deployments/{deploymentId}
 {
+  "tenantId": "acme-corp",
+  "name": "prod-airflow",
+  "description": "Production",
   "airflowVersion": "3.1.8",
-  "schedulerCpu": "2048",
-  "schedulerMemory": "4096"
+  "executorType": "CELERY",
+  "schedulerCpu": "2000m",
+  "schedulerMemory": "4Gi",
+  "webserverCpu": "500m",
+  "webserverMemory": "1Gi",
+  "workerCpu": "1000m",
+  "workerMemory": "2Gi",
+  "minWorkers": 1,
+  "maxWorkers": 5
 }
 ```
 
@@ -732,27 +747,16 @@ PUT /api/deployments/{deploymentId}
 
 ### 8.5 Scaling
 
-**API Request**:
-```bash
-POST /api/deployments/{deploymentId}/scale
-{
-  "minWorkers": 2,
-  "maxWorkers": 10
-}
-```
+There is **no** `POST .../scale` route. Change worker bounds with **`PUT /api/v1/deployments/{deploymentId}`** by updating `minWorkers` / `maxWorkers` (and resubmitting the full deployment JSON). `ECSScalingManager` re-applies Application Auto Scaling targets when the deployment is updated.
 
-**Actions** (ECSDeploymentProvider.java:203-222 and ECSScalingManager.java:62-74):
-1. Update ECS service desired count
-2. Update auto-scaling target min/max capacity
-3. ECS launches/terminates tasks to match desired count
-
-**Time**: ~1-2 minutes
+**Time**: ~1-3 minutes depending on service steady state
 
 ### 8.6 Uninstall
 
-**API Request**:
+**API request**:
 ```bash
-DELETE /api/deployments/{deploymentId}
+DELETE /api/v1/deployments/{deploymentId}
+Authorization: Bearer <JWT>
 ```
 
 **Actions** (ECSDeploymentProvider.java:131-166):
@@ -768,9 +772,10 @@ DELETE /api/deployments/{deploymentId}
 
 ### 8.7 Tenant Deletion
 
-**API Request**:
+**API request**:
 ```bash
-DELETE /api/tenants/{tenantId}
+DELETE /api/v1/tenants/{tenantId}
+Authorization: Bearer <JWT>   # ADMIN
 ```
 
 **Actions** (ECSCloudProvider.java:65-97):
@@ -1807,9 +1812,10 @@ aws application-autoscaling describe-scalable-targets \
   --resource-ids service/managed-airflow-acme-corp/prod-airflow-worker
 
 # Re-register if missing (ECSScalingManager.java:103-114)
-curl -X POST /api/deployments/{deploymentId}/scale \
+curl -s -X PUT http://localhost:8080/api/v1/deployments/{deploymentId} \
   -H "Content-Type: application/json" \
-  -d '{"minWorkers": 1, "maxWorkers": 10}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"tenantId":"acme-corp","name":"prod-airflow","airflowVersion":"3.1.8","executorType":"CELERY","minWorkers":1,"maxWorkers":10,"schedulerCpu":"1000m","schedulerMemory":"2Gi","webserverCpu":"500m","webserverMemory":"1Gi","workerCpu":"1000m","workerMemory":"2Gi"}'
 
 # Check IAM permissions
 # Ensure task role has autoscaling permissions

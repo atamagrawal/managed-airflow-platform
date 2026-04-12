@@ -221,26 +221,37 @@ mvn spring-boot:run -Dspring-boot.run.profiles=ec2
 ### Creating a Deployment
 
 ```bash
-# Create tenant (launches EC2 instance)
-curl -X POST http://localhost:8080/api/tenants \
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "test-tenant",
-    "email": "test@example.com",
-    "organization": "Test Org"
-  }'
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
 
-# Deploy Airflow
-curl -X POST http://localhost:8080/api/deployments \
+# Create tenant (launches EC2 instance). tenantId is returned (slug from name).
+TENANT_JSON=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "tenantId": "test-tenant",
-    "name": "dev-airflow",
-    "airflowVersion": "3.1.8",
-    "executorType": "celery",
-    "minWorkers": 2,
-    "maxWorkers": 5
-  }'
+    "name": "Test Tenant",
+    "email": "test@example.com",
+    "organization": "Test Org",
+    "cloudProvider": "AWS",
+    "clusterName": "ec2",
+    "region": "us-east-1"
+  }')
+TENANT_ID=$(echo "$TENANT_JSON" | jq -r '.tenantId')
+
+# Deploy Airflow (deploymentId is generated from name)
+curl -s -X POST http://localhost:8080/api/v1/deployments \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{
+    \"tenantId\": \"$TENANT_ID\",
+    \"name\": \"dev-airflow\",
+    \"description\": \"EC2 dev\",
+    \"airflowVersion\": \"3.1.8\",
+    \"executorType\": \"CELERY\",
+    \"minWorkers\": 2,
+    \"maxWorkers\": 5
+  }" | jq .
 ```
 
 ### Accessing Airflow

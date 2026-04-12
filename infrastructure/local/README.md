@@ -19,7 +19,7 @@ In local mode:
 ### Required
 - **Docker**: 20.10 or higher
 - **Docker Compose**: 2.0 or higher (or Docker Compose plugin)
-- **Java**: 17 or higher (for Spring Boot control plane)
+- **Java**: 21 or higher (for Spring Boot control plane; see `control-plane/pom.xml`)
 
 ### Optional
 - **Maven**: 3.8+ (or use the Maven wrapper: `./mvnw`)
@@ -184,7 +184,8 @@ Local deployment has some limitations compared to production deployments:
 To remove a deployment:
 ```bash
 # Via API (recommended)
-curl -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id}
+curl -s -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id} \
+  -H "Authorization: Bearer $TOKEN"
 
 # Manual cleanup
 cd ~/airflow-deployments/{tenant-id}/{deployment-id}
