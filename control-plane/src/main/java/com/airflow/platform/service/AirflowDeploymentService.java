@@ -2,17 +2,25 @@ package com.airflow.platform.service;
 
 import com.airflow.platform.dto.DeploymentCreateRequest;
 import com.airflow.platform.dto.DeploymentResponse;
+import com.airflow.platform.config.SupportedAirflowVersions;
 import com.airflow.platform.exception.DeploymentException;
 import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.AirflowDeployment;
 import com.airflow.platform.model.Tenant;
 import com.airflow.platform.provider.DeploymentProvider;
+import com.airflow.platform.provider.impl.LocalDeploymentProvider;
 import com.airflow.platform.repository.AirflowDeploymentRepository;
+import com.airflow.platform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,9 +45,31 @@ public class AirflowDeploymentService {
     @Autowired(required = false)
     private ECSScalingManager ecsScalingManager;
 
+    @Autowired(required = false)
+    private LocalAirflowFabUserSyncService localAirflowFabUserSyncService;
+
+    @Autowired(required = false)
+    private LocalDeploymentStatusReconciler localDeploymentStatusReconciler;
+
+    @Autowired(required = false)
+    private LocalDeploymentProvider localDeploymentProvider;
+
+    @Value("${local.auto-start-docker-on-create:true}")
+    private boolean localAutoStartDockerOnCreate;
+
     @Transactional
     public DeploymentResponse createDeployment(DeploymentCreateRequest request) {
         log.info("Creating Airflow deployment: {} for tenant: {}", request.getName(), request.getTenantId());
+
+        if (!SecurityUtils.isAdmin()) {
+            String scope = SecurityUtils.getNonAdminTenantScope()
+                    .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+            if (!scope.equals(request.getTenantId())) {
+                throw new AccessDeniedException("Deployments must use your assigned tenant");
+            }
+        }
+
+        SupportedAirflowVersions.requireSupported(request.getAirflowVersion());
 
         // Get tenant
         Tenant tenant = tenantService.getTenantEntity(request.getTenantId());
@@ -53,6 +83,7 @@ public class AirflowDeploymentService {
         deployment.setTenant(tenant);
         deployment.setName(request.getName());
         deployment.setDescription(request.getDescription());
+        deployment.setTag(normalizeDeploymentTag(request.getTag()));
         deployment.setAirflowVersion(request.getAirflowVersion());
         deployment.setExecutorType(AirflowDeployment.ExecutorType.valueOf(request.getExecutorType().toUpperCase()));
         deployment.setStatus(AirflowDeployment.DeploymentStatus.PENDING);
@@ -71,8 +102,25 @@ public class AirflowDeploymentService {
 
         deployment = deploymentRepository.save(deployment);
 
-        // Deploy via deployment provider (Helm/Kubernetes or ECS)
         final AirflowDeployment finalDeployment = deployment;
+        boolean deferLocalDocker = shouldDeferLocalDockerStart(request);
+        if (deferLocalDocker) {
+            try {
+                localDeploymentProvider.provisionComposeArtifactsOnly(deployment);
+                deployment.setStatus(AirflowDeployment.DeploymentStatus.STOPPED);
+                deployment.setWebserverUrl(null);
+                deployment = deploymentRepository.save(deployment);
+                log.info("Airflow deployment registered locally without starting Docker: {}", deploymentId);
+            } catch (Exception e) {
+                log.error("Failed to provision local deployment artifacts: {}", deploymentId, e);
+                finalDeployment.setStatus(AirflowDeployment.DeploymentStatus.FAILED);
+                deploymentRepository.save(finalDeployment);
+                throw new DeploymentException("Failed to provision local deployment: " + e.getMessage(), e);
+            }
+            return DeploymentResponse.fromEntity(deployment);
+        }
+
+        // Deploy via deployment provider (Helm/Kubernetes or ECS)
         try {
             deployment.setStatus(AirflowDeployment.DeploymentStatus.DEPLOYING);
             deploymentRepository.save(deployment);
@@ -90,9 +138,28 @@ public class AirflowDeploymentService {
             // Set webserver URL
             String webserverUrl = deploymentProvider.getWebserverUrl(deployment);
             deployment.setWebserverUrl(webserverUrl);
+            if (localDeploymentProvider != null) {
+                deployment.setLocalStackLastActivityAt(LocalDateTime.now());
+            }
 
             deployment = deploymentRepository.save(deployment);
             log.info("Airflow deployment created successfully: {}", deploymentId);
+
+            if (localAirflowFabUserSyncService != null && deploymentProvider != null
+                    && "local".equals(deploymentProvider.getProviderType())) {
+                final String syncDeploymentId = deployment.getDeploymentId();
+                Runnable scheduleFab = () -> localAirflowFabUserSyncService.schedulePostDeployFabSync(syncDeploymentId);
+                if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            scheduleFab.run();
+                        }
+                    });
+                } else {
+                    scheduleFab.run();
+                }
+            }
 
         } catch (Exception e) {
             log.error("Failed to deploy Airflow: {}", deploymentId, e);
@@ -104,25 +171,70 @@ public class AirflowDeploymentService {
         return DeploymentResponse.fromEntity(deployment);
     }
 
+    private boolean shouldDeferLocalDockerStart(DeploymentCreateRequest request) {
+        if (deploymentProvider == null || localDeploymentProvider == null) {
+            return false;
+        }
+        if (!"local".equals(deploymentProvider.getProviderType())) {
+            return false;
+        }
+        if (request.getDeferDockerStart() != null) {
+            return Boolean.TRUE.equals(request.getDeferDockerStart());
+        }
+        return !localAutoStartDockerOnCreate;
+    }
+
     @Transactional(readOnly = true)
     public DeploymentResponse getDeployment(String deploymentId) {
+        if (localDeploymentStatusReconciler != null) {
+            localDeploymentStatusReconciler.reconcileIfPendingOrDeploying(deploymentId);
+        }
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        assertDeploymentAccess(deployment);
         return DeploymentResponse.fromEntity(deployment);
     }
 
     @Transactional(readOnly = true)
     public List<DeploymentResponse> getDeploymentsByTenant(String tenantId) {
+        if (localDeploymentStatusReconciler != null) {
+            localDeploymentStatusReconciler.reconcilePendingOrDeployingDeployments();
+        }
         return deploymentRepository.findByTenantTenantId(tenantId).stream()
                 .map(DeploymentResponse::fromEntity)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
+    public List<DeploymentResponse> getDeploymentsByTenantForCaller(String tenantId) {
+        if (!SecurityUtils.isAdmin()) {
+            String scope = SecurityUtils.getNonAdminTenantScope()
+                    .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+            if (!scope.equals(tenantId)) {
+                throw new AccessDeniedException("Not authorized");
+            }
+        }
+        return getDeploymentsByTenant(tenantId);
+    }
+
+    @Transactional(readOnly = true)
     public List<DeploymentResponse> getAllDeployments() {
+        if (localDeploymentStatusReconciler != null) {
+            localDeploymentStatusReconciler.reconcilePendingOrDeployingDeployments();
+        }
         return deploymentRepository.findAll().stream()
                 .map(DeploymentResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DeploymentResponse> getDeploymentsForCurrentUser() {
+        if (SecurityUtils.isAdmin()) {
+            return getAllDeployments();
+        }
+        String tenantId = SecurityUtils.getNonAdminTenantScope()
+                .orElseThrow(() -> new AccessDeniedException("Not authorized"));
+        return getDeploymentsByTenant(tenantId);
     }
 
     @Transactional
@@ -131,6 +243,7 @@ public class AirflowDeploymentService {
 
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        assertDeploymentAccess(deployment);
 
         try {
             // Remove auto-scaling for ECS if applicable
@@ -154,9 +267,11 @@ public class AirflowDeploymentService {
 
         AirflowDeployment deployment = deploymentRepository.findByDeploymentId(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found: " + deploymentId));
+        assertDeploymentAccess(deployment);
 
         deployment.setName(request.getName());
         deployment.setDescription(request.getDescription());
+        deployment.setTag(normalizeDeploymentTag(request.getTag()));
         deployment.setMinWorkers(request.getMinWorkers());
         deployment.setMaxWorkers(request.getMaxWorkers());
         deployment.setSchedulerCpu(request.getSchedulerCpu());
@@ -179,6 +294,9 @@ public class AirflowDeploymentService {
             }
 
             deployment.setStatus(AirflowDeployment.DeploymentStatus.RUNNING);
+            if (localDeploymentProvider != null) {
+                deployment.setLocalStackLastActivityAt(LocalDateTime.now());
+            }
             deployment = deploymentRepository.save(deployment);
             log.info("Airflow deployment updated successfully: {}", deploymentId);
         } catch (Exception e) {
@@ -189,6 +307,18 @@ public class AirflowDeploymentService {
         }
 
         return DeploymentResponse.fromEntity(deployment);
+    }
+
+    private void assertDeploymentAccess(AirflowDeployment deployment) {
+        SecurityUtils.assertTenantInScope(deployment.getTenant().getTenantId());
+    }
+
+    private static String normalizeDeploymentTag(String tag) {
+        if (!StringUtils.hasText(tag)) {
+            return null;
+        }
+        String t = tag.trim();
+        return t.isEmpty() ? null : t;
     }
 
     private String generateDeploymentId(String name) {

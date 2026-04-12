@@ -2,9 +2,13 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
+import { BRAND, defaultHtmlMetaDescription } from './brand';
 
-// Monaco editor disabled - using simple textarea editor for reliability
-console.log('[CodeEditor] Using fallback textarea editor (Monaco disabled)');
+document.title = BRAND.name;
+const metaDesc = document.querySelector('meta[name="description"]');
+if (metaDesc) {
+  metaDesc.setAttribute('content', defaultHtmlMetaDescription());
+}
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

@@ -1,26 +1,88 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Typography, Space, Tag, Popconfirm, Alert } from 'antd';
-import { PlusOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons';
-import { deploymentAPI, tenantAPI } from '../services/api';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Select,
+  InputNumber,
+  message,
+  Space,
+  Tag,
+  Alert,
+  Empty,
+  Dropdown,
+  Tooltip,
+} from 'antd';
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  LinkOutlined,
+  ReloadOutlined,
+  PlayCircleOutlined,
+  PauseCircleOutlined,
+  MoreOutlined,
+  ExperimentOutlined,
+  CopyOutlined,
+  FolderOpenOutlined,
+  ClockCircleOutlined,
+} from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { deploymentAPI, tenantAPI, openAirflowHandoffInNewTab } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { DEFAULT_AIRFLOW_VERSION, getAirflowVersionSelectOptions } from '../constants/airflowVersions';
+import PageHeader from '../components/PageHeader';
+import { getApiErrorMessage } from '../utils/apiError';
+import { isFlowDeckTestDeploymentName } from '../constants/localTestDeployment';
+import { BRAND } from '../brand';
 import dayjs from 'dayjs';
+import './Deployments.css';
 
-const { Title } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 
 const Deployments = () => {
+  const navigate = useNavigate();
+  const { isAdmin, tenantScope } = useAuth();
   const [deployments, setDeployments] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [creatingDeployment, setCreatingDeployment] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [deploymentProvider, setDeploymentProvider] = useState('kubernetes');
+  const [localIdleTimeoutMinutes, setLocalIdleTimeoutMinutes] = useState(60);
+  const [now, setNow] = useState(() => Date.now());
   const [form] = Form.useForm();
+  const [openingAirflowDeploymentId, setOpeningAirflowDeploymentId] = useState(null);
+  const [localStackBusyId, setLocalStackBusyId] = useState(null);
+  const [keepAliveBusyId, setKeepAliveBusyId] = useState(null);
+  const openAirflowHandoffLockRef = useRef(false);
 
   useEffect(() => {
     fetchDeployments();
-    fetchTenants();
     fetchDeploymentConfig();
+    if (isAdmin) {
+      fetchTenants();
+    }
+  }, [isAdmin]);
+
+  // Local deploy can take minutes; poll while any row is still provisioning so status self-heals from the API.
+  useEffect(() => {
+    const busy = deployments.some((d) => d.status === 'DEPLOYING' || d.status === 'PENDING');
+    if (!busy) {
+      return undefined;
+    }
+    const id = setInterval(() => {
+      fetchDeployments();
+    }, 8000);
+    return () => clearInterval(id);
+  }, [deployments]);
+
+  // Tick every 30 s so idle countdown labels stay fresh without refetching.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
   }, []);
 
   const fetchDeployments = async () => {
@@ -29,7 +91,8 @@ const Deployments = () => {
       const response = await deploymentAPI.getAll();
       setDeployments(response.data);
     } catch (error) {
-      message.error('Failed to fetch deployments');
+      const msg = getApiErrorMessage(error, 'Failed to fetch deployments');
+      if (msg) message.error(msg);
       console.error('Error fetching deployments:', error);
     } finally {
       setLoading(false);
@@ -49,8 +112,60 @@ const Deployments = () => {
     try {
       const response = await deploymentAPI.getConfig();
       setDeploymentProvider(response.data.provider || 'kubernetes');
+      if (response.data.localIdleTimeoutMinutes != null) {
+        setLocalIdleTimeoutMinutes(Number(response.data.localIdleTimeoutMinutes));
+      }
     } catch (error) {
       console.error('Error fetching deployment config:', error);
+    }
+  };
+
+  /**
+   * Returns a human-readable string describing how long until the local stack idles out,
+   * or null when the feature is off / not applicable.
+   */
+  const getIdleShutdownLabel = useCallback(
+    (record) => {
+      if (deploymentProvider !== 'local') return null;
+      if (record.status !== 'RUNNING') return null;
+      if (!localIdleTimeoutMinutes || localIdleTimeoutMinutes <= 0) return null;
+
+      const lastActivity =
+        record.localStackLastActivityAt ||
+        record.deployedAt ||
+        record.createdAt;
+      if (!lastActivity) return null;
+
+      const shutdownAt = dayjs(lastActivity).add(localIdleTimeoutMinutes, 'minute');
+      const diffMs = shutdownAt.valueOf() - now;
+
+      if (diffMs <= 0) return { label: 'Stopping soon', urgent: true, warning: false };
+
+      const diffMin = Math.ceil(diffMs / 60_000);
+      if (diffMin < 60) return { label: `Stops in ${diffMin}m`, urgent: diffMin <= 10, warning: diffMin <= 20 };
+      const h = Math.floor(diffMin / 60);
+      const m = diffMin % 60;
+      return { label: m > 0 ? `Stops in ${h}h ${m}m` : `Stops in ${h}h`, urgent: false, warning: false };
+    },
+    [deploymentProvider, localIdleTimeoutMinutes, now]
+  );
+
+  const handleOpenAirflow = async (deploymentId) => {
+    if (openAirflowHandoffLockRef.current) return;
+    openAirflowHandoffLockRef.current = true;
+    try {
+      setOpeningAirflowDeploymentId(deploymentId);
+      await openAirflowHandoffInNewTab(async () => {
+        const { data } = await deploymentAPI.airflowUiHandoff(deploymentId);
+        return data.handoffId;
+      });
+      openAirflowHandoffLockRef.current = false;
+    } catch (error) {
+      openAirflowHandoffLockRef.current = false;
+      const msg = getApiErrorMessage(error, 'Could not open Airflow');
+      if (msg) message.error(msg);
+    } finally {
+      setOpeningAirflowDeploymentId(null);
     }
   };
 
@@ -76,6 +191,7 @@ const Deployments = () => {
           tenantId: values.tenantId,
           name: values.name,
           description: values.description,
+          tag: values.tag,
           airflowVersion: values.airflowVersion,
           executorType: values.executorType,
           status: 'DEPLOYING',
@@ -114,11 +230,84 @@ const Deployments = () => {
   const handleDeleteDeployment = async (deploymentId) => {
     try {
       await deploymentAPI.delete(deploymentId);
-      message.success('Deployment deleted successfully');
+      message.success('Deployment removed from the platform');
       fetchDeployments();
     } catch (error) {
-      message.error('Failed to delete deployment');
+      message.error('Failed to remove deployment');
       console.error('Error deleting deployment:', error);
+    }
+  };
+
+  const confirmRemoveDeployment = (record) => {
+    const flowDeck = isFlowDeckTestDeploymentName(record.name);
+    Modal.confirm({
+      title: 'Remove this deployment from the platform?',
+      width: 480,
+      content: (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ marginBottom: 8 }}>
+            <strong>Stop Airflow</strong> only shuts down running containers. The deployment stays in this list and you
+            can start it again.
+          </p>
+          <p style={{ marginBottom: flowDeck ? 8 : 0 }}>
+            <strong>Remove</strong> deletes the deployment record and local workspace files. This cannot be undone.
+          </p>
+          {flowDeck && (
+            <p style={{ marginBottom: 0, color: 'rgba(0,0,0,0.65)' }}>
+              This row is the {BRAND.name} test environment for your tenant. The IDE can create it again the next time you
+              use <strong>Sync → Test environment</strong>.
+            </p>
+          )}
+        </div>
+      ),
+      okText: 'Remove',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: () => handleDeleteDeployment(record.deploymentId),
+    });
+  };
+
+  const handleStartLocalStack = async (deploymentId) => {
+    try {
+      setLocalStackBusyId(deploymentId);
+      await deploymentAPI.startLocalStack(deploymentId);
+      message.success('Stack is starting. This may take a few minutes.');
+      fetchDeployments();
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Failed to start stack');
+      if (msg) message.error(msg);
+      console.error(error);
+    } finally {
+      setLocalStackBusyId(null);
+    }
+  };
+
+  const handleStopLocalStack = async (deploymentId) => {
+    try {
+      setLocalStackBusyId(deploymentId);
+      await deploymentAPI.stopLocalStack(deploymentId);
+      message.success('Stack stopped.');
+      fetchDeployments();
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Failed to stop stack');
+      if (msg) message.error(msg);
+      console.error(error);
+    } finally {
+      setLocalStackBusyId(null);
+    }
+  };
+
+  const handleKeepAlive = async (deploymentId) => {
+    try {
+      setKeepAliveBusyId(deploymentId);
+      await deploymentAPI.keepAliveLocalStack(deploymentId);
+      await fetchDeployments();
+      message.success('Timer reset — idle clock restarted.');
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Failed to reset timer');
+      if (msg) message.error(msg);
+    } finally {
+      setKeepAliveBusyId(null);
     }
   };
 
@@ -135,88 +324,326 @@ const Deployments = () => {
     return colors[status] || 'default';
   };
 
+  const copyDeploymentId = (id) => {
+    if (!id || typeof navigator?.clipboard?.writeText !== 'function') return;
+    navigator.clipboard.writeText(id).then(
+      () => message.success('Deployment ID copied'),
+      () => message.error('Could not copy')
+    );
+  };
+
+  const tenantColumn = {
+    title: 'Tenant',
+    dataIndex: 'tenantId',
+    key: 'tenantId',
+    width: 120,
+    ellipsis: true,
+  };
+
+  const deploymentColumn = {
+    title: 'Deployment',
+    key: 'deployment',
+    width: 240,
+    fixed: 'left',
+    render: (_, record) => {
+      const id = record.deploymentId;
+      return (
+        <div className="deployments-deployment-cell deployments-deployment-cell--id-only">
+          <Tooltip title={id}>
+            <span className="deployments-deployment-id-wrap">
+              <code className="deployments-deployment-id-code">{id}</code>
+            </span>
+          </Tooltip>
+          <Tooltip title="Copy deployment ID">
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => copyDeploymentId(id)}
+              aria-label="Copy deployment ID"
+            />
+          </Tooltip>
+        </div>
+      );
+    },
+  };
+
+  const tagColumn = {
+    title: 'Tag',
+    key: 'tag',
+    width: 118,
+    align: 'center',
+    render: (_, record) => {
+      const custom = record.tag && String(record.tag).trim() !== '' ? String(record.tag).trim() : null;
+      if (custom) {
+        return (
+          <Tag color="geekblue" style={{ margin: 0 }}>
+            {custom}
+          </Tag>
+        );
+      }
+      if (isFlowDeckTestDeploymentName(record.name)) {
+        return (
+          <Tag icon={<ExperimentOutlined />} color="processing" style={{ margin: 0 }}>
+            Test env
+          </Tag>
+        );
+      }
+      return <span className="deployments-tag-empty">—</span>;
+    },
+  };
+
+  const actionsColumn = {
+    title: 'Actions',
+    key: 'actions',
+    width: 200,
+    fixed: 'right',
+    align: 'right',
+    render: (_, record) => (
+      <div className="deployments-row-actions">
+        {deploymentProvider === 'local' &&
+          (record.status === 'STOPPED' || record.status === 'FAILED') && (
+            <Tooltip title="Start Airflow (containers only; row stays)">
+              <Button
+                type="text"
+                size="small"
+                icon={<PlayCircleOutlined />}
+                loading={localStackBusyId === record.deploymentId}
+                onClick={() => handleStartLocalStack(record.deploymentId)}
+                aria-label="Start Airflow"
+              />
+            </Tooltip>
+          )}
+        {deploymentProvider === 'local' && record.status === 'RUNNING' && (
+          <Tooltip title="Stop Airflow (containers only)">
+            <Button
+              type="text"
+              size="small"
+              icon={<PauseCircleOutlined />}
+              loading={localStackBusyId === record.deploymentId}
+              onClick={() => handleStopLocalStack(record.deploymentId)}
+              aria-label="Stop Airflow"
+            />
+          </Tooltip>
+        )}
+        {record.webserverUrl && (
+          <Tooltip title="Open Airflow UI">
+            <Button
+              type="text"
+              size="small"
+              icon={<LinkOutlined />}
+              loading={openingAirflowDeploymentId === record.deploymentId}
+              onClick={() => handleOpenAirflow(record.deploymentId)}
+              aria-label="Open Airflow"
+            />
+          </Tooltip>
+        )}
+        <Tooltip title="Deployed projects">
+          <Button
+            type="text"
+            size="small"
+            icon={<FolderOpenOutlined />}
+            onClick={() => navigate(`/deployed-projects?deploymentId=${record.deploymentId}`)}
+            aria-label="Deployed projects"
+          />
+        </Tooltip>
+        <Dropdown
+          trigger={['click']}
+          placement="bottomRight"
+          menu={{
+            items: [
+              ...(deploymentProvider === 'local' && record.status === 'RUNNING'
+                ? [
+                    {
+                      key: 'keep-alive',
+                      icon: keepAliveBusyId === record.deploymentId
+                        ? <ClockCircleOutlined spin />
+                        : <ClockCircleOutlined />,
+                      label: 'Reset idle timer',
+                    },
+                    { type: 'divider' },
+                  ]
+                : []),
+              {
+                key: 'remove',
+                danger: true,
+                icon: <DeleteOutlined />,
+                label: 'Remove from platform…',
+              },
+            ],
+            onClick: ({ key, domEvent }) => {
+              domEvent?.stopPropagation();
+              if (key === 'keep-alive') {
+                handleKeepAlive(record.deploymentId);
+              } else if (key === 'remove') {
+                confirmRemoveDeployment(record);
+              }
+            },
+          }}
+        >
+          <Tooltip title="More">
+            <Button
+              type="text"
+              size="small"
+              icon={<MoreOutlined />}
+              aria-label="More actions"
+            />
+          </Tooltip>
+        </Dropdown>
+      </div>
+    ),
+  };
+
   const columns = [
+    deploymentColumn,
+    tagColumn,
     {
-      title: 'Deployment ID',
-      dataIndex: 'deploymentId',
-      key: 'deploymentId',
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 108,
+      render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag>,
     },
+    ...(deploymentProvider === 'local'
+      ? [
+          {
+            title: 'Idle',
+            key: 'autoStop',
+            width: 130,
+            render: (_, record) => {
+              const idleInfo = getIdleShutdownLabel(record);
+              if (!idleInfo) {
+                return <span className="deployments-autostop-na">—</span>;
+              }
+
+              const lastActivity =
+                record.localStackLastActivityAt || record.deployedAt || record.createdAt;
+              const elapsedMs = lastActivity ? now - dayjs(lastActivity).valueOf() : 0;
+              const totalMs = localIdleTimeoutMinutes * 60 * 1000;
+              const pct = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100));
+
+              const barColor = idleInfo.urgent
+                ? '#cf1322'
+                : idleInfo.warning
+                ? '#d46b08'
+                : '#52c41a';
+              const textColor = idleInfo.urgent
+                ? '#cf1322'
+                : idleInfo.warning
+                ? '#d46b08'
+                : 'rgba(0,0,0,0.55)';
+
+              return (
+                <Tooltip
+                  title={`Auto-stops after ${localIdleTimeoutMinutes} min of inactivity — activity: deploy, trigger, or Open Airflow`}
+                >
+                  <div className="deployments-autostop-cell">
+                    <span className="deployments-autostop-label" style={{ color: textColor }}>
+                      <ClockCircleOutlined />
+                      {idleInfo.label}
+                    </span>
+                    <div className="deployments-autostop-bar-track">
+                      <div
+                        className="deployments-autostop-bar-fill"
+                        style={{ width: `${pct}%`, background: barColor }}
+                      />
+                    </div>
+                  </div>
+                </Tooltip>
+              );
+            },
+          },
+        ]
+      : []),
     {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: 'Tenant ID',
-      dataIndex: 'tenantId',
-      key: 'tenantId',
-    },
-    {
-      title: 'Airflow Version',
+      title: 'Version',
       dataIndex: 'airflowVersion',
       key: 'airflowVersion',
+      width: 96,
+      ellipsis: true,
     },
     {
       title: 'Executor',
       dataIndex: 'executorType',
       key: 'executorType',
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag>,
+      width: 96,
+      ellipsis: true,
     },
     {
       title: 'Workers',
       key: 'workers',
-      render: (_, record) => `${record.minWorkers} - ${record.maxWorkers}`,
+      width: 84,
+      render: (_, record) => {
+        const min = record.minWorkers;
+        const max = record.maxWorkers;
+        if (min == null && max == null) return <span style={{ color: 'rgba(0,0,0,0.25)' }}>—</span>;
+        return `${min ?? '?'}–${max ?? '?'}`;
+      },
     },
+    ...(isAdmin ? [tenantColumn] : []),
     {
-      title: 'Created At',
+      title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (date) => dayjs(date).format('YYYY-MM-DD HH:mm'),
+      width: 128,
+      render: (date) => dayjs(date).format('MM-DD HH:mm'),
     },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_, record) => (
-        <Space>
-          {record.webserverUrl && (
-            <Button
-              type="link"
-              icon={<LinkOutlined />}
-              onClick={() => window.open(record.webserverUrl, '_blank')}
-            >
-              Open
-            </Button>
-          )}
-          <Popconfirm
-            title="Are you sure you want to delete this deployment?"
-            onConfirm={() => handleDeleteDeployment(record.deploymentId)}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
+    actionsColumn,
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={2}>Deployments</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
-          Create Deployment
-        </Button>
-      </div>
+    <div className="deployments-page">
+      <PageHeader
+        title="Deployments"
+        description="Airflow environments in your tenant (or all tenants as admin). Create a deployment before linking and syncing projects."
+        extra={
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} onClick={fetchDeployments} loading={loading}>
+              Refresh
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setModalVisible(true);
+                if (!isAdmin && tenantScope) {
+                  form.setFieldsValue({ tenantId: tenantScope });
+                }
+              }}
+            >
+              Create deployment
+            </Button>
+          </Space>
+        }
+      />
 
-      <Table columns={columns} dataSource={deployments} loading={loading} rowKey="id" />
+      <Table
+        className="deployments-table"
+        columns={columns}
+        dataSource={deployments}
+        loading={loading}
+        rowKey="id"
+        scroll={{ x: deploymentProvider === 'local' ? 1200 : 1060 }}
+        tableLayout="fixed"
+        locale={{
+          emptyText: (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No deployments yet">
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  setModalVisible(true);
+                  if (!isAdmin && tenantScope) {
+                    form.setFieldsValue({ tenantId: tenantScope });
+                  }
+                }}
+              >
+                Create your first deployment
+              </Button>
+            </Empty>
+          ),
+        }}
+      />
 
       <Modal
         title="Create New Deployment"
@@ -248,7 +675,7 @@ const Deployments = () => {
           layout="vertical"
           onFinish={handleCreateDeployment}
           initialValues={{
-            airflowVersion: '3.1.8',
+            airflowVersion: DEFAULT_AIRFLOW_VERSION,
             executorType: 'LOCAL',
             minWorkers: 1,
             maxWorkers: 3,
@@ -270,19 +697,30 @@ const Deployments = () => {
             }),
           }}
         >
-          <Form.Item
-            name="tenantId"
-            label="Tenant"
-            rules={[{ required: true, message: 'Please select a tenant' }]}
-          >
-            <Select placeholder="Select tenant">
-              {tenants.map((tenant) => (
-                <Option key={tenant.tenantId} value={tenant.tenantId}>
-                  {tenant.name} ({tenant.tenantId})
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+          {isAdmin ? (
+            <Form.Item
+              name="tenantId"
+              label="Tenant"
+              rules={[{ required: true, message: 'Please select a tenant' }]}
+            >
+              <Select placeholder="Select tenant">
+                {tenants.map((tenant) => (
+                  <Option key={tenant.tenantId} value={tenant.tenantId}>
+                    {tenant.name} ({tenant.tenantId})
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          ) : (
+            <Form.Item
+              name="tenantId"
+              label="Tenant"
+              rules={[{ required: true, message: 'Tenant is required' }]}
+              extra="Deployments are created in your assigned tenant. Contact an administrator to manage tenants."
+            >
+              <Input readOnly placeholder={tenantScope || '—'} />
+            </Form.Item>
+          )}
 
           <Form.Item
             name="name"
@@ -292,6 +730,15 @@ const Deployments = () => {
             <Input placeholder="Enter deployment name" />
           </Form.Item>
 
+          <Form.Item
+            name="tag"
+            label="Tag"
+            rules={[{ max: 100, message: 'Tag must be 100 characters or less' }]}
+            extra="Short label for this row in the deployments table (e.g. Prod, Staging, Dev). Not a Docker image tag."
+          >
+            <Input placeholder="e.g. Staging, Prod" allowClear />
+          </Form.Item>
+
           <Form.Item name="description" label="Description">
             <TextArea rows={3} placeholder="Enter deployment description" />
           </Form.Item>
@@ -299,10 +746,13 @@ const Deployments = () => {
           <Form.Item
             name="airflowVersion"
             label="Airflow Version"
-            rules={[{ required: true, message: 'Please enter Airflow version' }]}
-            tooltip="Apache Airflow version to deploy (e.g., 3.1.8, 2.8.1)"
+            rules={[{ required: true, message: 'Please select Airflow version' }]}
+            tooltip="Supported Airflow releases for new deployments. Additional versions will be added as the platform validates them."
           >
-            <Input placeholder="e.g., 3.1.8" />
+            <Select
+              placeholder="Select Airflow version"
+              options={getAirflowVersionSelectOptions()}
+            />
           </Form.Item>
 
           <Form.Item

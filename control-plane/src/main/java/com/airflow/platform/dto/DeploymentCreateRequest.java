@@ -21,6 +21,9 @@ public class DeploymentCreateRequest {
     @Size(max = 500, message = "Description must not exceed 500 characters")
     private String description;
 
+    @Size(max = 100, message = "Tag must not exceed 100 characters")
+    private String tag;
+
     @NotBlank(message = "Airflow version is required")
     private String airflowVersion;
 
@@ -42,4 +45,10 @@ public class DeploymentCreateRequest {
 
     private String ingressHost;
     private String customConfig;
+
+    /**
+     * When {@code true} and {@code deployment.provider} is {@code local}, only writes compose artifacts — no
+     * {@code docker compose up}. When {@code null}, {@code local.auto-start-docker-on-create} applies.
+     */
+    private Boolean deferDockerStart;
 }

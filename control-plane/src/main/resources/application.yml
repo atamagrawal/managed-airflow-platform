@@ -1,3 +1,25 @@
+# AI coding assistant. Default provider: groq (free tier). Ollama needs no key at all.
+# Providers: groq | anthropic | ollama | openai
+ai:
+  provider: ${AI_PROVIDER:groq}
+  anthropic:
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: claude-3-5-haiku-20241022
+    max-tokens: 4096
+  # OpenAI-compatible endpoint — works for Groq, Ollama, OpenAI, Together AI, etc.
+  openai-compatible:
+    base-url: ${AI_OPENAI_BASE_URL:https://api.groq.com/openai/v1}
+    api-key: ${AI_OPENAI_API_KEY:}
+    # Groq free tier TPM limits: llama-3.1-8b-instant=131k, gemma2-9b-it=15k, llama-3.3-70b-versatile=12k
+    # Ollama models: llama3.2, codellama, qwen2.5-coder
+    model: ${AI_OPENAI_MODEL:llama-3.1-8b-instant}
+    max-tokens: 1024
+
+# Display name for OpenAPI/Swagger — keep in sync with frontend/src/brand.js → PRODUCT_NAME
+app:
+  brand:
+    name: Flow Deck
+
 spring:
   application:
     name: managed-airflow-control-plane
@@ -61,6 +83,90 @@ springdoc:
     operations-sorter: method
     tags-sorter: alpha
 
+# Control plane login (JWT). Override secrets in production. Tenant APIs require role ADMIN.
+platform:
+  security:
+    jwt-secret: ${PLATFORM_JWT_SECRET:dev-jwt-signing-key-at-least-32-bytes!!}
+    jwt-expiration-ms: 86400000
+    # Fallback home tenant when a non-admin user's entry has no tenant-id (must exist in DB / Tenants).
+    default-tenant-id-for-users: local-default
+    # Accounts listed in Admin → Users. Per-user tenant-id = home tenant for non-admins; omit to use default above.
+    # Admins are never tenant-scoped in the JWT regardless of tenant-id here.
+    users:
+      admin:
+        password: "{noop}admin"
+        roles:
+          - ADMIN
+          - USER
+      user:
+        password: "{noop}user"
+        roles:
+          - USER
+        tenant-id: local-default
+      atam:
+        password: "{noop}atam"
+        roles:
+          - USER
+        tenant-id: local-default
+      # Example second tenant (uncomment after creating that tenant in Admin → Tenants):
+      # analyst:
+      #   password: "{noop}changeme"
+      #   roles:
+      #     - USER
+      #   tenant-id: acme-corp
+
+# DAG deployment strategy configuration
+dag:
+  deployment:
+    # Strategy for organizing project DAG files: UNIFIED or SEPARATED
+    # UNIFIED: project DAGs go to {deployment}/dags/
+    # SEPARATED: project DAGs go to {deployment}/projects/{projectId}/dags/
+    strategy: UNIFIED
+
+    # Whether to prefix project name in DAG filenames (only applies to UNIFIED strategy)
+    # When true, project DAGs will be named as: {projectId}__{dagFileName}.py
+    # This helps avoid filename conflicts between projects
+    prefix-project-name: false
+
+    # Additional DAG folders for Airflow to scan (comma-separated)
+    # Used when SEPARATED strategy is enabled to configure Airflow's dags_folder
+    # Example: "/opt/airflow/dags,/opt/airflow/projects/*/dags"
+    additional-dag-folders:
+
+# Cache DAG runs + debug metadata from each deployment's Airflow REST API into the control-plane DB.
+dag-insights:
+  # How often the scheduler pulls from Airflow (ms). Lower = fresher cache, more API load.
+  sync-interval-ms: 90000
+  # After a successful project "Trigger DAGs", queue an async refresh so DAG runs appear without waiting for the scheduler.
+  sync-after-project-trigger: true
+  sync:
+    scheduler-enabled: true
+    page-size: 100
+    max-dags-per-deployment: 500
+    max-runs-per-dag: 25
+
+# Airflow REST: username/password below are used for Dag insights sync and connection sync.
+# DAG triggers (POST .../dagRuns) by default authenticate as the logged-in Flow Deck user (same password as Open Airflow;
+# DB users need one successful login to store the bootstrap secret). @contract_trigger_user_guard then sees that username.
+# Fallback when no session password: trigger-username or username. Set use-logged-in-user-for-dag-triggers: false for fixed API user only.
+airflow:
+  api:
+    username: admin
+    password: admin
+    use-logged-in-user-for-dag-triggers: true
+    # trigger-username: data_eng_service
+    # trigger-password: changeme
+
+# Starter project content: add a folder under src/main/resources/ and register it in templates; pick one with active.
+# Optional extra-requirements.txt at the template root merges pip lines into new projects (see DefaultProjectTemplateSeeder).
+project:
+  default-template:
+    enabled: true
+    active: taskflow-contracts
+    templates:
+      classic: classpath:default-project/
+      taskflow-contracts: classpath:default-project-taskflow-contracts/
+
 ---
 # Production profile configuration
 spring:
@@ -89,6 +195,10 @@ logging:
   level:
     com.airflow.platform: INFO
     org.springframework: WARN
+
+# Larger fleets: raise interval to limit Airflow API traffic (e.g. 300000 = 5 min).
+dag-insights:
+  sync-interval-ms: 300000
 
 ---
 # ECS deployment profile configuration (for test deployments)
@@ -154,6 +264,7 @@ spring:
 # Deployment provider configuration
 deployment:
   provider: ec2
+  # Optional: same compose.airflow-image override as the local profile (see that block for examples).
 
 # AWS configuration
 aws:
@@ -193,11 +304,74 @@ spring:
 # Deployment provider configuration
 deployment:
   provider: local
+  compose:
+      # Data contracts (AIP-07) are not in upstream Airflow; this image bundles the custom provider.
+      airflow-image: atamagrawal/airflow:aip07-data-contracts-3.1.8.v2
+      # Optional: space-separated origins for Airflow API CORS plus handoff. Defaults include loopback on 3000/8080.
+      # FAB /auth/token uses a separate FastAPI app; generated config/airflow_local_settings.py patches CORS there
+      # (and allows any loopback port via regex). After changing origins, regenerate compose and restart apiserver.
+      # airflow-cors-allow-origins: "http://myhost:8080"
+  # Optional: override the Airflow image in generated docker-compose (scheduler, api-server, workers, …)
+  # and the FROM line in the default Dockerfile for newly created projects (when the user does not supply one).
+  # If omitted, the image is apache/airflow:{airflowVersion} from the deployment (e.g. apache/airflow:3.1.8).
+  # Example in YAML:
+  #   compose:
+  #     airflow-image: apache/airflow:3.1.8
+  # Or a private registry:
+  #   compose:
+  #     airflow-image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-airflow:3.1.8-custom
+  # Or via environment: DEPLOYMENT_COMPOSE_AIRFLOW_IMAGE=apache/airflow:3.1.8
 
 # Local deployment configuration
 local:
   base-directory: ${user.home}/airflow-deployments
   docker-compose-timeout: 300
+  # Faster image builds when a rebuild is required (Docker BuildKit + compose CLI build).
+  docker-buildkit: true
+  # Build multiple compose services concurrently (docker compose v2).
+  docker-compose-build-parallel: true
+  # After compose up, wait until Airflow apiserver answers GET /api/v2/monitor/health before DB shows RUNNING (0 = skip).
+  apiserver-ready-timeout-seconds: 600
+  apiserver-ready-poll-interval-ms: 2000
+  # When false, new deployments only write compose files; use Start test cluster (API/UI) to run Docker.
+  auto-start-docker-on-create: false
+  # Stop local Docker after this many minutes without deploy/trigger/Open Airflow (0 = disable auto-stop).
+  test-cluster-idle-timeout-minutes: 60
+  idle-stop:
+    check-interval-ms: 60000
+  # Lazy-created deployment when using Flow Deck IDE → Test environment in Sync (one row per tenant by name).
+  test-deployment:
+    name: Test environment
+    description: On-demand test environment for Flow Deck IDE (per tenant)
+    airflow-version: 3.1.8
+    executor-type: LOCAL
+  # When config/airflow_local_settings.py changes (template/handoff fix), restart a running airflow-apiserver so Python reloads it.
+  airflow-handoff:
+    restart-apiserver-on-settings-change: true
+
+# Local bootstrap defaults
+bootstrap:
+  default-tenant:
+    # Set to false if tenants should be created only via Admin → Tenants (use tenant id matching platform.security.default-tenant-id-for-users).
+    enabled: true
+    tenant-id: local-default
+    name: Local Default Tenant
+    email: local-default@managed-airflow.local
+    organization: Local Development
+    region: local
+  default-deployment:
+    # When false, no Airflow deployment row or compose dir is created at startup; create deployments from the UI/API.
+    enabled: false
+    name: Local Default Deployment
+    description: Auto-created for local development
+    airflow-version: 3.1.8
+    executor-type: LOCAL
+
+# DAG deployment strategy (override if needed)
+dag:
+  deployment:
+    strategy: UNIFIED  # Use UNIFIED for simpler local development
+    prefix-project-name: false
 
 logging:
   level:

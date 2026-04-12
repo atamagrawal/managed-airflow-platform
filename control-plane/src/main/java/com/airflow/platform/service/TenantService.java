@@ -5,6 +5,7 @@ import com.airflow.platform.dto.TenantResponse;
 import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.Tenant;
 import com.airflow.platform.provider.CloudProvider;
+import com.airflow.platform.repository.ProjectRepository;
 import com.airflow.platform.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,7 @@ import java.util.stream.Collectors;
 public class TenantService {
 
     private final TenantRepository tenantRepository;
+    private final ProjectRepository projectRepository;
 
     @Autowired(required = false)
     private CloudProvider cloudProvider;
@@ -91,6 +93,10 @@ public class TenantService {
         log.info("Deleting tenant: {}", tenantId);
         Tenant tenant = tenantRepository.findByTenantId(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found: " + tenantId));
+
+        if (projectRepository.existsByTenant_TenantId(tenantId)) {
+            throw new IllegalArgumentException("Cannot delete tenant while projects still exist for this tenant");
+        }
 
         // Delete namespace/cluster using cloud provider
         try {

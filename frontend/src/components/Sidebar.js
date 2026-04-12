@@ -1,41 +1,112 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Layout, Menu } from 'antd';
-import { DashboardOutlined, TeamOutlined, CloudServerOutlined, CodeOutlined, EditOutlined } from '@ant-design/icons';
+import {
+  DashboardOutlined,
+  TeamOutlined,
+  UserOutlined,
+  CloudServerOutlined,
+  CodeOutlined,
+  HistoryOutlined,
+  BugOutlined,
+  FolderOpenOutlined,
+  RocketOutlined,
+  ExperimentOutlined,
+  LinkOutlined,
+  DatabaseOutlined,
+} from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import BrandMark from './BrandMark';
+import FlowDeckWordmark from './FlowDeckWordmark';
+import { BRAND } from '../brand';
 
 const { Sider } = Layout;
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAdmin } = useAuth();
+  const [menuOpenKeys, setMenuOpenKeys] = useState([]);
 
-  const menuItems = [
-    {
-      key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: 'Dashboard',
-    },
-    {
-      key: '/tenants',
-      icon: <TeamOutlined />,
-      label: 'Tenants',
-    },
-    {
-      key: '/deployments',
-      icon: <CloudServerOutlined />,
-      label: 'Deployments',
-    },
-    {
-      key: '/dags',
-      icon: <CodeOutlined />,
-      label: 'DAGs',
-    },
-    {
-      key: '/code-editor',
-      icon: <EditOutlined />,
-      label: 'Code Editor',
-    },
-  ];
+  useEffect(() => {
+    if (location.pathname.startsWith('/environment')) {
+      setMenuOpenKeys((prev) => (prev.includes('environment') ? prev : [...prev, 'environment']));
+    }
+  }, [location.pathname]);
+
+  const menuItems = useMemo(() => {
+    const items = [
+      {
+        key: '/dashboard',
+        icon: <DashboardOutlined />,
+        label: 'Dashboard',
+      },
+    ];
+    if (isAdmin) {
+      items.push(
+        {
+          key: '/tenants',
+          icon: <TeamOutlined />,
+          label: 'Tenants',
+        },
+        {
+          key: '/users',
+          icon: <UserOutlined />,
+          label: 'Users',
+        }
+      );
+    }
+    items.push(
+      {
+        key: '/deployments',
+        icon: <CloudServerOutlined />,
+        label: 'Deployments',
+      },
+      {
+        key: '/dags',
+        icon: <CodeOutlined />,
+        label: 'DAGs',
+      },
+      {
+        key: '/dag-runs',
+        icon: <HistoryOutlined />,
+        label: 'DAG runs',
+      },
+      {
+        key: '/dag-debug',
+        icon: <BugOutlined />,
+        label: 'DAG debug',
+      },
+      {
+        key: '/projects',
+        icon: <FolderOpenOutlined />,
+        label: BRAND.navProjects,
+      },
+      {
+        key: '/deployed-projects',
+        icon: <RocketOutlined />,
+        label: 'Deployed projects',
+      },
+      {
+        key: 'environment',
+        icon: <ExperimentOutlined />,
+        label: 'Environment',
+        children: [
+          {
+            key: '/environment/connections',
+            icon: <LinkOutlined />,
+            label: 'Connections',
+          },
+          {
+            key: '/environment/variables',
+            icon: <DatabaseOutlined />,
+            label: 'Variables',
+          },
+        ],
+      }
+    );
+    return items;
+  }, [isAdmin]);
 
   const handleMenuClick = ({ key }) => {
     navigate(key);
@@ -44,19 +115,39 @@ const Sidebar = () => {
   // Determine the selected menu key based on current path
   const getSelectedKey = () => {
     const path = location.pathname;
-    if (path.startsWith('/code-editor')) return '/code-editor';
+    if (path.startsWith('/deployed-projects')) return '/deployed-projects';
+    if (path.startsWith('/dag-runs')) return '/dag-runs';
+    if (path.startsWith('/dag-debug')) return '/dag-debug';
     if (path.startsWith('/dags')) return '/dags';
+    if (path.startsWith('/projects')) return '/projects';
+    if (path.startsWith('/environment/variables')) return '/environment/variables';
+    if (path.startsWith('/environment/connections') || path === '/environment') {
+      return '/environment/connections';
+    }
     if (path.startsWith('/deployments')) return '/deployments';
     if (path.startsWith('/tenants')) return '/tenants';
+    if (path.startsWith('/users')) return '/users';
     return path;
   };
 
   return (
     <Sider collapsible>
-      <div className="logo">Airflow Platform</div>
+      <div className="logo">
+        <div className="logo-inner">
+          <BrandMark size="sm" />
+          <div>
+            <div className="logo-wordmark">
+              <FlowDeckWordmark size="sm" />
+            </div>
+            <div className="logo-tagline">{BRAND.taglineShort}</div>
+          </div>
+        </div>
+      </div>
       <Menu
         theme="dark"
         selectedKeys={[getSelectedKey()]}
+        openKeys={menuOpenKeys}
+        onOpenChange={setMenuOpenKeys}
         mode="inline"
         items={menuItems}
         onClick={handleMenuClick}

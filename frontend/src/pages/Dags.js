@@ -1,292 +1,280 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Tag, Popconfirm, message, Typography, Select } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, RocketOutlined, EyeOutlined, PlayCircleOutlined, CodeOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Table, Button, Space, Tag, Select, message, Tooltip, Empty } from 'antd';
+import {
+  PlayCircleOutlined,
+  FolderOpenOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { dagAPI, deploymentAPI } from '../services/api';
+import { deployedDagsAPI, deploymentAPI } from '../services/api';
+import { triggerProjectDagFile } from '../utils/triggerProjectDag';
+import { getApiErrorMessage } from '../utils/apiError';
+import PageHeader from '../components/PageHeader';
 import dayjs from 'dayjs';
-
-const { Title } = Typography;
 const { Option } = Select;
 
 const Dags = () => {
-  const [dags, setDags] = useState([]);
+  const [rows, setRows] = useState([]);
   const [deployments, setDeployments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedDeployment, setSelectedDeployment] = useState('all');
+  const [triggeringKey, setTriggeringKey] = useState(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchDeployments();
-    fetchDags();
-  }, []);
-
-  useEffect(() => {
-    if (selectedDeployment && selectedDeployment !== 'all') {
-      fetchDagsByDeployment(selectedDeployment);
-    } else {
-      fetchDags();
-    }
-  }, [selectedDeployment]);
-
-  const fetchDags = async () => {
-    try {
-      setLoading(true);
-      const response = await dagAPI.getAll();
-      setDags(response.data);
-    } catch (error) {
-      message.error('Failed to fetch DAGs');
-      console.error('Error fetching DAGs:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchDagsByDeployment = async (deploymentId) => {
-    try {
-      setLoading(true);
-      const response = await dagAPI.getByDeployment(deploymentId);
-      setDags(response.data);
-    } catch (error) {
-      message.error('Failed to fetch DAGs');
-      console.error('Error fetching DAGs:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchDeployments = async () => {
+  const fetchDeployments = useCallback(async () => {
     try {
       const response = await deploymentAPI.getAll();
       setDeployments(response.data);
     } catch (error) {
       console.error('Error fetching deployments:', error);
     }
-  };
+  }, []);
 
-  const handleDeleteDag = async (dagId) => {
+  const fetchDags = useCallback(async () => {
     try {
-      await dagAPI.delete(dagId);
-      message.success('DAG deleted successfully');
-      if (selectedDeployment && selectedDeployment !== 'all') {
-        fetchDagsByDeployment(selectedDeployment);
-      } else {
-        fetchDags();
-      }
+      setLoading(true);
+      const dep =
+        selectedDeployment && selectedDeployment !== 'all' ? selectedDeployment : undefined;
+      const response = await deployedDagsAPI.getAll(dep);
+      setRows(response.data || []);
     } catch (error) {
-      message.error('Failed to delete DAG');
-      console.error('Error deleting DAG:', error);
+      const msg = getApiErrorMessage(error, 'Failed to fetch deployed DAGs');
+      if (msg) message.error(msg);
+      console.error('Error fetching deployed DAGs:', error);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [selectedDeployment]);
 
-  const handleDeployDag = async (dagId, dagName) => {
+  useEffect(() => {
+    fetchDeployments();
+  }, [fetchDeployments]);
+
+  useEffect(() => {
+    fetchDags();
+  }, [fetchDags]);
+
+  const handleTrigger = async (record) => {
+    const key = `${record.deploymentId}-${record.projectId}-${record.fileId}`;
     try {
-      await dagAPI.deploy(dagId);
-      message.success(`DAG "${dagName}" deployed successfully`);
-      if (selectedDeployment && selectedDeployment !== 'all') {
-        fetchDagsByDeployment(selectedDeployment);
-      } else {
-        fetchDags();
-      }
+      setTriggeringKey(key);
+      await triggerProjectDagFile(
+        record.projectId,
+        record.deploymentId,
+        record.fileName,
+        record.projectName
+      );
     } catch (error) {
-      message.error('Failed to deploy DAG');
-      console.error('Error deploying DAG:', error);
+      const msg = getApiErrorMessage(error, 'Failed to trigger DAG');
+      if (msg) message.error(msg);
+      console.error('Trigger error:', error);
+    } finally {
+      setTriggeringKey(null);
     }
-  };
-
-  const handleTriggerDag = async (dagId, dagName) => {
-    try {
-      const response = await dagAPI.trigger(dagId);
-      if (response.data.success) {
-        message.success(`DAG "${dagName}" triggered successfully`);
-      } else {
-        message.error(response.data.message || 'Failed to trigger DAG');
-      }
-    } catch (error) {
-      message.error('Failed to trigger DAG run');
-      console.error('Error triggering DAG:', error);
-    }
-  };
-
-  const getStatusColor = (status) => {
-    const colors = {
-      DRAFT: 'default',
-      VALIDATING: 'processing',
-      VALID: 'success',
-      INVALID: 'error',
-      DEPLOYING: 'processing',
-      DEPLOYED: 'success',
-      FAILED: 'error',
-      UPDATING: 'processing',
-      DELETING: 'warning',
-      DELETED: 'default',
-    };
-    return colors[status] || 'default';
   };
 
   const columns = [
     {
-      title: 'DAG ID',
-      dataIndex: 'dagId',
-      key: 'dagId',
+      title: 'Airflow DAG ID',
+      dataIndex: 'airflowDagId',
+      key: 'airflowDagId',
       width: 200,
+      ellipsis: true,
+      render: (v) =>
+        v ? (
+          <div style={{ minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
+            <Tooltip title={v}>
+              <Tag
+                color="blue"
+                style={{
+                  margin: 0,
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  display: 'inline-block',
+                  verticalAlign: 'middle',
+                }}
+              >
+                {v}
+              </Tag>
+            </Tooltip>
+          </div>
+        ) : (
+          <span style={{ color: '#999' }}>—</span>
+        ),
     },
     {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      width: 200,
+      title: 'File',
+      key: 'file',
+      ellipsis: true,
+      render: (_, record) => (
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={record.fileName}
+          >
+            {record.fileName}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: '#888',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={record.filePath}
+          >
+            {record.filePath}
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: 'Project',
+      key: 'project',
+      ellipsis: true,
+      render: (_, record) => (
+        <Button
+          type="link"
+          style={{
+            padding: 0,
+            height: 'auto',
+            maxWidth: '100%',
+            display: 'block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            textAlign: 'left',
+          }}
+          title={record.projectName}
+          onClick={() => navigate(`/projects/${record.projectId}`)}
+        >
+          {record.projectName}
+        </Button>
+      ),
     },
     {
       title: 'Deployment',
-      dataIndex: 'deploymentName',
-      key: 'deploymentName',
-      width: 150,
-    },
-    {
-      title: 'File Name',
-      dataIndex: 'fileName',
-      key: 'fileName',
-      width: 150,
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      width: 120,
-      render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag>,
-    },
-    {
-      title: 'Owner',
-      dataIndex: 'owner',
-      key: 'owner',
-      width: 120,
-    },
-    {
-      title: 'Git Repository',
-      dataIndex: 'gitRepository',
-      key: 'gitRepository',
-      width: 200,
+      key: 'deployment',
+      width: 220,
       ellipsis: true,
+      render: (_, record) => (
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={record.deploymentName || record.deploymentId}
+          >
+            {record.deploymentName || record.deploymentId}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: '#888',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={record.deploymentId}
+          >
+            {record.deploymentId}
+          </div>
+        </div>
+      ),
     },
     {
-      title: 'Git Branch',
-      dataIndex: 'gitBranch',
-      key: 'gitBranch',
-      width: 120,
-    },
-    {
-      title: 'Last Deployed',
+      title: 'Last deployed',
       dataIndex: 'lastDeployedAt',
       key: 'lastDeployedAt',
-      width: 160,
-      render: (date) => (date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'),
-    },
-    {
-      title: 'Created At',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      width: 160,
-      render: (date) => dayjs(date).format('YYYY-MM-DD HH:mm'),
+      width: 180,
+      render: (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—'),
     },
     {
       title: 'Actions',
       key: 'actions',
+      width: 200,
       fixed: 'right',
-      width: 280,
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/dags/${record.dagId}`)}
-          >
-            View
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => navigate(`/dags/${record.dagId}/edit`)}
-          >
-            Edit
-          </Button>
-          {record.status === 'VALID' && (
-            <Popconfirm
-              title="Deploy this DAG to Airflow?"
-              onConfirm={() => handleDeployDag(record.dagId, record.name)}
-              okText="Yes"
-              cancelText="No"
+      render: (_, record) => {
+        const key = `${record.deploymentId}-${record.projectId}-${record.fileId}`;
+        return (
+          <Space>
+            <Button
+              type="primary"
+              size="small"
+              icon={<PlayCircleOutlined />}
+              loading={triggeringKey === key}
+              onClick={() => handleTrigger(record)}
             >
-              <Button type="link" size="small" icon={<RocketOutlined />}>
-                Deploy
-              </Button>
-            </Popconfirm>
-          )}
-          {record.status === 'DEPLOYED' && (
-            <Popconfirm
-              title="Trigger this DAG to run now?"
-              onConfirm={() => handleTriggerDag(record.dagId, record.name)}
-              okText="Yes"
-              cancelText="No"
-            >
-              <Button type="link" size="small" icon={<PlayCircleOutlined />} style={{ color: '#52c41a' }}>
-                Run
-              </Button>
-            </Popconfirm>
-          )}
-          <Popconfirm
-            title="Are you sure you want to delete this DAG?"
-            onConfirm={() => handleDeleteDag(record.dagId)}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              Delete
+              Trigger
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Button
+              size="small"
+              icon={<FolderOpenOutlined />}
+              onClick={() => navigate(`/projects/${record.projectId}`)}
+            >
+              Project
+            </Button>
+          </Space>
+        );
+      },
     },
   ];
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, alignItems: 'center' }}>
-        <Title level={2}>DAGs</Title>
-        <Space>
-          <Select
-            style={{ width: 300 }}
-            placeholder="Filter by deployment"
-            value={selectedDeployment}
-            onChange={setSelectedDeployment}
-          >
-            <Option value="all">All Deployments</Option>
-            {deployments.map((deployment) => (
-              <Option key={deployment.deploymentId} value={deployment.deploymentId}>
-                {deployment.name}
-              </Option>
-            ))}
-          </Select>
-          <Button icon={<CodeOutlined />} onClick={() => navigate('/code-editor')}>
-            Code Editor
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/dags/create')}>
-            Create DAG
-          </Button>
-        </Space>
-      </div>
+      <PageHeader
+        title="DAGs"
+        description="DAG files from projects that have been successfully deployed. Deploy or redeploy a project to see its DAGs here."
+        extra={
+          <Space wrap>
+            <Select
+              style={{ width: 280, maxWidth: '100%' }}
+              placeholder="Filter by deployment"
+              value={selectedDeployment}
+              onChange={setSelectedDeployment}
+            >
+              <Option value="all">All deployments</Option>
+              {deployments.map((d) => (
+                <Option key={d.deploymentId} value={d.deploymentId}>
+                  {d.name} ({d.deploymentId})
+                </Option>
+              ))}
+            </Select>
+            <Button icon={<ReloadOutlined />} onClick={fetchDags} loading={loading}>
+              Refresh
+            </Button>
+          </Space>
+        }
+      />
 
       <Table
+        tableLayout="fixed"
         columns={columns}
-        dataSource={dags}
+        dataSource={rows}
         loading={loading}
-        rowKey="id"
-        scroll={{ x: 1500 }}
+        rowKey={(r) => `${r.deploymentId}-${r.projectId}-${r.fileId}`}
+        scroll={{ x: 1100 }}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No deployed DAGs in view. Deploy a project to an environment first."
+            />
+          ),
+        }}
         pagination={{
           pageSize: 20,
           showSizeChanger: true,
-          showTotal: (total) => `Total ${total} DAGs`,
+          showTotal: (total) => `Total ${total} DAG file(s)`,
         }}
       />
     </div>

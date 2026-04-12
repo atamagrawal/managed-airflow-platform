@@ -47,13 +47,17 @@ public class EC2DeploymentProvider implements DeploymentProvider {
                     "mkdir -p " + deploymentDir,
                     "mkdir -p " + deploymentDir + "/dags",
                     "mkdir -p " + deploymentDir + "/logs",
-                    "mkdir -p " + deploymentDir + "/plugins"
+                    "mkdir -p " + deploymentDir + "/plugins",
+                    "mkdir -p " + deploymentDir + "/config"
             );
             commandExecutor.executeCommand(instanceId, setupCommands);
 
             // Copy docker-compose.yml to instance
             String composePath = deploymentDir + "/docker-compose.yml";
             commandExecutor.copyFileToInstance(instanceId, dockerCompose, composePath);
+
+            String localSettingsPy = composeGenerator.generateAirflowLocalSettingsPy();
+            commandExecutor.copyFileToInstance(instanceId, localSettingsPy, deploymentDir + "/config/airflow_local_settings.py");
 
             // Copy .env file to instance
             String envPath = deploymentDir + "/.env";
@@ -95,6 +99,10 @@ public class EC2DeploymentProvider implements DeploymentProvider {
 
             // Update docker-compose.yml
             commandExecutor.copyFileToInstance(instanceId, dockerCompose, composePath);
+
+            commandExecutor.executeCommand(instanceId, List.of("mkdir -p " + deploymentDir + "/config"));
+            String localSettingsPy = composeGenerator.generateAirflowLocalSettingsPy();
+            commandExecutor.copyFileToInstance(instanceId, localSettingsPy, deploymentDir + "/config/airflow_local_settings.py");
 
             // Recreate containers with new configuration
             List<String> upgradeCommands = Arrays.asList(

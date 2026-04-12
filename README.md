@@ -42,6 +42,7 @@ Choose the deployment option that fits your needs:
 
 ### Management & Monitoring
 - **Control Plane UI** - React-based web interface for managing tenants and deployments
+- **Project Management** - Astronomer-style project structure with dags/, plugins/, include/, tests/ directories
 - **DAG Management** - Web-based DAG creation with code editor, Git integration, and deployment
 - **REST API** - Complete API for programmatic management
 - **Multiple Executor Support** - Local, Celery, Kubernetes, and hybrid executors
@@ -265,68 +266,56 @@ curl -X POST http://localhost:8080/api/v1/deployments \
 - ECS: ~5-7 minutes
 - Kubernetes: ~5-10 minutes
 
-### Creating and Managing DAGs
+### Creating and Managing Projects (Astronomer-Style)
 
 **Via UI:**
-1. Navigate to DAGs page
-2. Click "Create DAG"
-3. Select deployment, enter DAG details
-4. Write Python code in Monaco editor
-5. Save and deploy to Airflow
+1. Navigate to Projects page
+2. Click "Create Project"
+3. Enter project details and configuration
+4. Add DAGs, plugins, and other files
+5. Deploy entire project structure to Airflow
 
 **Via API:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/dags \
+curl -X POST http://localhost:8080/api/v1/projects \
   -H "Content-Type: application/json" \
   -d '{
     "deploymentId": "prod-etl",
-    "name": "My ETL Pipeline",
-    "description": "Daily ETL job",
-    "fileName": "my_etl_dag.py",
-    "dagCode": "from airflow import DAG\n# DAG code here...",
-    "gitRepository": "https://github.com/user/airflow-dags.git",
-    "gitBranch": "main",
+    "name": "my-data-project",
+    "description": "Production data pipelines",
+    "airflowVersion": "2.8.1",
+    "requirementsTxt": "pandas==2.0.0\nrequests==2.31.0",
+    "packagesTxt": "gcc\nlibpq-dev",
     "owner": "data-team",
-    "tags": "etl,daily,production"
+    "tags": "production,etl"
   }'
 ```
 
+**Project Structure:**
+- `dags/` - Airflow DAG files
+- `plugins/` - Custom Airflow plugins
+- `include/` - Shared utilities and libraries
+- `tests/` - Unit tests for DAGs
+- `requirements.txt` - Python dependencies
+- `packages.txt` - OS-level packages
+- `Dockerfile` - Custom Docker configuration
+- `airflow_settings.yaml` - Airflow connections and variables
+- `.airflowignore` - Files to ignore
+- `.env` - Environment variables
+
 **Features:**
-- Monaco code editor with Python syntax highlighting
-- Basic DAG validation
-- Git repository integration (optional)
-- Deploy directly to Airflow instances
-- **Trigger DAG runs** directly from the UI
-- View, edit, and manage all DAGs from UI
+- Complete Astronomer-compatible project structure
+- Manage multiple DAGs within a project
+- Shared dependencies and utilities
+- Custom Docker images
+- Git repository integration
+- Deploy entire project as a unit
 
-### Running DAGs
+### DAGs inside projects
 
-Once a DAG is deployed, you can trigger runs directly from the platform:
+DAGs are normal Python files in a project (for example under `dags/`). Create or edit them from the **Project browser** and **project editor**, then **Deploy** the project to an Airflow deployment.
 
-**Via UI:**
-1. Navigate to DAGs page
-2. Find a DAG with status "DEPLOYED"
-3. Click the green "Run" button
-4. Confirm to trigger the DAG run
-5. Check Airflow UI to see the run progress
-
-**Via API:**
-```bash
-curl -X POST http://localhost:8080/api/v1/dags/{dagId}/trigger
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "DAG run triggered successfully",
-  "airflowDagId": "my_sample_dag",
-  "response": {
-    "dag_run_id": "manual_1234567890",
-    "state": "queued"
-  }
-}
-```
+**Trigger runs:** From a deployed project, use **Trigger DAGs** in the UI, or call the project trigger API (see **Projects** endpoints below). The control plane calls Airflow’s REST API using the `dag_id` parsed from each DAG file.
 
 ### Accessing Airflow
 
@@ -354,23 +343,26 @@ managed-airflow-platform/
 │   │   │   │       ├── controller/         # REST controllers
 │   │   │   │       │   ├── TenantController.java
 │   │   │   │       │   ├── DeploymentController.java
-│   │   │   │       │   └── DagController.java
+│   │   │   │       │   └── ProjectController.java
 │   │   │   │       ├── service/            # Business logic
 │   │   │   │       │   ├── TenantService.java
 │   │   │   │       │   ├── AirflowDeploymentService.java
-│   │   │   │       │   └── DagService.java
+│   │   │   │       │   └── ProjectService.java
 │   │   │   │       ├── model/              # JPA entities
 │   │   │   │       │   ├── Tenant.java
 │   │   │   │       │   ├── AirflowDeployment.java
-│   │   │   │       │   └── Dag.java
+│   │   │   │       │   ├── Project.java
+│   │   │   │       │   └── ProjectFile.java
 │   │   │   │       ├── repository/         # Data access
 │   │   │   │       │   ├── TenantRepository.java
 │   │   │   │       │   ├── AirflowDeploymentRepository.java
-│   │   │   │       │   └── DagRepository.java
+│   │   │   │       │   ├── ProjectRepository.java
+│   │   │   │       │   └── ProjectFileRepository.java
 │   │   │   │       ├── dto/                # Request/Response DTOs
-│   │   │   │       │   ├── DagCreateRequest.java
-│   │   │   │       │   ├── DagUpdateRequest.java
-│   │   │   │       │   └── DagResponse.java
+│   │   │   │       │   ├── ProjectCreateRequest.java
+│   │   │   │       │   ├── ProjectUpdateRequest.java
+│   │   │   │       │   ├── ProjectResponse.java
+│   │   │   │       │   └── ProjectFileRequest.java
 │   │   │   │       ├── exception/          # Exception handling
 │   │   │   │       ├── provider/           # Deployment providers
 │   │   │   │       │   ├── CloudProvider.java
@@ -400,11 +392,14 @@ managed-airflow-platform/
 │   │   │   ├── Tenants.js
 │   │   │   ├── Deployments.js
 │   │   │   ├── DeploymentDetails.js
-│   │   │   ├── Dags.js              # DAG listing page
-│   │   │   ├── DagForm.js           # DAG create/edit page
-│   │   │   └── DagDetails.js        # DAG details page
+│   │   │   ├── Projects.js          # Project listing page
+│   │   │   ├── ProjectDetails.js    # Project details page
+│   │   │   └── ProjectCodeEditor.js # Project file editor
+│   │   ├── components/               # Reusable components
+│   │   │   ├── ProjectForm.js       # Project create/edit form
+│   │   │   └── ...
 │   │   ├── services/                 # API client
-│   │   │   └── api.js               # REST API client (includes dagAPI)
+│   │   │   └── api.js               # REST API client (tenantAPI, deploymentAPI, projectAPI)
 │   │   └── utils/                    # Utilities
 │   ├── public/
 │   └── package.json
@@ -531,15 +526,17 @@ Once the control plane is running, access the interactive API documentation:
 - `PUT /api/v1/deployments/{deploymentId}` - Update deployment
 - `DELETE /api/v1/deployments/{deploymentId}` - Delete deployment
 
-**DAGs:**
-- `POST /api/v1/dags` - Create DAG
-- `GET /api/v1/dags` - List all DAGs
-- `GET /api/v1/dags/{dagId}` - Get DAG details
-- `GET /api/v1/dags/deployment/{deploymentId}` - List DAGs by deployment
-- `PUT /api/v1/dags/{dagId}` - Update DAG
-- `DELETE /api/v1/dags/{dagId}` - Delete DAG
-- `POST /api/v1/dags/{dagId}/deploy` - Deploy DAG to Airflow
-- `POST /api/v1/dags/{dagId}/trigger` - Trigger DAG run in Airflow
+**Projects:**
+- `POST /api/v1/projects` - Create project
+- `GET /api/v1/projects` - List all projects
+- `GET /api/v1/projects/{projectId}` - Get project details
+- `GET /api/v1/projects/deployment/{deploymentId}` - List projects by deployment
+- `PUT /api/v1/projects/{projectId}` - Update project
+- `DELETE /api/v1/projects/{projectId}` - Delete project
+- `POST /api/v1/projects/{projectId}/deploy` - Deploy project to Airflow
+- `POST /api/v1/projects/{projectId}/files` - Add file to project
+- `GET /api/v1/projects/{projectId}/files` - List project files
+- `POST /api/v1/projects/{projectId}/trigger` - Trigger DAG run(s) via Airflow (project DAG files)
 
 ## Configuration
 
@@ -846,6 +843,8 @@ terraform apply
 - [x] Multi-tenant architecture
 - [x] REST API and Web UI
 - [x] Comprehensive documentation
+- [x] **Project Management** - Astronomer-style project structure with full CRUD operations
+- [x] **Project File Management** - Manage DAGs, plugins, includes, tests within projects
 - [x] **DAG Management UI** - Create, edit, and deploy DAGs from web interface
 - [x] **Code Editor** - Monaco editor with Python syntax highlighting
 - [x] **DAG Validation** - Basic validation for DAG code

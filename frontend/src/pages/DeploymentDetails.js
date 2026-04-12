@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Button, Tag, Spin, Alert, Typography, Space } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Card, Descriptions, Button, Tag, Spin, Alert, Typography, Space, Breadcrumb, message } from 'antd';
+import { getBreadcrumbItems } from '../utils/breadcrumbs';
+import { getApiErrorMessage } from '../utils/apiError';
 import { ArrowLeftOutlined, LinkOutlined } from '@ant-design/icons';
-import { deploymentAPI } from '../services/api';
+import { deploymentAPI, openAirflowHandoffInNewTab } from '../services/api';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -10,9 +12,12 @@ const { Title } = Typography;
 const DeploymentDetails = () => {
   const { deploymentId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [deployment, setDeployment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [openingAirflow, setOpeningAirflow] = useState(false);
+  const openAirflowLockRef = useRef(false);
 
   useEffect(() => {
     const fetchDeploymentDetails = async () => {
@@ -23,7 +28,7 @@ const DeploymentDetails = () => {
         setError(null);
       } catch (err) {
         console.error('Error fetching deployment details:', err);
-        setError('Failed to load deployment details');
+        setError(getApiErrorMessage(err, 'Failed to load deployment details'));
       } finally {
         setLoading(false);
       }
@@ -31,6 +36,25 @@ const DeploymentDetails = () => {
 
     fetchDeploymentDetails();
   }, [deploymentId]);
+
+  const handleOpenAirflow = async () => {
+    if (!deploymentId || openAirflowLockRef.current) return;
+    openAirflowLockRef.current = true;
+    try {
+      setOpeningAirflow(true);
+      await openAirflowHandoffInNewTab(async () => {
+        const { data } = await deploymentAPI.airflowUiHandoff(deploymentId);
+        return data.handoffId;
+      });
+      openAirflowLockRef.current = false;
+    } catch (err) {
+      openAirflowLockRef.current = false;
+      const msg = getApiErrorMessage(err, 'Could not open Airflow');
+      if (msg) message.error(msg);
+    } finally {
+      setOpeningAirflow(false);
+    }
+  };
 
   const getStatusColor = (status) => {
     const colors = {
@@ -63,18 +87,24 @@ const DeploymentDetails = () => {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Breadcrumb items={getBreadcrumbItems(location.pathname)} style={{ marginBottom: 12 }} />
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/deployments')}>
-          Back
+          Back to deployments
         </Button>
       </Space>
 
-      <Title level={2}>Deployment Details</Title>
+      <Title level={2} style={{ marginTop: 0 }}>
+        Deployment details
+      </Title>
 
       <Card title="Basic Information" style={{ marginBottom: 16 }}>
         <Descriptions column={2} bordered>
           <Descriptions.Item label="Deployment ID">{deployment.deploymentId}</Descriptions.Item>
           <Descriptions.Item label="Name">{deployment.name || deployment.deploymentId}</Descriptions.Item>
+          {deployment.tag ? (
+            <Descriptions.Item label="Tag">{deployment.tag}</Descriptions.Item>
+          ) : null}
           <Descriptions.Item label="Tenant ID">{deployment.tenantId}</Descriptions.Item>
           <Descriptions.Item label="Status">
             <Tag color={getStatusColor(deployment.status)}>{deployment.status}</Tag>
@@ -133,9 +163,10 @@ const DeploymentDetails = () => {
                 <Button
                   type="link"
                   icon={<LinkOutlined />}
-                  onClick={() => window.open(deployment.webserverUrl, '_blank')}
+                  loading={openingAirflow}
+                  onClick={handleOpenAirflow}
                 >
-                  Open
+                  Open Airflow
                 </Button>
               </Space>
             ) : (

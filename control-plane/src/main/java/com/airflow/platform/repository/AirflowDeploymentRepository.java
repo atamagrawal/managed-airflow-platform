@@ -5,6 +5,7 @@ import com.airflow.platform.model.Tenant;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,5 +23,14 @@ public interface AirflowDeploymentRepository extends JpaRepository<AirflowDeploy
 
     boolean existsByDeploymentId(String deploymentId);
 
+    boolean existsByTenantTenantIdAndName(String tenantId, String name);
+
+    Optional<AirflowDeployment> findByTenantTenantIdAndName(String tenantId, String name);
+
     List<AirflowDeployment> findByStatus(AirflowDeployment.DeploymentStatus status);
+
+    List<AirflowDeployment> findByStatusIn(Collection<AirflowDeployment.DeploymentStatus> statuses);
+
+    List<AirflowDeployment> findByStatusInAndWebserverUrlIsNotNull(
+            Collection<AirflowDeployment.DeploymentStatus> statuses);
 }
