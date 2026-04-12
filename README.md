@@ -17,7 +17,7 @@ Choose the deployment option that fits your needs:
 | **AWS ECS** | Test/Staging, Small Prod | ~$137/tenant | Medium | Yes | Medium |
 | **Kubernetes** | Production, Enterprise | ~$150/tenant | Complex | Yes | High |
 
-📖 **[Complete Deployment Options Comparison](docs/DEPLOYMENT_OPTIONS.md)**
+📖 **[Complete Deployment Options Comparison](DEPLOYMENT_OPTIONS.md)**
 
 ## Key Features
 
@@ -117,7 +117,7 @@ cd infrastructure/local
 cd ../../control-plane
 mvn spring-boot:run -Dspring-boot.run.profiles=local
 
-# 3. Create tenant and deployment via API
+# 3. Create tenant and deployment via API (JWT required — see Usage / Authentication)
 curl -X POST http://localhost:8080/api/v1/tenants ...
 ```
 
@@ -137,7 +137,7 @@ terraform apply
 cd control-plane
 mvn spring-boot:run -Dspring-boot.run.profiles=ec2
 
-# 3. Create tenant and deployment via API
+# 3. Create tenant and deployment via API (JWT required — see Usage / Authentication)
 curl -X POST http://localhost:8080/api/v1/tenants ...
 ```
 
@@ -157,7 +157,7 @@ terraform apply
 cd control-plane
 mvn spring-boot:run -Dspring-boot.run.profiles=ecs
 
-# 3. Create tenant and deployment via API
+# 3. Create tenant and deployment via API (JWT required — see Usage / Authentication)
 curl -X POST http://localhost:8080/api/v1/tenants ...
 ```
 
@@ -178,9 +178,9 @@ helm install keda kedacore/keda --namespace keda --create-namespace
 # 3. Add Airflow Helm repo
 helm repo add apache-airflow https://airflow.apache.org
 
-# 4. Start control plane
+# 4. Start control plane (Kubernetes/Helm provider is the default when `deployment.provider` is not overridden)
 cd control-plane
-mvn spring-boot:run -Dspring-boot.run.profiles=kubernetes
+mvn spring-boot:run
 
 # 5. Create tenant and deployment via UI or API
 ```
@@ -190,7 +190,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=kubernetes
 ### Prerequisites
 
 **Common Requirements:**
-- Java 17+
+- Java 21 (matches `control-plane/pom.xml`; Temurin 21 recommended)
 - Maven 3.8+
 - Git
 
@@ -224,11 +224,20 @@ Each tenant gets isolated resources (namespace/cluster/instance depending on dep
 
 **Via API:**
 ```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
+
 curl -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "tenantId": "data-team",
-    "organizationName": "Data Engineering Team"
+    "name": "Data Engineering",
+    "email": "data-eng@example.com",
+    "organization": "Data Engineering",
+    "cloudProvider": "AWS",
+    "clusterName": "local",
+    "region": "local"
   }'
 ```
 
@@ -244,20 +253,21 @@ curl -X POST http://localhost:8080/api/v1/tenants \
 ```bash
 curl -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "tenantId": "data-team",
-    "deploymentId": "prod-etl",
+    "tenantId": "<tenantId-from-create-tenant-response>",
     "name": "Production ETL",
+    "description": "Main production stack",
     "airflowVersion": "3.1.8",
     "executorType": "CELERY",
     "minWorkers": 1,
     "maxWorkers": 5,
-    "schedulerCpu": "1024",
-    "schedulerMemory": "2048",
-    "webserverCpu": "512",
-    "webserverMemory": "1024",
-    "workerCpu": "1024",
-    "workerMemory": "2048"
+    "schedulerCpu": "1000m",
+    "schedulerMemory": "2Gi",
+    "webserverCpu": "500m",
+    "webserverMemory": "1Gi",
+    "workerCpu": "1000m",
+    "workerMemory": "2Gi"
   }'
 ```
 
@@ -279,11 +289,11 @@ curl -X POST http://localhost:8080/api/v1/deployments \
 ```bash
 curl -X POST http://localhost:8080/api/v1/projects \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "deploymentId": "prod-etl",
     "name": "my-data-project",
     "description": "Production data pipelines",
-    "airflowVersion": "2.8.1",
+    "airflowVersion": "3.1.8",
     "requirementsTxt": "pandas==2.0.0\nrequests==2.31.0",
     "packagesTxt": "gcc\nlibpq-dev",
     "owner": "data-team",
@@ -341,9 +351,12 @@ managed-airflow-platform/
 │   │   │   │   └── com/airflow/platform/
 │   │   │   │       ├── config/             # Configuration classes
 │   │   │   │       ├── controller/         # REST controllers
+│   │   │   │       │   ├── AuthController.java
 │   │   │   │       │   ├── TenantController.java
 │   │   │   │       │   ├── DeploymentController.java
-│   │   │   │       │   └── ProjectController.java
+│   │   │   │       │   ├── ProjectController.java
+│   │   │   │       │   ├── AiChatController.java
+│   │   │   │       │   └── …
 │   │   │   │       ├── service/            # Business logic
 │   │   │   │       │   ├── TenantService.java
 │   │   │   │       │   ├── AirflowDeploymentService.java
@@ -446,7 +459,10 @@ managed-airflow-platform/
 │   ├── ARCHITECTURE_ECS.md         # ECS architecture
 │   ├── ARCHITECTURE_EC2.md         # EC2 architecture
 │   ├── SETUP.md                    # Setup guide (all options)
-│   └── USER_GUIDE.md               # User guide (all options)
+│   ├── USER_GUIDE.md               # User guide (all options)
+│   ├── PROJECTS.md                 # Project layout and API
+│   ├── PROJECT_EDITOR_AI_ASSISTANT.md
+│   └── DAG_DEPLOYMENT_STRATEGIES.md
 │
 ├── scripts/                         # Utility scripts
 └── README.md                        # This file
@@ -455,7 +471,7 @@ managed-airflow-platform/
 ## Technology Stack
 
 ### Backend (Control Plane)
-- **Java 17** - Programming language
+- **Java 21** - Programming language
 - **Spring Boot 3.2** - Application framework
 - **Spring Data JPA** - Data access
 - **Spring Security** - Security framework
@@ -469,7 +485,7 @@ managed-airflow-platform/
 - **React 18** - UI framework
 - **React Router** - Routing
 - **Ant Design** - UI component library
-- **Monaco Editor** - Code editor for DAG creation
+- **CodeMirror 6** (`@uiw/react-codemirror`) - Code editor for DAGs and project files
 - **Axios** - HTTP client
 - **Recharts** - Data visualization
 
@@ -499,8 +515,8 @@ managed-airflow-platform/
 - **AWS Systems Manager** - Remote management (SSH-free)
 
 **Common:**
-- **Apache Airflow 2.7+** - Workflow orchestration
-- **PostgreSQL 13** - Metadata database
+- **Apache Airflow 3.1.8** - Workflow orchestration (only versions listed in `SupportedAirflowVersions` are accepted)
+- **PostgreSQL 15** - Metadata database (Docker Compose `docker-compose.yml` profile `prod`)
 - **Redis 7** - Celery message broker
 - **Terraform** - Infrastructure as Code
 
@@ -511,49 +527,79 @@ Once the control plane is running, access the interactive API documentation:
 - **Swagger UI**: `http://localhost:8080/swagger-ui.html`
 - **OpenAPI Spec**: `http://localhost:8080/v3/api-docs`
 
-### Key Endpoints
+### Authentication
 
-**Tenants:**
-- `POST /api/v1/tenants` - Create tenant
-- `GET /api/v1/tenants` - List tenants
-- `GET /api/v1/tenants/{tenantId}` - Get tenant
-- `DELETE /api/v1/tenants/{tenantId}` - Delete tenant
+All `/api/v1/**` routes except `POST /api/v1/auth/login` and `GET /api/v1/public/**` require a JWT: `Authorization: Bearer <accessToken>` from the login response. **Tenant** APIs (`/api/v1/tenants/**`) and **admin** APIs (`/api/v1/admin/**`) require role `ADMIN`. Non-admin users are scoped to a home tenant from `platform.security.users` in `application.yml`.
+
+### Key endpoints
+
+**Auth:**
+- `POST /api/v1/auth/login` — JWT (`accessToken`, `tokenType`, `expiresInMs`, roles, `tenantScope`)
+- `GET /api/v1/auth/me` — current user from token
+
+**Tenants (ADMIN):**
+- `POST /api/v1/tenants` — Create tenant (server generates `tenantId` from `name`)
+- `GET /api/v1/tenants` — List tenants
+- `GET /api/v1/tenants/{tenantId}` — Get tenant
+- `DELETE /api/v1/tenants/{tenantId}` — Delete tenant
 
 **Deployments:**
-- `POST /api/v1/deployments` - Create Airflow deployment
-- `GET /api/v1/deployments` - List deployments
-- `GET /api/v1/deployments/{deploymentId}` - Get deployment
-- `PUT /api/v1/deployments/{deploymentId}` - Update deployment
-- `DELETE /api/v1/deployments/{deploymentId}` - Delete deployment
+- `GET /api/v1/deployments/config` — Provider id + local idle-timeout hint
+- `POST /api/v1/deployments` — Create deployment (`deploymentId` is generated from `name`, not supplied in the body)
+- `GET /api/v1/deployments` — List deployments visible to the caller
+- `GET /api/v1/deployments/{deploymentId}` — Get deployment
+- `GET /api/v1/deployments/tenant/{tenantId}` — List by tenant (caller must be allowed to see that tenant)
+- `PUT /api/v1/deployments/{deploymentId}` — Update deployment (adjust `minWorkers` / `maxWorkers` here; there is no separate scale URL)
+- `DELETE /api/v1/deployments/{deploymentId}` — Delete deployment
+- `POST /api/v1/deployments/{deploymentId}/local-stack/start|stop|keep-alive` — Local provider: Docker lifecycle
 
 **Projects:**
-- `POST /api/v1/projects` - Create project
-- `GET /api/v1/projects` - List all projects
-- `GET /api/v1/projects/{projectId}` - Get project details
-- `GET /api/v1/projects/deployment/{deploymentId}` - List projects by deployment
-- `PUT /api/v1/projects/{projectId}` - Update project
-- `DELETE /api/v1/projects/{projectId}` - Delete project
-- `POST /api/v1/projects/{projectId}/deploy` - Deploy project to Airflow
-- `POST /api/v1/projects/{projectId}/files` - Add file to project
-- `GET /api/v1/projects/{projectId}/files` - List project files
-- `POST /api/v1/projects/{projectId}/trigger` - Trigger DAG run(s) via Airflow (project DAG files)
+- `POST /api/v1/projects` — Create project (optional `tenantId` for admins)
+- `GET /api/v1/projects` — List projects
+- `GET /api/v1/projects/{projectId}` — Get project
+- `GET /api/v1/projects/deployment/{deploymentId}` — List projects linked to a deployment
+- `PUT /api/v1/projects/{projectId}` — Update project metadata
+- `DELETE /api/v1/projects/{projectId}` — Delete project
+- `POST /api/v1/projects/{projectId}/deployments/{deploymentId}` — Link project to deployment
+- `DELETE /api/v1/projects/{projectId}/deployments/{deploymentId}` — Unlink
+- `POST /api/v1/projects/{projectId}/deploy?deploymentId=` — Deploy files to Airflow
+- `POST /api/v1/projects/{projectId}/trigger?deploymentId=` — Trigger DAG runs (optional `fileName`)
+- `POST|GET /api/v1/projects/{projectId}/files` — Add or list files
+- `PUT /api/v1/projects/{projectId}/files/{fileId}` — Update file content
+
+**DAG insights & Airflow UI handoff:**
+- `GET /api/v1/dag-insights/...`, `POST /api/v1/dag-insights/sync` — Cached DAG runs / debug / import errors
+- `GET /api/v1/deployed-dags` — Deployed DAG index
+- `POST /api/v1/deployments/{deploymentId}/airflow-ui-handoff` — Short-lived browser handoff into Airflow
+
+**AI assistant (project editor):**
+- `POST /api/v1/ai/chat`, `GET /api/v1/ai/status`
+
+**Connections sync:** `POST /api/v1/environment/connections/sync`
+
+See Swagger UI for full schemas.
 
 ## Configuration
 
-### Application Profiles
+### Application profiles and `deployment.provider`
 
-The control plane supports three profiles for different deployment targets:
+Spring profiles are defined in `control-plane/src/main/resources/application.yml`:
 
-```yaml
-# For Kubernetes deployments
-spring.profiles.active=kubernetes
+| Profile / mode | Purpose |
+|----------------|---------|
+| *(none)* | Defaults: in-memory H2 control-plane DB, `deployment.provider` defaults to **kubernetes** (`HelmDeploymentProvider`) |
+| `local` | Local Docker Compose Airflow under `~/airflow-deployments` |
+| `ecs` | AWS ECS Fargate |
+| `ec2` | AWS EC2 + Docker Compose |
+| `prod` | PostgreSQL for the control plane (compose uses this with Postgres) |
 
-# For ECS deployments
-spring.profiles.active=ecs
-
-# For EC2 deployments
-spring.profiles.active=ec2
+```bash
+# Examples
+export SPRING_PROFILES_ACTIVE=local
+export SPRING_PROFILES_ACTIVE=ecs,prod   # combine when you wire Postgres + ECS
 ```
+
+Kubernetes mode does not require a dedicated `application-kubernetes.yml`; omit `local`/`ecs`/`ec2` (or set `deployment.provider=kubernetes`) to use the Helm provider.
 
 ### Kubernetes Configuration
 
@@ -616,13 +662,10 @@ aws:
     ami-id: ami-xxxxxxxxx
     instance-type: t3.medium
     key-name: your-key-pair-name
-    iam-instance-profile-name: managed-airflow-ec2-instance-profile
-  vpc:
-    subnet-ids:
-      - subnet-xxxxxxxx
-      - subnet-yyyyyyyy
-    security-group-ids:
-      - sg-xxxxxxxxx
+    subnet-id: subnet-xxxxxxxxx
+    security-group-id: sg-xxxxxxxxx
+    iam-instance-profile: EC2AirflowInstanceProfile
+    command-timeout: 300
 ```
 
 📖 **[Complete Configuration Guide](docs/SETUP.md#configuration)**
@@ -681,8 +724,7 @@ curl http://localhost:8080/actuator/health
 # Metrics
 curl http://localhost:8080/actuator/metrics
 
-# Prometheus metrics
-curl http://localhost:8080/actuator/prometheus
+Prometheus scrape endpoint is not exposed by default; `management.endpoints.web.exposure.include` lists `health`, `info`, and `metrics` only. Add `prometheus` there if you enable the Prometheus registry in Spring Boot.
 ```
 
 ### Deployment-Specific Monitoring
@@ -776,9 +818,9 @@ terraform apply
 ### Production Recommendations
 
 1. **Authentication & Authorization**
-   - Implement JWT or OAuth2 for control plane
-   - Enable Airflow RBAC
-   - Integrate with enterprise SSO
+   - The control plane already issues JWTs (`/api/v1/auth/login`); change `platform.security.jwt-secret`, passwords, and user entries for production
+   - Enable Airflow RBAC and strong Fernet / metadata DB secrets in each deployment
+   - Plan SSO or an identity provider in front of the UI/API if required
 
 2. **Network Security**
    - Use private subnets where possible
@@ -849,6 +891,9 @@ terraform apply
 - [x] **Code Editor** - Monaco editor with Python syntax highlighting
 - [x] **DAG Validation** - Basic validation for DAG code
 - [x] **DAG Run Trigger** - Trigger DAG runs directly from the UI
+- [x] **JWT login** - Control plane authentication and tenant-scoped non-admin users
+- [x] **Flow Deck AI assistant** - Server-mediated LLM chat for the project editor (`/api/v1/ai/*`)
+- [x] **DAG insights cache** - Synced DAG run and import-error views from each deployment’s Airflow API
 
 ### 🚧 In Progress
 
@@ -879,6 +924,9 @@ terraform apply
 
 - **[Setup Guide](docs/SETUP.md)** - Setup instructions for all deployment options
 - **[User Guide](docs/USER_GUIDE.md)** - Complete usage guide
+- **[Projects](docs/PROJECTS.md)** - Project structure and REST usage
+- **[Project editor AI](docs/PROJECT_EDITOR_AI_ASSISTANT.md)** - Flow Deck AI panel and server config
+- **[DAG deployment strategies](docs/DAG_DEPLOYMENT_STRATEGIES.md)** - `dag.deployment.strategy` options
 - **[Kubernetes Architecture](docs/ARCHITECTURE.md)** - Kubernetes deployment details
 - **[ECS Architecture](docs/ARCHITECTURE_ECS.md)** - ECS deployment details
 - **[EC2 Architecture](docs/ARCHITECTURE_EC2.md)** - EC2 deployment details

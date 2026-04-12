@@ -101,9 +101,8 @@ Each deployment runs as an isolated Docker Compose stack with:
    - Included with Docker Desktop
    - [Standalone installation](https://docs.docker.com/compose/install/)
 
-3. **Java** (17+)
-   - [OpenJDK 17](https://adoptium.net/)
-   - [Oracle JDK 17](https://www.oracle.com/java/technologies/downloads/)
+3. **Java** (21+; matches `control-plane/pom.xml`)
+   - [Eclipse Temurin 21](https://adoptium.net/)
 
 4. **Maven** (3.8+) *(Optional - can use wrapper)*
    - [Apache Maven](https://maven.apache.org/download.cgi)
@@ -163,7 +162,17 @@ npm start
 open http://localhost:3000          # Web UI (recommended)
 open http://localhost:8080/swagger-ui.html  # Swagger UI
 
-# 6. Create a tenant and deployment (see next section)
+# 6. Create a tenant and deployment (see next section; API calls need a JWT — log in as `admin` / `admin` by default)
+```
+
+## Control plane authentication
+
+The REST API is protected by JWT. Obtain a token, then pass `Authorization: Bearer <accessToken>` on subsequent calls. **Tenant management** (`/api/v1/tenants/**`) requires the **ADMIN** role (the bundled `admin` user has it).
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
 ```
 
 ## Detailed Setup
@@ -275,13 +284,17 @@ You can create deployments using three methods:
 #### Option B: Using curl
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/tenants \
+curl -s -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "tenantId": "my-company",
     "name": "My Company",
-    "email": "admin@mycompany.com"
-  }'
+    "email": "admin@mycompany.com",
+    "organization": "My Company",
+    "cloudProvider": "AWS",
+    "clusterName": "local",
+    "region": "local"
+  }' | jq .
 ```
 
 #### Option C: Using Swagger UI
@@ -315,29 +328,33 @@ The deployment will start creating, and you'll see the status change from `DEPLO
 
 #### Option B: Using curl
 
+Use the `tenantId` returned when you created the tenant (`my-company` in the example below if that slug was free). The control plane **generates** `deploymentId` from the deployment `name`.
+
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments \
+curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "name": "my-airflow-dev",
     "tenantId": "my-company",
+    "description": "Local dev stack",
     "airflowVersion": "3.1.8",
     "executorType": "LOCAL",
-    "webserverCpu": "500",
-    "webserverMemory": "1024",
-    "schedulerCpu": "500",
-    "schedulerMemory": "1024",
-    "workerCpu": "500",
-    "workerMemory": "1024",
+    "webserverCpu": "500m",
+    "webserverMemory": "1Gi",
+    "schedulerCpu": "500m",
+    "schedulerMemory": "1Gi",
+    "workerCpu": "500m",
+    "workerMemory": "1Gi",
     "minWorkers": 1,
     "maxWorkers": 3
-  }'
+  }' | jq .
 ```
 
-**Response:**
+**Response (shape):**
 ```json
 {
-  "deploymentId": "my-airflow-dev",
+  "deploymentId": "my-airflow-dev-a1b2c3d4",
   "tenantId": "my-company",
   "status": "DEPLOYING",
   "airflowVersion": "3.1.8",
@@ -359,7 +376,8 @@ The deployment process will:
 Check deployment status:
 
 ```bash
-curl http://localhost:8080/api/v1/deployments/my-airflow-dev
+curl -s http://localhost:8080/api/v1/deployments/my-airflow-dev-a1b2c3d4 \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 Or watch the logs:
@@ -388,8 +406,9 @@ Once the deployment is running, access the Airflow webserver:
 #### Option B: Using curl/Browser
 
 ```bash
-# Get the webserver URL
-curl http://localhost:8080/api/v1/deployments/my-airflow-dev | jq .webserverUrl
+# Get the webserver URL (use the real deploymentId from the create response)
+curl -s http://localhost:8080/api/v1/deployments/my-airflow-dev-a1b2c3d4 \
+  -H "Authorization: Bearer $TOKEN" | jq -r .webserverUrl
 
 # Open in browser
 open <webserver-url>
@@ -410,10 +429,11 @@ open <webserver-url>
 
 **Using API:**
 ```bash
-curl http://localhost:8080/api/v1/deployments
+curl -s http://localhost:8080/api/v1/deployments \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
-### Get Deployment Details
+### Get deployment details
 
 **Using Web UI:**
 1. Navigate to http://localhost:3000/deployments
@@ -421,7 +441,8 @@ curl http://localhost:8080/api/v1/deployments
 
 **Using API:**
 ```bash
-curl http://localhost:8080/api/v1/deployments/{deployment-id}
+curl -s http://localhost:8080/api/v1/deployments/{deployment-id} \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 ### Access Airflow UI
@@ -431,31 +452,35 @@ curl http://localhost:8080/api/v1/deployments/{deployment-id}
 2. Click the **Open** button (link icon) next to the deployment
 3. The Airflow webserver will open in a new tab
 
-### Scale Workers (Celery Executor Only)
+### Celery worker limits
+
+There is **no** `POST /api/v1/deployments/{id}/scale` endpoint. Change Celery capacity with **`PUT /api/v1/deployments/{deploymentId}`** by updating `minWorkers`, `maxWorkers`, and resource fields in the same JSON shape as create.
+
+### Upgrade deployment
 
 **Using API:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments/{deployment-id}/scale \
+curl -s -X PUT http://localhost:8080/api/v1/deployments/{deployment-id} \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "minWorkers": 3,
-    "maxWorkers": 5
-  }'
-```
-
-### Upgrade Deployment
-
-**Using API:**
-```bash
-curl -X PUT http://localhost:8080/api/v1/deployments/{deployment-id} \
-  -H "Content-Type: application/json" \
-  -d '{
+    "tenantId": "my-company",
+    "name": "my-airflow-dev",
+    "description": "Bigger webserver",
     "airflowVersion": "3.1.8",
-    "webserverMemory": "2048"
-  }'
+    "executorType": "LOCAL",
+    "webserverMemory": "2Gi",
+    "webserverCpu": "500m",
+    "schedulerCpu": "500m",
+    "schedulerMemory": "1Gi",
+    "workerCpu": "500m",
+    "workerMemory": "1Gi",
+    "minWorkers": 1,
+    "maxWorkers": 3
+  }' | jq .
 ```
 
-### Delete Deployment
+### Delete deployment
 
 **Using Web UI:**
 1. Navigate to http://localhost:3000/deployments
@@ -464,7 +489,8 @@ curl -X PUT http://localhost:8080/api/v1/deployments/{deployment-id} \
 
 **Using API:**
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id}
+curl -s -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id} \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 This will:
@@ -582,17 +608,9 @@ docker-compose restart
 docker-compose restart airflow-webserver
 ```
 
-### Flower (Celery Executor Only)
+### Flower (Celery executor only)
 
-Monitor Celery workers using Flower:
-
-```bash
-# Get Flower URL (port 5555 + offset)
-curl http://localhost:8080/api/v1/deployments/{deployment-id} | jq .flowerUrl
-
-# Open in browser
-open <flower-url>
-```
+If your generated Compose stack exposes Flower, open the URL shown in the deployment details in the UI (the `DeploymentResponse` JSON from the API does not currently include a dedicated `flowerUrl` field).
 
 ## Advanced Configuration
 
@@ -661,18 +679,26 @@ The platform supports multiple executors:
 Run multiple deployments simultaneously:
 
 ```bash
-# Create multiple deployments for the same tenant
-curl -X POST http://localhost:8080/api/v1/deployments -d '{
-  "deploymentId": "dev-airflow-1",
+# Create multiple deployments for the same tenant (unique names → unique generated deploymentIds)
+curl -s -X POST http://localhost:8080/api/v1/deployments \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+  "name": "dev-airflow-one",
   "tenantId": "my-company",
-  ...
-}'
+  "airflowVersion": "3.1.8",
+  "executorType": "LOCAL"
+}' | jq .
 
-curl -X POST http://localhost:8080/api/v1/deployments -d '{
-  "deploymentId": "dev-airflow-2",
+curl -s -X POST http://localhost:8080/api/v1/deployments \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+  "name": "dev-airflow-two",
   "tenantId": "my-company",
-  ...
-}'
+  "airflowVersion": "3.1.8",
+  "executorType": "LOCAL"
+}' | jq .
 ```
 
 Each deployment gets unique ports automatically.
@@ -811,7 +837,8 @@ mvn spring-boot:run -Dspring-boot.run.profiles=local
 
 2. **Clean Up Unused Deployments**
    ```bash
-   curl -X DELETE http://localhost:8080/api/v1/deployments/{old-deployment-id}
+   curl -s -X DELETE http://localhost:8080/api/v1/deployments/{old-deployment-id} \
+     -H "Authorization: Bearer $TOKEN"
    ```
 
 3. **Prune Docker Resources Regularly**
@@ -840,7 +867,8 @@ mvn spring-boot:run -Dspring-boot.run.profiles=local
 
 Via API:
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id}
+curl -s -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id} \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Manually:
@@ -855,7 +883,8 @@ rm -rf {deployment-id}
 
 Via API:
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/tenants/{tenant-id}
+curl -s -X DELETE http://localhost:8080/api/v1/tenants/{tenant-id} \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Remove Everything

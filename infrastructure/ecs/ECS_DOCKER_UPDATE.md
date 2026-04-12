@@ -200,14 +200,14 @@ terraform apply
 
 ### 2. Tenant Creation
 ```bash
-curl -X POST /api/tenants ...
+# POST /api/v1/tenants (ADMIN JWT). See docs/SETUP.md for a full JSON example.
 # Creates: ECS cluster for tenant
 # Time: ~30 seconds
 ```
 
 ### 3. Airflow Deployment
 ```bash
-curl -X POST /api/deployments ...
+# POST /api/v1/deployments (JWT). deploymentId is generated from the deployment name.
 ```
 
 **Deployment Steps:**

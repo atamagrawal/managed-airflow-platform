@@ -224,7 +224,8 @@ services:
 
 2. Redeploy all projects:
    ```bash
-   curl -X POST http://localhost:8080/api/v1/projects/{projectId}/deploy
+   curl -s -X POST "http://localhost:8080/api/v1/projects/{projectId}/deploy?deploymentId={deploymentId}" \
+     -H "Authorization: Bearer $TOKEN"
    ```
 
 3. The platform will automatically create the new directory structure
@@ -245,7 +246,8 @@ services:
 
 2. Redeploy all projects:
    ```bash
-   curl -X POST http://localhost:8080/api/v1/projects/{projectId}/deploy
+   curl -s -X POST "http://localhost:8080/api/v1/projects/{projectId}/deploy?deploymentId={deploymentId}" \
+     -H "Authorization: Bearer $TOKEN"
    ```
 
 3. DAGs will be consolidated into single `dags/` folder
@@ -268,9 +270,9 @@ services:
    POST /api/v1/projects/{projectId}/files
    ```
 
-3. **Deploy Project**
+3. **Deploy project**
    ```bash
-   POST /api/v1/projects/{projectId}/deploy
+   POST /api/v1/projects/{projectId}/deploy?deploymentId={deploymentId}
    ```
 
 4. **Result:** DAGs written to `{deployment}/dags/[{projectId}__]{fileName}`
@@ -289,9 +291,9 @@ services:
    POST /api/v1/projects/{projectId}/files
    ```
 
-3. **Deploy Project**
+3. **Deploy project**
    ```bash
-   POST /api/v1/projects/{projectId}/deploy
+   POST /api/v1/projects/{projectId}/deploy?deploymentId={deploymentId}
    ```
 
 4. **Result:** DAGs written to `{deployment}/projects/{projectId}/dags/{fileName}`

@@ -77,7 +77,7 @@ Each option has different characteristics in terms of cost, complexity, and scal
 
 #### Required Tools
 
-- **Java 17+** - For building the control plane
+- **Java 21+** - For building the control plane (see `control-plane/pom.xml`)
 - **Maven 3.8+** - For building the control plane
 - **Node.js 18+** - For building the frontend (optional)
 - **npm or yarn** - For frontend dependencies (optional)
@@ -190,9 +190,12 @@ cd control-plane
 # Build the project
 mvn clean package
 
-# Run locally (uses H2 in-memory database)
-# For Kubernetes:
-mvn spring-boot:run -Dspring-boot.run.profiles=kubernetes
+# Run locally (control plane uses H2 unless you activate `prod`)
+# For local Docker Compose Airflow:
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+
+# For Kubernetes (default deployment.provider; no profile required):
+mvn spring-boot:run
 
 # For ECS:
 mvn spring-boot:run -Dspring-boot.run.profiles=ecs
@@ -230,7 +233,7 @@ The local deployment option allows you to run the entire Managed Airflow Platfor
 Before starting, ensure you have:
 - ✅ Docker 20.10+ installed and running
 - ✅ Docker Compose 2.0+ installed
-- ✅ Java 17+ installed
+- ✅ Java 21+ installed
 - ✅ Maven 3.8+ installed (or use the Maven wrapper)
 - ✅ At least 8GB RAM with 4GB allocated to Docker
 - ✅ Ports 8080-8180 and 5555-5655 available
@@ -306,50 +309,65 @@ Open your browser and navigate to:
 
 #### Step 5: Create Your First Tenant and Deployment
 
-Using the Swagger UI or curl:
+Using the Swagger UI or curl (JWT required):
 
 ```bash
-# Create a tenant
-curl -X POST http://localhost:8080/api/v1/tenants \
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "tenantId": "test-company",
-    "name": "Test Company",
-    "email": "admin@test.com"
-  }'
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
 
-# Create a deployment
-curl -X POST http://localhost:8080/api/v1/deployments \
+# Create a tenant (tenantId is returned — generated from name)
+TENANT_JSON=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "deploymentId": "test-airflow",
-    "tenantId": "test-company",
-    "airflowVersion": "3.1.8",
-    "executorType": "LOCAL",
-    "webserverCpu": "500",
-    "webserverMemory": "1024",
-    "schedulerCpu": "500",
-    "schedulerMemory": "1024",
-    "workerCpu": "500",
-    "workerMemory": "1024",
-    "minWorkers": 1,
-    "maxWorkers": 3
-  }'
+    "name": "Test Company",
+    "email": "admin@test.com",
+    "organization": "Test Company",
+    "cloudProvider": "AWS",
+    "clusterName": "local",
+    "region": "local"
+  }')
+echo "$TENANT_JSON" | jq .
+TENANT_ID=$(echo "$TENANT_JSON" | jq -r '.tenantId')
+
+# Create a deployment (deploymentId is returned — generated from name)
+DEPLOY_JSON=$(curl -s -X POST http://localhost:8080/api/v1/deployments \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{
+    \"tenantId\": \"$TENANT_ID\",
+    \"name\": \"Test Airflow\",
+    \"description\": \"Local smoke test\",
+    \"airflowVersion\": \"3.1.8\",
+    \"executorType\": \"LOCAL\",
+    \"webserverCpu\": \"500m\",
+    \"webserverMemory\": \"1Gi\",
+    \"schedulerCpu\": \"500m\",
+    \"schedulerMemory\": \"1Gi\",
+    \"workerCpu\": \"500m\",
+    \"workerMemory\": \"1Gi\",
+    \"minWorkers\": 1,
+    \"maxWorkers\": 3
+  }")
+echo "$DEPLOY_JSON" | jq .
+DEPLOYMENT_ID=$(echo "$DEPLOY_JSON" | jq -r '.deploymentId')
 ```
 
-#### Step 6: Monitor Deployment
+#### Step 6: Monitor deployment
 
 Check the deployment status:
 
 ```bash
-curl http://localhost:8080/api/v1/deployments/test-airflow
+curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 Or watch the logs:
 
 ```bash
-cd ~/airflow-deployments/test-company/test-airflow
-docker-compose logs -f
+cd ~/airflow-deployments/$TENANT_ID/$DEPLOYMENT_ID
+docker compose logs -f
 ```
 
 Wait for all services to be healthy (typically 2-5 minutes).
@@ -360,7 +378,8 @@ Once the deployment is running:
 
 ```bash
 # Get the webserver URL
-curl http://localhost:8080/api/v1/deployments/test-airflow | jq .webserverUrl
+curl -s http://localhost:8080/api/v1/deployments/$DEPLOYMENT_ID \
+  -H "Authorization: Bearer $TOKEN" | jq -r .webserverUrl
 
 # Example output: http://localhost:8093
 ```
@@ -433,13 +452,16 @@ Airflow automatically detects new DAGs within 30 seconds.
 
 ```bash
 # List all deployments
-curl http://localhost:8080/api/v1/deployments
+curl -s http://localhost:8080/api/v1/deployments \
+  -H "Authorization: Bearer $TOKEN" | jq .
 
 # Get deployment details
-curl http://localhost:8080/api/v1/deployments/{deployment-id}
+curl -s http://localhost:8080/api/v1/deployments/{deployment-id} \
+  -H "Authorization: Bearer $TOKEN" | jq .
 
 # Delete deployment
-curl -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id}
+curl -s -X DELETE http://localhost:8080/api/v1/deployments/{deployment-id} \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Troubleshooting
@@ -931,21 +953,28 @@ curl http://localhost:8080/actuator/health
 
 # Expected: {"status":"UP"}
 
-# Check API
-curl http://localhost:8080/api/v1/tenants
+# Authenticate as admin, then list tenants (tenant APIs require ADMIN)
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
+curl -s http://localhost:8080/api/v1/tenants \
+  -H "Authorization: Bearer $TOKEN" | jq .
 
-# Expected: []
+# Expected: [] or bootstrap tenants from local profile
 ```
 
 ## Configuration
 
-### Application Profiles
+### Spring profiles (`application.yml`)
 
-The application supports three profiles:
+Defined profile blocks today:
 
-1. **kubernetes** - For Kubernetes deployments
-2. **ecs** - For AWS ECS deployments
-3. **ec2** - For AWS EC2 deployments
+1. **`prod`** — PostgreSQL control-plane database, stricter JPA (`ddl-auto: validate`), longer DAG-insights sync interval
+2. **`ecs`** — `deployment.provider: ecs`, H2 control-plane DB (swap for Postgres in real deployments)
+3. **`ec2`** — `deployment.provider: ec2`
+4. **`local`** — `deployment.provider: local`, local Docker Compose paths, optional bootstrap tenant/deployment
+
+**Kubernetes / Helm:** there is no `kubernetes` Spring profile file; leave `deployment.provider` unset (default) or set `deployment.provider=kubernetes` to activate `HelmDeploymentProvider`.
 
 ### Complete Configuration Examples
 
@@ -1048,13 +1077,10 @@ aws:
     ami-id: ami-xxxxxxxxx
     instance-type: t3.medium
     key-name: your-key-pair-name
-    iam-instance-profile-name: managed-airflow-ec2-instance-profile
-  vpc:
-    subnet-ids:
-      - subnet-xxxxxxxx
-      - subnet-yyyyyyyy
-    security-group-ids:
-      - sg-xxxxxxxxx
+    subnet-id: subnet-xxxxxxxxx
+    security-group-id: sg-xxxxxxxxx
+    iam-instance-profile: EC2AirflowInstanceProfile
+    command-timeout: 300
 
 logging:
   level:
@@ -1066,7 +1092,7 @@ logging:
 Set via environment variables or application properties:
 
 **Common:**
-- `SPRING_PROFILES_ACTIVE` - Active profile (kubernetes, ecs, ec2)
+- `SPRING_PROFILES_ACTIVE` - e.g. `local`, `ecs`, `ec2`, `prod` (combine comma-separated). Kubernetes uses default `deployment.provider` when none of the local/ecs/ec2 profiles applies.
 - `DB_PASSWORD` - Database password
 - `DB_USERNAME` - Database username
 - `DB_HOST` - Database host
@@ -1088,78 +1114,104 @@ curl http://localhost:8080/actuator/health
 # {"status":"UP"}
 ```
 
-### 2. API Access
+### 2. API access
 
 ```bash
-# List tenants (should return empty array initially)
-curl http://localhost:8080/api/v1/tenants
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
 
-# Check API docs
+# List tenants (requires ADMIN)
+curl -s http://localhost:8080/api/v1/tenants \
+  -H "Authorization: Bearer $TOKEN" | jq .
+
+# Open interactive API docs
 open http://localhost:8080/swagger-ui.html
 ```
 
-### 3. Create Test Tenant
+### 3. Create test tenant
+
+The API derives **`tenantId` from `name`** (slug + optional numeric suffix). Request bodies use `TenantCreateRequest`: `name`, `email`, `organization`, `cloudProvider`, optional `clusterName` / `region`.
 
 **For Kubernetes:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/tenants \
+TENANT_JSON=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "tenantId": "test-tenant",
-    "organizationName": "Test Org"
-  }'
+    "name": "Test Org",
+    "email": "test-org@example.com",
+    "organization": "Test Org",
+    "cloudProvider": "AWS",
+    "clusterName": "dev",
+    "region": "us-east-1"
+  }')
+echo "$TENANT_JSON" | jq .
+TENANT_ID=$(echo "$TENANT_JSON" | jq -r '.tenantId')
 
-# Verify namespace created
-kubectl get namespace | grep airflow-test-tenant
+# Verify namespace created (pattern: airflow-<tenantId>)
+kubectl get namespace | grep "airflow-$TENANT_ID"
 ```
 
 **For ECS:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/tenants \
+TENANT_JSON=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "tenantId": "test-tenant",
-    "organizationName": "Test Org"
-  }'
-
-# Verify cluster created
-aws ecs list-clusters | grep test-tenant
+    "name": "Test Org",
+    "email": "test-org-ecs@example.com",
+    "organization": "Test Org",
+    "cloudProvider": "AWS",
+    "clusterName": "dev",
+    "region": "us-east-1"
+  }')
+TENANT_ID=$(echo "$TENANT_JSON" | jq -r '.tenantId')
+aws ecs list-clusters | grep "$TENANT_ID"
 ```
 
 **For EC2:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/tenants \
+TENANT_JSON=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "tenantId": "test-tenant",
-    "organizationName": "Test Org"
-  }'
-
-# Verify EC2 instance created
-aws ec2 describe-instances --filters "Name=tag:tenant-id,Values=test-tenant"
+    "name": "Test Org",
+    "email": "test-org-ec2@example.com",
+    "organization": "Test Org",
+    "cloudProvider": "AWS",
+    "clusterName": "dev",
+    "region": "us-east-1"
+  }')
+TENANT_ID=$(echo "$TENANT_JSON" | jq -r '.tenantId')
+aws ec2 describe-instances --filters "Name=tag:tenant-id,Values=$TENANT_ID"
 ```
 
-### 4. Create Test Deployment
+### 4. Create test deployment
+
+`deploymentId` is **generated** from the deployment `name` (suffix added for uniqueness). Do not send `deploymentId` in the create body.
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/deployments \
+curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
-  -d '{
-    "tenantId": "test-tenant",
-    "deploymentId": "test-deployment",
-    "airflowVersion": "3.1.8",
-    "executorType": "LOCAL",
-    "schedulerCpu": "1024",
-    "schedulerMemory": "2048",
-    "webserverCpu": "512",
-    "webserverMemory": "1024"
-  }'
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{
+    \"tenantId\": \"$TENANT_ID\",
+    \"name\": \"Test deployment\",
+    \"description\": \"Smoke test\",
+    \"airflowVersion\": \"3.1.8\",
+    \"executorType\": \"LOCAL\",
+    \"schedulerCpu\": \"1000m\",
+    \"schedulerMemory\": \"2Gi\",
+    \"webserverCpu\": \"500m\",
+    \"webserverMemory\": \"1Gi\"
+  }" | jq .
 ```
 
-**Verify Deployment:**
+**Verify deployment:**
 
-- **Kubernetes:** `kubectl get pods -n airflow-test-tenant`
-- **ECS:** `aws ecs list-tasks --cluster managed-airflow-test-tenant`
+- **Kubernetes:** `kubectl get pods -n airflow-$TENANT_ID`
+- **ECS:** `aws ecs list-tasks --cluster managed-airflow-$TENANT_ID`
 - **EC2:** `ssh -i key.pem ec2-user@<IP> 'docker ps'`
 
 ## Troubleshooting
@@ -1332,8 +1384,9 @@ kubectl delete namespace keda
 
 **ECS:**
 ```bash
-# Delete via API (recommended)
-curl -X DELETE http://localhost:8080/api/v1/tenants/{tenantId}
+# Delete via API (recommended; ADMIN JWT required)
+curl -s -X DELETE http://localhost:8080/api/v1/tenants/{tenantId} \
+  -H "Authorization: Bearer $TOKEN"
 
 # Or manually
 aws ecs delete-cluster --cluster managed-airflow-{tenant-id}
@@ -1345,8 +1398,9 @@ terraform destroy
 
 **EC2:**
 ```bash
-# Delete via API (recommended)
-curl -X DELETE http://localhost:8080/api/v1/tenants/{tenantId}
+# Delete via API (recommended; ADMIN JWT required)
+curl -s -X DELETE http://localhost:8080/api/v1/tenants/{tenantId} \
+  -H "Authorization: Bearer $TOKEN"
 
 # Or manually
 aws ec2 terminate-instances --instance-ids i-xxx

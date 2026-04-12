@@ -88,7 +88,7 @@ The control plane is the management layer responsible for orchestrating all tena
 - **Project Service:** Project lifecycle, file storage, deploy to Airflow, DAG run triggers
 
 **Technology Stack:**
-- Java 17
+- Java 21
 - Spring Boot 3.2
 - Spring Data JPA
 - Kubernetes Java Client

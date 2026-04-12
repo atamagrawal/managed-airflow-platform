@@ -37,7 +37,7 @@ Each deployment includes these Docker containers:
 - Terraform (>= 1.0) OR AWS CloudFormation
 - EC2 Key Pair for SSH access (optional)
 - AWS account with appropriate permissions
-- Java 17+ and Maven (for running the control plane)
+- Java 21+ and Maven (for running the control plane)
 
 ## Infrastructure Setup
 
@@ -140,7 +140,7 @@ mvn clean package
 
 2. Run with the EC2 profile:
 ```bash
-java -jar target/managed-airflow-control-plane-0.0.1-SNAPSHOT.jar --spring.profiles.active=ec2
+java -jar target/managed-airflow-control-plane-1.0.0-SNAPSHOT.jar --spring.profiles.active=ec2
 ```
 
 Or using Maven:
@@ -155,15 +155,21 @@ Once the control plane is running:
 ### 1. Create a tenant
 
 ```bash
-curl -X POST http://localhost:8080/api/tenants \
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
+
+curl -s -X POST http://localhost:8080/api/v1/tenants \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "name": "dev-team",
+    "name": "Dev Team",
     "email": "dev@example.com",
     "organization": "Development",
-    "cloudProvider": "aws",
+    "cloudProvider": "AWS",
+    "clusterName": "ec2",
     "region": "us-east-1"
-  }'
+  }' | jq .
 ```
 
 This will:
@@ -174,23 +180,25 @@ This will:
 ### 2. Create an Airflow deployment
 
 ```bash
-curl -X POST http://localhost:8080/api/deployments \
+# Use tenantId from the JSON returned above (slug of "Dev Team", e.g. dev-team)
+curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "tenantId": "dev-team",
     "name": "test-airflow",
     "description": "Test Airflow deployment on EC2",
     "airflowVersion": "3.1.8",
-    "executorType": "celery",
+    "executorType": "CELERY",
     "minWorkers": 2,
     "maxWorkers": 5,
-    "schedulerCpu": "1024",
-    "schedulerMemory": "2048",
-    "workerCpu": "1024",
-    "workerMemory": "2048",
-    "webserverCpu": "512",
-    "webserverMemory": "1024"
-  }'
+    "schedulerCpu": "1000m",
+    "schedulerMemory": "2Gi",
+    "workerCpu": "1000m",
+    "workerMemory": "2Gi",
+    "webserverCpu": "500m",
+    "webserverMemory": "1Gi"
+  }' | jq .
 ```
 
 This will:
@@ -200,9 +208,10 @@ This will:
 
 ### 3. Access Airflow
 
-Get the deployment details:
+Get the deployment details (control plane uses `/api/v1/...` and requires a JWT from `POST /api/v1/auth/login`):
 ```bash
-curl http://localhost:8080/api/deployments/test-airflow-xxxxx
+curl -s http://localhost:8080/api/v1/deployments/<deploymentId> \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 Access Airflow:
@@ -221,15 +230,11 @@ Access Airflow:
 
 ### Scaling
 
-Scale workers manually:
-```bash
-curl -X PATCH http://localhost:8080/api/deployments/test-airflow-xxxxx/scale \
-  -H "Content-Type: application/json" \
-  -d '{
-    "minWorkers": 3,
-    "maxWorkers": 10
-  }'
-```
+There is no dedicated scale endpoint. Update **`minWorkers` / `maxWorkers`** (and optional CPU or memory strings) with:
+
+`PUT /api/v1/deployments/{deploymentId}`
+
+using the same JSON shape as `POST /api/v1/deployments`, plus `Authorization: Bearer <JWT>`.
 
 ### Monitoring
 
@@ -252,17 +257,26 @@ sudo docker-compose ps
 
 ### Updating Deployments
 
-Update configuration:
+Update configuration (full body, same shape as create):
 ```bash
-curl -X PUT http://localhost:8080/api/deployments/test-airflow-xxxxx \
+curl -s -X PUT http://localhost:8080/api/v1/deployments/<deploymentId> \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
+    "tenantId": "dev-team",
     "name": "test-airflow",
     "description": "Updated deployment",
+    "airflowVersion": "3.1.8",
+    "executorType": "CELERY",
     "minWorkers": 3,
     "maxWorkers": 8,
-    ...
-  }'
+    "schedulerCpu": "1000m",
+    "schedulerMemory": "2Gi",
+    "workerCpu": "1000m",
+    "workerMemory": "2Gi",
+    "webserverCpu": "500m",
+    "webserverMemory": "1Gi"
+  }' | jq .
 ```
 
 ## Cost Considerations
@@ -365,13 +379,15 @@ aws ec2 describe-security-groups --group-ids <sg-id>
 ### Delete a deployment
 
 ```bash
-curl -X DELETE http://localhost:8080/api/deployments/test-airflow-xxxxx
+curl -s -X DELETE http://localhost:8080/api/v1/deployments/<deploymentId> \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Delete a tenant
 
 ```bash
-curl -X DELETE http://localhost:8080/api/tenants/dev-team
+curl -s -X DELETE http://localhost:8080/api/v1/tenants/<tenantId> \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 This will terminate the EC2 instance.

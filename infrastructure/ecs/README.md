@@ -26,7 +26,7 @@ The deployment consists of:
 - AWS CLI configured with appropriate credentials
 - Terraform (>= 1.0) OR AWS CloudFormation
 - AWS account with appropriate permissions
-- Java 17+ and Maven (for running the control plane)
+- Java 21+ and Maven (for running the control plane)
 
 ## Infrastructure Setup
 
@@ -138,7 +138,7 @@ mvn clean package
 
 2. Run with the ECS profile:
 ```bash
-java -jar target/managed-airflow-control-plane-0.0.1-SNAPSHOT.jar --spring.profiles.active=ecs
+java -jar target/managed-airflow-control-plane-1.0.0-SNAPSHOT.jar --spring.profiles.active=ecs
 ```
 
 Or using Maven:
@@ -150,38 +150,46 @@ mvn spring-boot:run -Dspring-boot.run.profiles=ecs
 
 Once the control plane is running, you can create deployments via the REST API:
 
-1. Create a tenant:
+1. Obtain a JWT and create a tenant (**ADMIN** required for `/api/v1/tenants`):
 ```bash
-curl -X POST http://localhost:8080/api/tenants \
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' | jq -r '.accessToken')
+
+TENANT_JSON=$(curl -s -X POST http://localhost:8080/api/v1/tenants \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
-    "name": "test-tenant",
+    "name": "Test Tenant",
     "email": "test@example.com",
     "organization": "Test Org",
-    "cloudProvider": "aws",
+    "cloudProvider": "AWS",
+    "clusterName": "ecs",
     "region": "us-east-1"
-  }'
+  }')
+TENANT_ID=$(echo "$TENANT_JSON" | jq -r '.tenantId')
 ```
 
-2. Create an Airflow deployment:
+2. Create an Airflow deployment (`deploymentId` is generated from `name`):
 ```bash
-curl -X POST http://localhost:8080/api/deployments \
+curl -s -X POST http://localhost:8080/api/v1/deployments \
   -H "Content-Type: application/json" \
-  -d '{
-    "tenantId": "test-tenant",
-    "name": "test-deployment",
-    "description": "Test ECS deployment",
-    "airflowVersion": "3.1.8",
-    "executorType": "celery",
-    "minWorkers": 1,
-    "maxWorkers": 5,
-    "schedulerCpu": "512",
-    "schedulerMemory": "1024",
-    "workerCpu": "1024",
-    "workerMemory": "2048",
-    "webserverCpu": "512",
-    "webserverMemory": "1024"
-  }'
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{
+    \"tenantId\": \"$TENANT_ID\",
+    \"name\": \"test-deployment\",
+    \"description\": \"Test ECS deployment\",
+    \"airflowVersion\": \"3.1.8\",
+    \"executorType\": \"CELERY\",
+    \"minWorkers\": 1,
+    \"maxWorkers\": 5,
+    \"schedulerCpu\": \"500m\",
+    \"schedulerMemory\": \"1Gi\",
+    \"workerCpu\": \"1000m\",
+    \"workerMemory\": \"2Gi\",
+    \"webserverCpu\": \"500m\",
+    \"webserverMemory\": \"1Gi\"
+  }" | jq .
 ```
 
 ## Features

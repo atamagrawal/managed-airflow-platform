@@ -1,20 +1,20 @@
 # Managed Airflow Platform - Deployment Options
 
-The Managed Airflow Platform supports three deployment options, each optimized for different use cases. This guide will help you choose the right deployment option for your needs.
+The Managed Airflow Platform supports **four** deployment targets: **Local** (Docker Compose on your machine), **AWS EC2**, **AWS ECS (Fargate)**, and **Kubernetes** (Helm). This guide compares the cloud options; for local development, start with [docs/LOCAL_TESTING.md](docs/LOCAL_TESTING.md).
 
 ## Quick Comparison
 
-| Aspect | EC2 + Docker | AWS ECS | Kubernetes |
-|--------|-------------|---------|------------|
-| **Complexity** | ⭐ Simple | ⭐⭐ Moderate | ⭐⭐⭐ Complex |
-| **Setup Time** | 10-15 min | 20-30 min | 45-60 min |
-| **Cost (per tenant)** | ~$35/month | ~$70/month | ~$200/month |
-| **High Availability** | ❌ No | ✅ Yes | ✅ Yes |
-| **Auto-Scaling** | ❌ Manual | ✅ Yes | ✅ Yes |
-| **Best For** | Dev/Test | Test/Staging | Production |
-| **Learning Curve** | Easy | Medium | Steep |
-| **Maintenance** | Low | Low | High |
-| **Cloud Lock-in** | AWS only | AWS only | Multi-cloud |
+| Aspect | Local | EC2 + Docker | AWS ECS | Kubernetes |
+|--------|-------|-------------|---------|------------|
+| **Complexity** | ⭐ Simplest | ⭐ Simple | ⭐⭐ Moderate | ⭐⭐⭐ Complex |
+| **Setup Time** | minutes | 10-15 min | 20-30 min | 45-60 min |
+| **Cost (per tenant)** | Free | ~$35/month | ~$70-140/month | ~$200/month |
+| **High Availability** | ❌ No | ❌ No | ✅ Yes | ✅ Yes |
+| **Auto-Scaling** | ❌ No | ❌ Manual | ✅ Yes | ✅ Yes |
+| **Best For** | Dev / demos | Dev/Test | Test/Staging | Production |
+| **Learning Curve** | Easiest | Easy | Medium | Steep |
+| **Maintenance** | You manage Docker | Low | Low | High |
+| **Cloud Lock-in** | None | AWS only | AWS only | Multi-cloud |
 
 ## Detailed Comparison
 
