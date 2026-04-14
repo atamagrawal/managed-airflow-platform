@@ -340,7 +340,7 @@ Tenant A                          Tenant B
   "memory": "2048", // 2 GB (configurable)
   "containerDefinitions": [{
     "name": "airflow-scheduler",
-    "image": "apache/airflow:3.1.8",
+    "image": "apache/airflow:3.2.0",
     "command": ["scheduler"],
     "environment": [
       // See section 5.6 for full environment variables
@@ -365,7 +365,7 @@ Tenant A                          Tenant B
   "memory": "1024", // 1 GB (configurable)
   "containerDefinitions": [{
     "name": "airflow-webserver",
-    "image": "apache/airflow:3.1.8",
+    "image": "apache/airflow:3.2.0",
     "command": ["webserver"],
     "portMappings": [{"containerPort": 8080}],
     "environment": [
@@ -391,7 +391,7 @@ Tenant A                          Tenant B
   "memory": "2048", // 2 GB (configurable)
   "containerDefinitions": [{
     "name": "airflow-worker",
-    "image": "apache/airflow:3.1.8",
+    "image": "apache/airflow:3.2.0",
     "command": ["celery", "worker"],
     "environment": [
       // See section 5.6 for full environment variables
@@ -645,7 +645,7 @@ POST /api/v1/deployments
   "tenantId": "acme-corp",
   "name": "prod-airflow",
   "description": "Production",
-  "airflowVersion": "3.1.8",
+  "airflowVersion": "3.2.0",
   "executorType": "CELERY",
   "schedulerCpu": "1000m",
   "schedulerMemory": "2Gi",
@@ -725,7 +725,7 @@ PUT /api/v1/deployments/{deploymentId}
   "tenantId": "acme-corp",
   "name": "prod-airflow",
   "description": "Production",
-  "airflowVersion": "3.1.8",
+  "airflowVersion": "3.2.0",
   "executorType": "CELERY",
   "schedulerCpu": "2000m",
   "schedulerMemory": "4Gi",
@@ -1815,7 +1815,7 @@ aws application-autoscaling describe-scalable-targets \
 curl -s -X PUT http://localhost:8080/api/v1/deployments/{deploymentId} \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"tenantId":"acme-corp","name":"prod-airflow","airflowVersion":"3.1.8","executorType":"CELERY","minWorkers":1,"maxWorkers":10,"schedulerCpu":"1000m","schedulerMemory":"2Gi","webserverCpu":"500m","webserverMemory":"1Gi","workerCpu":"1000m","workerMemory":"2Gi"}'
+  -d '{"tenantId":"acme-corp","name":"prod-airflow","airflowVersion":"3.2.0","executorType":"CELERY","minWorkers":1,"maxWorkers":10,"schedulerCpu":"1000m","schedulerMemory":"2Gi","webserverCpu":"500m","webserverMemory":"1Gi","workerCpu":"1000m","workerMemory":"2Gi"}'
 
 # Check IAM permissions
 # Ensure task role has autoscaling permissions

@@ -31,8 +31,8 @@ public class DockerComposeGenerator {
 
     /**
      * Optional override via {@code deployment.compose.airflow-image} or env {@code DEPLOYMENT_COMPOSE_AIRFLOW_IMAGE}.
-     * Example YAML under {@code deployment}: {@code compose.airflow-image: apache/airflow:3.1.8}
-     * Example env: {@code DEPLOYMENT_COMPOSE_AIRFLOW_IMAGE=apache/airflow:3.1.8}
+     * Example YAML under {@code deployment}: {@code compose.airflow-image: apache/airflow:3.2.0}
+     * Example env: {@code DEPLOYMENT_COMPOSE_AIRFLOW_IMAGE=apache/airflow:3.2.0}
      * When unset, blank, or whitespace, generated compose uses {@code apache/airflow:{deployment.airflowVersion}}.
      * The same value is used as the {@code FROM} image for the default Dockerfile on newly created projects.
      */

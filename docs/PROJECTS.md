@@ -56,7 +56,7 @@ my-airflow-project/
 3. Fill in the project details:
    - **Name**: A unique identifier for your project (e.g., `my-data-project`)
    - **Description**: Optional description of your project
-   - **Airflow Version**: Must be a **supported** control-plane version (currently **3.1.8**)
+   - **Airflow Version**: Must be a **supported** control-plane version (currently **3.2.0**)
    - **Owner**: Project owner name
    - **Tags**: Comma-separated tags for organization
 
@@ -80,10 +80,10 @@ curl -s -X POST http://localhost:8080/api/v1/projects \
   -d '{
     "name": "my-data-project",
     "description": "Production data pipelines",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "requirementsTxt": "pandas==2.0.0\nrequests==2.31.0\nsqlalchemy==2.0.0",
     "packagesTxt": "gcc\nlibpq-dev\nunixodbc-dev",
-    "dockerfile": "FROM apache/airflow:3.1.8\n\nCOPY requirements.txt /requirements.txt\nRUN pip install --no-cache-dir -r /requirements.txt\n\nCOPY . /opt/airflow/",
+    "dockerfile": "FROM apache/airflow:3.2.0\n\nCOPY requirements.txt /requirements.txt\nRUN pip install --no-cache-dir -r /requirements.txt\n\nCOPY . /opt/airflow/",
     "airflowIgnore": "__pycache__/\n*.pyc\nvenv/\ntests/",
     "owner": "data-team",
     "tags": "production,etl"
@@ -224,7 +224,7 @@ git
 Customize the Docker image for your project:
 
 ```dockerfile
-FROM apache/airflow:3.1.8
+FROM apache/airflow:3.2.0
 
 # Install system packages
 USER root
@@ -579,7 +579,7 @@ CREATE=$(curl -s -X POST http://localhost:8080/api/v1/projects \
     "name": "simple-etl",
     "description": "Simple ETL pipeline",
     "requirementsTxt": "pandas==2.0.0\nsqlalchemy==2.0.0",
-    "airflowVersion": "3.1.8"
+    "airflowVersion": "3.2.0"
   }')
 echo "$CREATE" | jq .
 PROJECT_ID=$(echo "$CREATE" | jq -r '.projectId')

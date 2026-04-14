@@ -188,7 +188,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
     "tenantId": "dev-team",
     "name": "test-airflow",
     "description": "Test Airflow deployment on EC2",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "CELERY",
     "minWorkers": 2,
     "maxWorkers": 5,
@@ -266,7 +266,7 @@ curl -s -X PUT http://localhost:8080/api/v1/deployments/<deploymentId> \
     "tenantId": "dev-team",
     "name": "test-airflow",
     "description": "Updated deployment",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "CELERY",
     "minWorkers": 3,
     "maxWorkers": 8,
@@ -424,7 +424,7 @@ aws cloudformation delete-stack --stack-name managed-airflow-ec2-infra
 
 Build custom Airflow image:
 ```dockerfile
-FROM apache/airflow:3.1.8
+FROM apache/airflow:3.2.0
 RUN pip install your-custom-package
 ```
 

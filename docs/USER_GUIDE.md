@@ -207,7 +207,7 @@ Deployments are Apache Airflow instances. The deployment process differs slightl
 - **Description** - Brief description (optional)
 
 ##### Airflow Configuration
-- **Airflow Version** - Version to deploy (e.g., "3.1.8")
+- **Airflow Version** - Version to deploy (e.g., "3.2.0")
 - **Executor Type** - Choose the executor:
   - **LOCAL** - Simple, runs tasks in scheduler process (dev/test)
   - **CELERY** - Distributed, recommended for production
@@ -241,7 +241,7 @@ Deployments are Apache Airflow instances. The deployment process differs slightl
 
 Use a JWT from `POST /api/v1/auth/login` on every call below (`Authorization: Bearer …`). Non-admin users may only create deployments for their own `tenantId`.
 
-**`deploymentId` is generated** from the human-readable `name` (with a short random suffix). Only **supported Airflow versions** (today: **3.1.8**) are accepted.
+**`deploymentId` is generated** from the human-readable `name` (with a short random suffix). Only **supported Airflow versions** (today: **3.2.0**) are accepted.
 
 **Local example:**
 ```bash
@@ -252,7 +252,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
     "tenantId": "my-company",
     "name": "Local Development",
     "description": "Local development environment",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "LOCAL",
     "schedulerCpu": "500m",
     "schedulerMemory": "1Gi",
@@ -271,7 +271,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
   "deploymentId": "local-development-a1b2c3d4",
   "tenantId": "my-company",
   "status": "DEPLOYING",
-  "airflowVersion": "3.1.8",
+  "airflowVersion": "3.2.0",
   "webserverUrl": "http://localhost:8093"
 }
 ```
@@ -285,7 +285,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
     "tenantId": "data-team",
     "name": "Production ETL",
     "description": "Main production ETL pipeline",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "CELERY",
     "schedulerCpu": "1000m",
     "schedulerMemory": "2Gi",
@@ -308,7 +308,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
     "tenantId": "data-team",
     "name": "Staging ETL",
     "description": "Staging environment",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "CELERY",
     "schedulerCpu": "500m",
     "schedulerMemory": "1Gi",
@@ -330,7 +330,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
     "tenantId": "data-team",
     "name": "Development ETL",
     "description": "Development environment",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "LOCAL",
     "schedulerCpu": "1000m",
     "schedulerMemory": "2Gi",
@@ -401,7 +401,7 @@ curl -s -X PUT http://localhost:8080/api/v1/deployments/{deploymentId} \
     "tenantId": "data-team",
     "name": "Production ETL",
     "description": "Updated description",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "CELERY",
     "minWorkers": 3,
     "maxWorkers": 15,
@@ -1166,7 +1166,7 @@ GET /api/v1/projects
 POST /api/v1/projects
 Content-Type: application/json
 
-{ "name": "My Project", "description": "ETL", "airflowVersion": "3.1.8" }
+{ "name": "My Project", "description": "ETL", "airflowVersion": "3.2.0" }
 ```
 
 **Add DAG file to project:**
@@ -1227,7 +1227,7 @@ DEPLOYMENT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/deployments \
     \"tenantId\": \"$TENANT_ID\",
     \"name\": \"My Airflow Instance\",
     \"description\": \"Demo stack\",
-    \"airflowVersion\": \"3.1.8\",
+    \"airflowVersion\": \"3.2.0\",
     \"executorType\": \"CELERY\",
     \"minWorkers\": 1,
     \"maxWorkers\": 5,
@@ -1255,7 +1255,7 @@ done
 PROJECT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/projects \
   -H "Content-Type: application/json" \
   -H "$AUTH" \
-  -d '{"name":"Demo","description":"Example","airflowVersion":"3.1.8"}')
+  -d '{"name":"Demo","description":"Example","airflowVersion":"3.2.0"}')
 echo "Project created: $PROJECT_RESPONSE"
 PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r '.projectId')
 
@@ -1311,7 +1311,7 @@ DEPLOYMENT_RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/deployments \
     \"tenantId\": \"$TENANT_ID\",
     \"name\": \"My Airflow Instance\",
     \"description\": \"Demo stack\",
-    \"airflowVersion\": \"3.1.8\",
+    \"airflowVersion\": \"3.2.0\",
     \"executorType\": \"CELERY\",
     \"minWorkers\": 1,
     \"maxWorkers\": 5,
