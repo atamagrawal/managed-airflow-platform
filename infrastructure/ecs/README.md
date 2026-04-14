@@ -179,7 +179,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
     \"tenantId\": \"$TENANT_ID\",
     \"name\": \"test-deployment\",
     \"description\": \"Test ECS deployment\",
-    \"airflowVersion\": \"3.1.8\",
+    \"airflowVersion\": \"3.2.0\",
     \"executorType\": \"CELERY\",
     \"minWorkers\": 1,
     \"maxWorkers\": 5,

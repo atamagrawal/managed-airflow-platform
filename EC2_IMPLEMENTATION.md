@@ -247,7 +247,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
     \"tenantId\": \"$TENANT_ID\",
     \"name\": \"dev-airflow\",
     \"description\": \"EC2 dev\",
-    \"airflowVersion\": \"3.1.8\",
+    \"airflowVersion\": \"3.2.0\",
     \"executorType\": \"CELERY\",
     \"minWorkers\": 2,
     \"maxWorkers\": 5

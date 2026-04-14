@@ -258,7 +258,7 @@ curl -X POST http://localhost:8080/api/v1/deployments \
     "tenantId": "<tenantId-from-create-tenant-response>",
     "name": "Production ETL",
     "description": "Main production stack",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "CELERY",
     "minWorkers": 1,
     "maxWorkers": 5,
@@ -293,7 +293,7 @@ curl -X POST http://localhost:8080/api/v1/projects \
   -d '{
     "name": "my-data-project",
     "description": "Production data pipelines",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "requirementsTxt": "pandas==2.0.0\nrequests==2.31.0",
     "packagesTxt": "gcc\nlibpq-dev",
     "owner": "data-team",
@@ -515,7 +515,7 @@ managed-airflow-platform/
 - **AWS Systems Manager** - Remote management (SSH-free)
 
 **Common:**
-- **Apache Airflow 3.1.8** - Workflow orchestration (only versions listed in `SupportedAirflowVersions` are accepted)
+- **Apache Airflow 3.2.0** - Workflow orchestration (only versions listed in `SupportedAirflowVersions` are accepted)
 - **PostgreSQL 15** - Metadata database (Docker Compose `docker-compose.yml` profile `prod`)
 - **Redis 7** - Celery message broker
 - **Terraform** - Infrastructure as Code

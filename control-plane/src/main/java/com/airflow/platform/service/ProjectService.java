@@ -167,7 +167,7 @@ public class ProjectService {
         project.setEnvFile(request.getEnvFile());
         project.setGitRepository(request.getGitRepository());
         project.setGitBranch(request.getGitBranch());
-        project.setAirflowVersion(request.getAirflowVersion() != null ? request.getAirflowVersion() : "3.1.8");
+        project.setAirflowVersion(request.getAirflowVersion() != null ? request.getAirflowVersion() : "3.2.0");
         project.setOwner(request.getOwner());
         project.setTags(request.getTags());
         project.setDagCount(0);
@@ -799,7 +799,7 @@ public class ProjectService {
         if (StringUtils.hasText(composeAirflowImage)) {
             baseImage = composeAirflowImage.trim();
         } else {
-            String version = airflowVersion != null ? airflowVersion : "3.1.8";
+            String version = airflowVersion != null ? airflowVersion : "3.2.0";
             baseImage = "apache/airflow:" + version;
         }
         return """

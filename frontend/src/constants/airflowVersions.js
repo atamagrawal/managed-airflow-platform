@@ -2,7 +2,7 @@
  * Apache Airflow versions users may choose in the UI.
  * Extend this list as the platform adds and tests additional releases.
  */
-export const SUPPORTED_AIRFLOW_VERSIONS = [{ value: '3.1.8', label: '3.1.8' }];
+export const SUPPORTED_AIRFLOW_VERSIONS = [{ value: '3.2.0', label: '3.2.0' }];
 
 export const DEFAULT_AIRFLOW_VERSION = SUPPORTED_AIRFLOW_VERSIONS[0].value;
 

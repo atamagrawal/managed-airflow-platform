@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
  */
 public final class SupportedAirflowVersions {
 
-    private static final Set<String> ALLOWED = Set.of("3.1.8");
+    private static final Set<String> ALLOWED = Set.of("3.2.0");
 
     private SupportedAirflowVersions() {
     }

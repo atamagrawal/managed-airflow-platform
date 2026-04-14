@@ -45,7 +45,7 @@ public class LocalDeploymentBootstrap {
     @Value("${bootstrap.default-deployment.description:Auto-created for local development}")
     private String defaultDeploymentDescription;
 
-    @Value("${bootstrap.default-deployment.airflow-version:3.1.8}")
+    @Value("${bootstrap.default-deployment.airflow-version:3.2.0}")
     private String defaultAirflowVersion;
 
     @Value("${bootstrap.default-deployment.executor-type:LOCAL}")

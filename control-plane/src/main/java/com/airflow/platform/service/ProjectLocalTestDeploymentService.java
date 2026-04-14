@@ -39,7 +39,7 @@ public class ProjectLocalTestDeploymentService {
     @Value("${local.test-deployment.description:On-demand test environment for Flow Deck IDE}")
     private String testDeploymentDescription;
 
-    @Value("${local.test-deployment.airflow-version:3.1.8}")
+    @Value("${local.test-deployment.airflow-version:3.2.0}")
     private String testAirflowVersion;
 
     @Value("${local.test-deployment.executor-type:LOCAL}")

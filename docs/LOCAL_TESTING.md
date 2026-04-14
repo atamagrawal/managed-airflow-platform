@@ -316,7 +316,7 @@ curl -s -X POST http://localhost:8080/api/v1/tenants \
    - **Tenant**: Select `my-company` from dropdown
    - **Deployment Name**: `my-airflow-dev`
    - **Description**: (optional) `Development Airflow instance`
-   - **Airflow Version**: `3.1.8` (default)
+   - **Airflow Version**: `3.2.0` (default)
    - **Executor Type**: `LOCAL` (recommended for local testing)
    - **Worker Autoscaling**: Min: `1`, Max: `3`
    - **Resource allocations**: Use default values or customize
@@ -338,7 +338,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
     "name": "my-airflow-dev",
     "tenantId": "my-company",
     "description": "Local dev stack",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "LOCAL",
     "webserverCpu": "500m",
     "webserverMemory": "1Gi",
@@ -357,7 +357,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
   "deploymentId": "my-airflow-dev-a1b2c3d4",
   "tenantId": "my-company",
   "status": "DEPLOYING",
-  "airflowVersion": "3.1.8",
+  "airflowVersion": "3.2.0",
   "webserverUrl": "http://localhost:8093"
 }
 ```
@@ -467,7 +467,7 @@ curl -s -X PUT http://localhost:8080/api/v1/deployments/{deployment-id} \
     "tenantId": "my-company",
     "name": "my-airflow-dev",
     "description": "Bigger webserver",
-    "airflowVersion": "3.1.8",
+    "airflowVersion": "3.2.0",
     "executorType": "LOCAL",
     "webserverMemory": "2Gi",
     "webserverCpu": "500m",
@@ -648,7 +648,7 @@ docker-compose restart airflow-scheduler airflow-worker
 For permanent installation, create a custom Dockerfile:
 
 ```dockerfile
-FROM apache/airflow:3.1.8
+FROM apache/airflow:3.2.0
 RUN pip install --no-cache-dir pandas numpy scikit-learn
 ```
 
@@ -686,7 +686,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
   -d '{
   "name": "dev-airflow-one",
   "tenantId": "my-company",
-  "airflowVersion": "3.1.8",
+  "airflowVersion": "3.2.0",
   "executorType": "LOCAL"
 }' | jq .
 
@@ -696,7 +696,7 @@ curl -s -X POST http://localhost:8080/api/v1/deployments \
   -d '{
   "name": "dev-airflow-two",
   "tenantId": "my-company",
-  "airflowVersion": "3.1.8",
+  "airflowVersion": "3.2.0",
   "executorType": "LOCAL"
 }' | jq .
 ```

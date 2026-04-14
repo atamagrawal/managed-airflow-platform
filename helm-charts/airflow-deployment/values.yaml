@@ -3,7 +3,7 @@
 # https://airflow.apache.org/docs/helm-chart/stable/index.html
 
 airflow:
-  airflowVersion: "3.1.8"
+  airflowVersion: "3.2.0"
 
   executor: "CeleryExecutor"
 
