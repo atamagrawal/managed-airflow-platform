@@ -153,6 +153,8 @@ public class DockerComposeGenerator {
         compose.append("        mkdir -p /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins /opt/airflow/config /opt/airflow/contracts\n");
         compose.append("        chown -R 50000:0 /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins /opt/airflow/config /opt/airflow/contracts\n");
         compose.append("        /entrypoint airflow db migrate\n");
+        // Align FAB roles in the DB with Airflow code (Viewer/User include can_read on Plugins for /api/v2/plugins — plugin UI tabs).
+        compose.append("        /entrypoint airflow sync-perm || true\n");
         compose.append("        /entrypoint airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com "
                     + "--password admin || true\n");
         compose.append("        if [ -f /opt/airflow/airflow_settings.yaml ]; then\n");

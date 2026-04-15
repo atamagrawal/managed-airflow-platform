@@ -43,6 +43,13 @@ public class LocalDeploymentProvider implements DeploymentProvider {
 
     private static final String BUILD_INPUTS_STAMP = ".managed-airflow-build-inputs.sha256";
 
+    /**
+     * Written after a successful {@code airflow sync-perm} so we do not cold-start Airflow on every user sync.
+     * Bump the suffix if FAB default roles change again and existing deployments must re-sync.
+     */
+    /** Bump when default FAB role definitions change so {@code airflow sync-perm} runs again for existing stacks. */
+    private static final String FAB_SYNC_PERM_MARKER = ".managed-airflow-fab-sync-perm-v2";
+
     /** Multi-line stamp; first line must match for {@link #readBuildInputsStamp(Path)}. */
     private static final String BUILD_INPUTS_STAMP_HEADER = "# map-build-inputs-v2";
 
@@ -675,6 +682,53 @@ public class LocalDeploymentProvider implements DeploymentProvider {
     }
 
     /**
+     * Runs {@code airflow sync-perm} once per deployment directory so FAB default roles (Viewer/User/…)
+     * match Airflow code — including {@code can_read} on {@code Plugins} for {@code GET /api/v2/plugins}
+     * (plugin tabs in the UI). Without this, stacks created before a provider upgrade can have stale role rows.
+     */
+    private void ensureFabDefaultRolePermissionsOnce(AirflowDeployment deployment, String deploymentDir) {
+        Path marker = Paths.get(deploymentDir, FAB_SYNC_PERM_MARKER);
+        if (Files.exists(marker)) {
+            return;
+        }
+        try {
+            composeExec(deploymentDir, "airflow-apiserver", false, "airflow", "sync-perm");
+            Files.createFile(marker);
+            log.info("FAB sync-perm applied for deployment {} (marker {})", deployment.getDeploymentId(), marker);
+        } catch (Exception e) {
+            log.warn(
+                    "FAB sync-perm failed for {} (plugin tabs may be missing until sync succeeds): {}",
+                    deployment.getDeploymentId(),
+                    e.getMessage());
+        }
+    }
+
+    /**
+     * {@code GET /api/v2/plugins} requires {@code can_read} on FAB resource {@code Plugins}. Platform users use role
+     * {@code User}; {@code sync-perm} or a stale marker can leave that permission missing. This CLI call is idempotent.
+     */
+    private void ensureFabRolesCanReadPlugins(String deploymentDir) {
+        try {
+            composeExec(
+                    deploymentDir,
+                    "airflow-apiserver",
+                    true,
+                    "airflow",
+                    "roles",
+                    "add-perms",
+                    "User",
+                    "Viewer",
+                    "Op",
+                    "-r",
+                    "Plugins",
+                    "-a",
+                    "can_read");
+        } catch (Exception e) {
+            log.warn("FAB roles add-perms (Plugins can_read) failed: {}", e.getMessage());
+        }
+    }
+
+    /**
      * Ensures a FAB user exists on this deployment with the same username/password as the platform account.
      * Safe to call when the stack is running; no-op if compose is missing.
      * <p>
@@ -692,6 +746,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             log.debug("Skipping FAB user sync for {}: no compose file", deployment.getDeploymentId());
             return;
         }
+        ensureFabDefaultRolePermissionsOnce(deployment, deploymentDir);
         try {
             composeExec(deploymentDir, "airflow-apiserver", false, buildExecArgs(
                     "airflow", "users", "create",
@@ -715,6 +770,8 @@ public class LocalDeploymentProvider implements DeploymentProvider {
             }
         } catch (Exception e) {
             log.warn("Could not sync user {} to deployment {}: {}", username, deployment.getDeploymentId(), e.getMessage());
+        } finally {
+            ensureFabRolesCanReadPlugins(deploymentDir);
         }
     }
 
