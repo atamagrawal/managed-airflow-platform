@@ -15,6 +15,17 @@ Local docker-compose runs `airflow connections add` during airflow-init.
 The template also ships airflow_settings.yaml on the project so this connection definition is visible
 and can be re-imported if needed.
 
+UAPE provider demo DAG
+----------------------
+`dags/demo_uape_provider_example.py` is included as a lightweight example for the UAPE provider.
+It is intentionally structured with:
+  - clear tasks (`EmptyOperator`) that UAPE can recommend for overlap, and
+  - one opaque task (`BashOperator`) where UAPE abstains.
+
+After syncing and triggering once, run:
+  - airflow uape independence-report demo_uape_provider_example
+  - airflow uape export demo_uape_provider_example --format json
+
 Placeholders in any template file: ${projectId}, ${projectName}
 
 Config: project.default-template.templates + active in application.yml. Optional extra-requirements.txt per template folder.
