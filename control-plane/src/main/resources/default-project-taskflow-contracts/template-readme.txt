@@ -7,6 +7,10 @@ example/aip-07/minimal_decorators in the Airflow repo:
   contract_validate_task, contract_publish_task, contract_ready + contract_breach_guard_task,
   contract_trigger_user_guard_task.
 
+Also includes:
+  demo_uape_provider_taskflow.py — UAPE provider example DAG with clear and opaque branches
+  so `airflow uape independence-report` shows both overlap hints and conservative abstentions.
+
 Placeholders: ${projectId}, ${projectName}
 
 extra-requirements.txt at this root is merged into new projects' requirements.txt by the template seeder.
