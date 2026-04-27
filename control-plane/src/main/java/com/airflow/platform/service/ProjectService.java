@@ -33,6 +33,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -61,6 +63,9 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class ProjectService {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final TypeReference<List<DeploymentCreateRequest.WorkerQueueConfig>> WORKER_QUEUE_LIST_TYPE =
+            new TypeReference<>() {};
 
     private final ProjectRepository projectRepository;
     private final ProjectFileRepository projectFileRepository;
@@ -516,7 +521,7 @@ public class ProjectService {
     }
 
     @Transactional
-    public Map<String, Object> triggerProject(String projectId, String deploymentId, String fileName) {
+    public Map<String, Object> triggerProject(String projectId, String deploymentId, String fileName, String workerQueue) {
         log.info("Triggering project DAG runs: {} on deployment {}", projectId, deploymentId);
 
         Project project = requireAccessibleProject(projectId);
@@ -570,6 +575,15 @@ public class ProjectService {
         int successCount = 0;
         List<Map<String, Object>> results = new java.util.ArrayList<>();
 
+        String requestedWorkerQueue = normalizeWorkerQueue(workerQueue);
+        if (requestedWorkerQueue != null) {
+            List<String> allowedQueues = extractConfiguredWorkerQueueNames(deployment);
+            if (!allowedQueues.isEmpty() && allowedQueues.stream().noneMatch(q -> q.equalsIgnoreCase(requestedWorkerQueue))) {
+                throw new DeploymentException(
+                        "Worker queue '" + requestedWorkerQueue + "' is not configured on deployment " + deploymentId);
+            }
+        }
+
         for (ProjectFile dagFile : dagFiles) {
             Map<String, Object> entry = new HashMap<>();
             entry.put("fileName", dagFile.getFileName());
@@ -585,10 +599,15 @@ public class ProjectService {
 
             try {
                 ResponseEntity<Map<String, Object>> response =
-                        postTriggerDagRun(baseUrl, airflowDagId, airflowVersion, buildManagedPlatformTriggerConf(project));
+                        postTriggerDagRun(
+                                baseUrl,
+                                airflowDagId,
+                                airflowVersion,
+                                buildManagedPlatformTriggerConf(project, requestedWorkerQueue));
                 entry.put("success", true);
                 entry.put("airflowDagId", airflowDagId);
                 entry.put("response", response.getBody());
+                entry.put("requestedWorkerQueue", requestedWorkerQueue);
                 successCount++;
             } catch (Exception e) {
                 log.error("Failed to trigger DAG {} (airflowVersion={}): {}",
@@ -606,6 +625,7 @@ public class ProjectService {
         summary.put("projectId", projectId);
         summary.put("deploymentId", deploymentId);
         summary.put("requestedFileName", (fileName == null || fileName.isBlank()) ? null : fileName);
+        summary.put("requestedWorkerQueue", requestedWorkerQueue);
         summary.put("totalDagFiles", dagFiles.size());
         summary.put("triggeredCount", successCount);
         summary.put("failedCount", dagFiles.size() - successCount);
@@ -915,16 +935,49 @@ public class ProjectService {
      * from REST auth (normally the logged-in Flow Deck user when {@code airflow.api.use-logged-in-user-for-dag-triggers}
      * is true and a bootstrap password exists).
      */
-    private Map<String, Object> buildManagedPlatformTriggerConf(Project project) {
+    private Map<String, Object> buildManagedPlatformTriggerConf(Project project, String workerQueue) {
         Map<String, Object> managed = new HashMap<>();
         managed.put(
                 "triggered_by_username",
                 SecurityUtils.getCurrentUsername().orElse("unknown"));
         managed.put("tenant_id", project.getTenant() != null ? project.getTenant().getTenantId() : null);
         managed.put("is_platform_admin", SecurityUtils.isAdmin());
+        if (workerQueue != null) {
+            managed.put("target_worker_queue", workerQueue);
+        }
         Map<String, Object> conf = new HashMap<>();
         conf.put("managed_platform", managed);
         return conf;
+    }
+
+    private String normalizeWorkerQueue(String workerQueue) {
+        if (!StringUtils.hasText(workerQueue)) {
+            return null;
+        }
+        String normalized = workerQueue.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private List<String> extractConfiguredWorkerQueueNames(AirflowDeployment deployment) {
+        if (!StringUtils.hasText(deployment.getWorkerQueues())) {
+            return List.of();
+        }
+        try {
+            List<DeploymentCreateRequest.WorkerQueueConfig> parsed =
+                    OBJECT_MAPPER.readValue(deployment.getWorkerQueues(), WORKER_QUEUE_LIST_TYPE);
+            if (parsed == null || parsed.isEmpty()) {
+                return List.of();
+            }
+            return parsed.stream()
+                    .map(DeploymentCreateRequest.WorkerQueueConfig::getName)
+                    .filter(StringUtils::hasText)
+                    .map(String::trim)
+                    .distinct()
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.warn("Invalid workerQueues config on deployment {}: {}", deployment.getDeploymentId(), e.getMessage());
+            return List.of();
+        }
     }
 
     private ResponseEntity<Map<String, Object>> postTriggerDagRun(

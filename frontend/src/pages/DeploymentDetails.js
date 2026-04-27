@@ -131,6 +131,19 @@ const DeploymentDetails = () => {
         <Descriptions column={2} bordered>
           <Descriptions.Item label="Min Workers">{deployment.minWorkers}</Descriptions.Item>
           <Descriptions.Item label="Max Workers">{deployment.maxWorkers}</Descriptions.Item>
+          <Descriptions.Item label="Worker Queues" span={2}>
+            {Array.isArray(deployment.workerQueues) && deployment.workerQueues.length > 0 ? (
+              <Space wrap>
+                {deployment.workerQueues.map((queue, index) => (
+                  <Tag key={`${queue.name || 'queue'}-${index}`}>
+                    {(queue?.name || 'queue').trim()} ({queue?.workers || 1})
+                  </Tag>
+                ))}
+              </Space>
+            ) : (
+              'Default queue'
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="Scheduler CPU">
             {deployment.schedulerCpu} {deployment.schedulerCpu && !deployment.schedulerCpu.includes('m') ? 'millicores' : ''}
           </Descriptions.Item>

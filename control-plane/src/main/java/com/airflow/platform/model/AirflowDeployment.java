@@ -91,6 +91,9 @@ public class AirflowDeployment {
     @Column(columnDefinition = "TEXT")
     private String customConfig; // JSON or YAML for additional configurations
 
+    @Column(columnDefinition = "TEXT")
+    private String workerQueues; // JSON array: [{ "name": "...", "workers": 1 }]
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

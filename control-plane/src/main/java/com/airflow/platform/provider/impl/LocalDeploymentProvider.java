@@ -667,6 +667,12 @@ public class LocalDeploymentProvider implements DeploymentProvider {
 
         try {
             String deploymentDir = getDeploymentDirectory(deployment);
+            List<String> workerServices = composeGenerator.getCeleryWorkerServiceNames(deployment);
+            if (workerServices.size() != 1 || !"airflow-worker".equals(workerServices.get(0))) {
+                log.info("Skipping dynamic scale for {}: deployment uses queue-specific worker services {}",
+                        deployment.getDeploymentId(), workerServices);
+                return;
+            }
             executeDockerCompose(deploymentDir, "up", "-d", "--scale", "airflow-worker=" + minWorkers);
 
             log.info("Scaled successfully to {} workers", minWorkers);
@@ -889,7 +895,7 @@ public class LocalDeploymentProvider implements DeploymentProvider {
         services.add("airflow-scheduler");
         services.add("airflow-dag-processor");
         if (executorNeedsRedis(deployment)) {
-            services.add("airflow-worker");
+            services.addAll(composeGenerator.getCeleryWorkerServiceNames(deployment));
             services.add("airflow-flower");
         }
         List<String> cmd = new ArrayList<>();

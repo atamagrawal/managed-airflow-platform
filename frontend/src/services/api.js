@@ -173,9 +173,13 @@ export const projectAPI = {
       params: { deploymentId },
       timeout: LONG_REQUEST_MS,
     }),
-  trigger: (projectId, deploymentId, fileName) =>
+  trigger: (projectId, deploymentId, fileName, workerQueue) =>
     api.post(`/projects/${projectId}/trigger`, null, {
-      params: fileName ? { deploymentId, fileName } : { deploymentId },
+      params: {
+        deploymentId,
+        ...(fileName ? { fileName } : {}),
+        ...(workerQueue ? { workerQueue } : {}),
+      },
     }),
   getFiles: (projectId) => api.get(`/projects/${projectId}/files`),
   addFile: (projectId, data) => api.post(`/projects/${projectId}/files`, data),

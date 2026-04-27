@@ -102,10 +102,12 @@ const DeployedProjects = () => {
           deploymentId = await pickDeploymentId(`Trigger — ${projectName}`, resolved.options);
         }
       }
+      const selectedDeploymentRecord = deployments.find((d) => d.deploymentId === deploymentId) || null;
       await triggerProjectWithDagSelection({
         projectId,
         projectName,
         deploymentId,
+        deployment: selectedDeploymentRecord,
         onAwaitingUserChoice: () => setTriggeringProjectId(null),
         onTriggerStart: () => setTriggeringProjectId(projectId),
       });

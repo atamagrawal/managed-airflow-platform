@@ -100,11 +100,13 @@ const ProjectDetails = () => {
       if (resolved.needsPicker) {
         deploymentId = await pickDeploymentId(`Trigger DAGs — ${project?.name}`, resolved.options);
       }
+      const selectedDeployment = deployments.find((d) => d.deploymentId === deploymentId) || null;
       setTriggerLoading(true);
       await triggerProjectWithDagSelection({
         projectId,
         projectName: project?.name,
         deploymentId,
+        deployment: selectedDeployment,
         files,
         onAwaitingUserChoice: () => setTriggerLoading(false),
         onTriggerStart: () => setTriggerLoading(true),

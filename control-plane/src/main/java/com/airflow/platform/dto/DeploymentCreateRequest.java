@@ -3,7 +3,11 @@ package com.airflow.platform.dto;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import lombok.Data;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * DTO for creating a new Airflow deployment
@@ -45,10 +49,23 @@ public class DeploymentCreateRequest {
 
     private String ingressHost;
     private String customConfig;
+    @Valid
+    @Size(max = 20, message = "Worker queues must not exceed 20 entries")
+    private List<WorkerQueueConfig> workerQueues = new ArrayList<>();
 
     /**
      * When {@code true} and {@code deployment.provider} is {@code local}, only writes compose artifacts — no
      * {@code docker compose up}. When {@code null}, {@code local.auto-start-docker-on-create} applies.
      */
     private Boolean deferDockerStart;
+
+    @Data
+    public static class WorkerQueueConfig {
+        @NotBlank(message = "Worker queue name is required")
+        @Size(max = 100, message = "Worker queue name must not exceed 100 characters")
+        private String name;
+
+        @Min(value = 1, message = "Worker queue worker count must be at least 1")
+        private Integer workers = 1;
+    }
 }
