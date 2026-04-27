@@ -3,6 +3,8 @@ package com.airflow.platform.service;
 import com.airflow.platform.dto.DeploymentCreateRequest;
 import com.airflow.platform.dto.DeploymentResponse;
 import com.airflow.platform.config.SupportedAirflowVersions;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.airflow.platform.exception.DeploymentException;
 import com.airflow.platform.exception.ResourceNotFoundException;
 import com.airflow.platform.model.AirflowDeployment;
@@ -23,6 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -35,6 +38,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class AirflowDeploymentService {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final AirflowDeploymentRepository deploymentRepository;
     private final TenantService tenantService;
@@ -99,6 +103,7 @@ public class AirflowDeploymentService {
         deployment.setWebserverMemory(request.getWebserverMemory());
         deployment.setIngressHost(request.getIngressHost());
         deployment.setCustomConfig(request.getCustomConfig());
+        deployment.setWorkerQueues(serializeWorkerQueues(request.getWorkerQueues()));
 
         deployment = deploymentRepository.save(deployment);
 
@@ -281,6 +286,7 @@ public class AirflowDeploymentService {
         deployment.setWebserverCpu(request.getWebserverCpu());
         deployment.setWebserverMemory(request.getWebserverMemory());
         deployment.setCustomConfig(request.getCustomConfig());
+        deployment.setWorkerQueues(serializeWorkerQueues(request.getWorkerQueues()));
         deployment.setStatus(AirflowDeployment.DeploymentStatus.UPDATING);
 
         deployment = deploymentRepository.save(deployment);
@@ -334,6 +340,31 @@ public class AirflowDeploymentService {
         }
 
         return deploymentId;
+    }
+
+    private String serializeWorkerQueues(List<DeploymentCreateRequest.WorkerQueueConfig> workerQueues) {
+        if (workerQueues == null || workerQueues.isEmpty()) {
+            return null;
+        }
+        List<DeploymentCreateRequest.WorkerQueueConfig> normalized = new ArrayList<>();
+        for (DeploymentCreateRequest.WorkerQueueConfig queue : workerQueues) {
+            if (queue == null || !StringUtils.hasText(queue.getName())) {
+                continue;
+            }
+            DeploymentCreateRequest.WorkerQueueConfig cleaned = new DeploymentCreateRequest.WorkerQueueConfig();
+            cleaned.setName(queue.getName().trim());
+            Integer workers = queue.getWorkers();
+            cleaned.setWorkers(workers == null || workers < 1 ? 1 : workers);
+            normalized.add(cleaned);
+        }
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.writeValueAsString(normalized);
+        } catch (JsonProcessingException e) {
+            throw new DeploymentException("Invalid worker queues configuration: " + e.getMessage(), e);
+        }
     }
 
 }

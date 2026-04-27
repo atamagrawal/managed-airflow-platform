@@ -249,6 +249,16 @@ spring:
 | Metrics | Basic | CloudWatch | Prometheus |
 | Backup/Restore | Manual | Manual | Various |
 
+### Task Queue Routing (Flow Deck)
+
+- Queue names in Flow Deck are treated as standard Airflow task queue routing labels.
+- Current implementation:
+  - Local Docker Compose: queue names map to queue-specific Celery worker services.
+  - Trigger flow: optional queue selection is passed in DAG run `conf` under `managed_platform.target_worker_queue`.
+- Provider mapping model:
+  - ECS/Kubernetes providers can reuse the same queue names and map them to provider-native worker capacity/routing.
+  - This keeps queue intent stable across providers even when runtime mechanics differ.
+
 ### Operational Features
 
 | Feature | EC2 | ECS | K8s |

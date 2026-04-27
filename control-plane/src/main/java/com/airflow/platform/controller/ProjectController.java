@@ -104,8 +104,9 @@ public class ProjectController {
     public ResponseEntity<Map<String, Object>> triggerProject(
             @PathVariable String projectId,
             @RequestParam String deploymentId,
-            @RequestParam(required = false) String fileName) {
-        Map<String, Object> response = projectService.triggerProject(projectId, deploymentId, fileName);
+            @RequestParam(required = false) String fileName,
+            @RequestParam(required = false) String workerQueue) {
+        Map<String, Object> response = projectService.triggerProject(projectId, deploymentId, fileName, workerQueue);
         return ResponseEntity.ok(response);
     }
 

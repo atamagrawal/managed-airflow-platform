@@ -16,12 +16,13 @@ async function resolveDagFiles(projectId, existingFiles) {
 }
 
 export function showTriggerResult(response, projectName) {
-  const { triggeredCount, failedCount, totalDagFiles, results } = response.data;
+  const { triggeredCount, failedCount, totalDagFiles, results, requestedWorkerQueue } = response.data;
+  const queueSuffix = requestedWorkerQueue ? ` on queue "${requestedWorkerQueue}"` : '';
   if (triggeredCount > 0) {
     message.success(
       projectName
-        ? `"${projectName}": triggered ${triggeredCount}/${totalDagFiles} DAG run(s)`
-        : `Triggered ${triggeredCount}/${totalDagFiles} DAG run(s) successfully`
+        ? `"${projectName}": triggered ${triggeredCount}/${totalDagFiles} DAG run(s)${queueSuffix}`
+        : `Triggered ${triggeredCount}/${totalDagFiles} DAG run(s) successfully${queueSuffix}`
     );
   }
   if (failedCount > 0) {
@@ -54,6 +55,7 @@ export async function triggerProjectWithDagSelection({
   projectId,
   projectName,
   deploymentId,
+  deployment,
   files: existingFiles,
   onAwaitingUserChoice,
   onTriggerStart,
@@ -79,38 +81,76 @@ export async function triggerProjectWithDagSelection({
     return;
   }
 
-  const execTrigger = async (fileName) => {
-    const response = await projectAPI.trigger(projectId, deploymentId, fileName);
+  const queueOptions = Array.isArray(deployment?.workerQueues)
+    ? deployment.workerQueues
+        .map((queue) => ({
+          value: (queue?.name || '').trim(),
+          workers: queue?.workers ?? 1,
+        }))
+        .filter((queue) => queue.value)
+    : [];
+
+  const execTrigger = async (fileName, workerQueue) => {
+    const response = await projectAPI.trigger(projectId, deploymentId, fileName, workerQueue);
     showTriggerResult(response, projectName);
     return response;
   };
 
-  if (dagFiles.length === 1) {
-    await execTrigger(dagFiles[0].fileName);
+  if (dagFiles.length === 1 && queueOptions.length === 0) {
+    await execTrigger(dagFiles[0].fileName, null);
     return;
   }
 
   onAwaitingUserChoice?.();
 
-  let selectedFileName = null;
+  let selectedFileName = dagFiles.length === 1 ? dagFiles[0].fileName : null;
+  let selectedQueueName = null;
   return new Promise((resolve, reject) => {
     Modal.confirm({
       title: `Trigger DAG — ${label}`,
       width: 480,
       content: (
         <div>
-          <p style={{ marginBottom: 12 }}>This project has multiple DAG files. Choose which one to trigger:</p>
-          <Select
-            style={{ width: '100%' }}
-            placeholder="Select DAG file"
-            onChange={(value) => {
-              selectedFileName = value;
-            }}
-            options={dagFiles.map((f) => ({
-              label: f.filePath || f.fileName,
-              value: f.fileName,
-            }))}
-          />
+          {dagFiles.length > 1 ? (
+            <>
+              <p style={{ marginBottom: 12 }}>Choose which DAG file to trigger:</p>
+              <Select
+                style={{ width: '100%', marginBottom: queueOptions.length ? 12 : 0 }}
+                placeholder="Select DAG file"
+                onChange={(value) => {
+                  selectedFileName = value;
+                }}
+                options={dagFiles.map((f) => ({
+                  label: f.filePath || f.fileName,
+                  value: f.fileName,
+                }))}
+              />
+            </>
+          ) : (
+            <p style={{ marginBottom: queueOptions.length ? 12 : 0 }}>
+              DAG file: <strong>{dagFiles[0].filePath || dagFiles[0].fileName}</strong>
+            </p>
+          )}
+          {queueOptions.length > 0 && (
+            <>
+              <p style={{ marginBottom: 8 }}>
+                Run using task queue (optional). Local deployments route to queue-specific workers; other providers may map
+                the same queue name differently.
+              </p>
+              <Select
+                style={{ width: '100%' }}
+                placeholder="Default queue behavior"
+                allowClear
+                onChange={(value) => {
+                  selectedQueueName = value || null;
+                }}
+                options={queueOptions.map((q) => ({
+                  label: `${q.value} (${q.workers} worker${q.workers === 1 ? '' : 's'})`,
+                  value: q.value,
+                }))}
+              />
+            </>
+          )}
         </div>
       ),
       okText: 'Trigger',
@@ -122,7 +162,7 @@ export async function triggerProjectWithDagSelection({
         }
         try {
           onTriggerStart?.();
-          await execTrigger(selectedFileName);
+          await execTrigger(selectedFileName, selectedQueueName);
           resolve();
         } catch (error) {
           console.error('Error triggering project:', error);
@@ -140,7 +180,7 @@ export async function triggerProjectDagFile(projectId, deploymentId, fileName, p
     message.error('deploymentId and fileName are required');
     return;
   }
-  const response = await projectAPI.trigger(projectId, deploymentId, fileName);
+  const response = await projectAPI.trigger(projectId, deploymentId, fileName, null);
   showTriggerResult(response, projectName);
   return response;
 }

@@ -1,6 +1,9 @@
 package com.airflow.platform.service;
 
+import com.airflow.platform.dto.DeploymentCreateRequest;
 import com.airflow.platform.model.AirflowDeployment;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -13,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Generates Docker Compose files for Airflow 3.x (api-server, dag-processor, init ordering).
@@ -22,6 +27,9 @@ import java.nio.file.Paths;
 @ConditionalOnExpression("'${deployment.provider}' == 'ec2' or '${deployment.provider}' == 'local'")
 @Slf4j
 public class DockerComposeGenerator {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final TypeReference<List<DeploymentCreateRequest.WorkerQueueConfig>> WORKER_QUEUE_LIST_TYPE =
+            new TypeReference<>() {};
 
     @Value("${deployment.provider}")
     private String deploymentProvider;
@@ -229,27 +237,14 @@ public class DockerComposeGenerator {
         compose.append("        condition: service_completed_successfully\n\n");
 
         if (needsRedis) {
-            compose.append("  airflow-worker:\n");
-            compose.append("    <<: *airflow-common\n");
-            compose.append("    command: celery worker\n");
-            compose.append("    healthcheck:\n");
-            compose.append("      test:\n");
-            compose.append("        - \"CMD-SHELL\"\n");
-            compose.append("        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d \"celery@$${HOSTNAME}\" "
-                    + "|| celery --app airflow.executors.celery_executor.app inspect ping -d \"celery@$${HOSTNAME}\"'\n");
-            compose.append("      interval: 30s\n");
-            compose.append("      timeout: 10s\n");
-            compose.append("      retries: 5\n");
-            compose.append("      start_period: 30s\n");
-            compose.append("    environment:\n");
-            compose.append("      <<: *airflow-common-env\n");
-            compose.append("      DUMB_INIT_SETSID: \"0\"\n");
-            compose.append("    restart: always\n");
-            compose.append("    depends_on:\n");
-            compose.append("      airflow-init:\n");
-            compose.append("        condition: service_completed_successfully\n");
-            compose.append("      airflow-apiserver:\n");
-            compose.append("        condition: service_healthy\n\n");
+            List<WorkerQueueSpec> queueSpecs = resolveWorkerQueueSpecs(deployment);
+            if (queueSpecs.isEmpty()) {
+                appendWorkerService(compose, "airflow-worker", null);
+            } else {
+                for (WorkerQueueSpec spec : queueSpecs) {
+                    appendWorkerService(compose, spec.serviceName(), spec.queueName());
+                }
+            }
 
             int flowerPort = getFlowerPort(deployment);
             compose.append("  airflow-flower:\n");
@@ -277,6 +272,23 @@ public class DockerComposeGenerator {
         compose.append("    name: ").append(deployment.getDeploymentId()).append("-network\n");
 
         return compose.toString();
+    }
+
+    public List<String> getCeleryWorkerServiceNames(AirflowDeployment deployment) {
+        boolean needsRedis = deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY
+                || deployment.getExecutorType() == AirflowDeployment.ExecutorType.CELERY_KUBERNETES;
+        if (!needsRedis) {
+            return List.of();
+        }
+        List<WorkerQueueSpec> queueSpecs = resolveWorkerQueueSpecs(deployment);
+        if (queueSpecs.isEmpty()) {
+            return List.of("airflow-worker");
+        }
+        List<String> names = new ArrayList<>();
+        for (WorkerQueueSpec spec : queueSpecs) {
+            names.add(spec.serviceName());
+        }
+        return names;
     }
 
     public String generateEnvFile(AirflowDeployment deployment) {
@@ -378,5 +390,79 @@ public class DockerComposeGenerator {
                 deployment.getDeploymentId()
         );
         return Files.exists(deploymentPath.resolve("Dockerfile"));
+    }
+
+    private void appendWorkerService(StringBuilder compose, String serviceName, String queueName) {
+        compose.append("  ").append(serviceName).append(":\n");
+        compose.append("    <<: *airflow-common\n");
+        compose.append("    command: celery worker");
+        if (StringUtils.hasText(queueName)) {
+            compose.append(" -q ").append(queueName.trim());
+        }
+        compose.append("\n");
+        compose.append("    healthcheck:\n");
+        compose.append("      test:\n");
+        compose.append("        - \"CMD-SHELL\"\n");
+        compose.append("        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d \"celery@$${HOSTNAME}\" "
+                + "|| celery --app airflow.executors.celery_executor.app inspect ping -d \"celery@$${HOSTNAME}\"'\n");
+        compose.append("      interval: 30s\n");
+        compose.append("      timeout: 10s\n");
+        compose.append("      retries: 5\n");
+        compose.append("      start_period: 30s\n");
+        compose.append("    environment:\n");
+        compose.append("      <<: *airflow-common-env\n");
+        compose.append("      DUMB_INIT_SETSID: \"0\"\n");
+        compose.append("    restart: always\n");
+        compose.append("    depends_on:\n");
+        compose.append("      airflow-init:\n");
+        compose.append("        condition: service_completed_successfully\n");
+        compose.append("      airflow-apiserver:\n");
+        compose.append("        condition: service_healthy\n");
+        compose.append("\n");
+    }
+
+    private List<WorkerQueueSpec> resolveWorkerQueueSpecs(AirflowDeployment deployment) {
+        if (!StringUtils.hasText(deployment.getWorkerQueues())) {
+            return List.of();
+        }
+        try {
+            List<DeploymentCreateRequest.WorkerQueueConfig> parsed =
+                    OBJECT_MAPPER.readValue(deployment.getWorkerQueues(), WORKER_QUEUE_LIST_TYPE);
+            if (parsed == null || parsed.isEmpty()) {
+                return List.of();
+            }
+            List<WorkerQueueSpec> specs = new ArrayList<>();
+            int idx = 1;
+            for (DeploymentCreateRequest.WorkerQueueConfig queue : parsed) {
+                if (queue == null || !StringUtils.hasText(queue.getName())) {
+                    continue;
+                }
+                String normalizedName = queue.getName().trim();
+                String slug = normalizedName.toLowerCase()
+                        .replaceAll("[^a-z0-9-]", "-")
+                        .replaceAll("-+", "-")
+                        .replaceAll("^-|-$", "");
+                if (!StringUtils.hasText(slug)) {
+                    slug = "queue-" + idx;
+                }
+                Integer workers = queue.getWorkers();
+                int desiredWorkers = workers == null ? 1 : Math.max(1, workers);
+                if (desiredWorkers == 1) {
+                    specs.add(new WorkerQueueSpec("airflow-worker-" + slug, normalizedName));
+                } else {
+                    for (int replica = 1; replica <= desiredWorkers; replica++) {
+                        specs.add(new WorkerQueueSpec("airflow-worker-" + slug + "-" + replica, normalizedName));
+                    }
+                }
+                idx++;
+            }
+            return specs;
+        } catch (Exception e) {
+            log.warn("Invalid workerQueues JSON for deployment {}: {}", deployment.getDeploymentId(), e.getMessage());
+            return List.of();
+        }
+    }
+
+    private record WorkerQueueSpec(String serviceName, String queueName) {
     }
 }

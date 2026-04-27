@@ -1,12 +1,16 @@
 package com.airflow.platform.dto;
 
 import com.airflow.platform.model.AirflowDeployment;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * DTO for Airflow deployment response
@@ -16,6 +20,9 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DeploymentResponse {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final TypeReference<List<DeploymentCreateRequest.WorkerQueueConfig>> WORKER_QUEUE_LIST_TYPE =
+            new TypeReference<>() {};
 
     private Long id;
     private String deploymentId;
@@ -38,6 +45,7 @@ public class DeploymentResponse {
     private String webserverMemory;
     private String webserverUrl;
     private String ingressHost;
+    private List<DeploymentCreateRequest.WorkerQueueConfig> workerQueues;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime deployedAt;
@@ -66,10 +74,38 @@ public class DeploymentResponse {
                 .webserverMemory(deployment.getWebserverMemory())
                 .webserverUrl(deployment.getWebserverUrl())
                 .ingressHost(deployment.getIngressHost())
+                .workerQueues(readWorkerQueues(deployment.getWorkerQueues()))
                 .createdAt(deployment.getCreatedAt())
                 .updatedAt(deployment.getUpdatedAt())
                 .deployedAt(deployment.getDeployedAt())
                 .localStackLastActivityAt(deployment.getLocalStackLastActivityAt())
                 .build();
+    }
+
+    private static List<DeploymentCreateRequest.WorkerQueueConfig> readWorkerQueues(String rawWorkerQueues) {
+        if (rawWorkerQueues == null || rawWorkerQueues.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<DeploymentCreateRequest.WorkerQueueConfig> parsed =
+                    OBJECT_MAPPER.readValue(rawWorkerQueues, WORKER_QUEUE_LIST_TYPE);
+            if (parsed == null || parsed.isEmpty()) {
+                return List.of();
+            }
+            List<DeploymentCreateRequest.WorkerQueueConfig> normalized = new ArrayList<>();
+            for (DeploymentCreateRequest.WorkerQueueConfig queue : parsed) {
+                if (queue == null || queue.getName() == null || queue.getName().isBlank()) {
+                    continue;
+                }
+                DeploymentCreateRequest.WorkerQueueConfig cleaned = new DeploymentCreateRequest.WorkerQueueConfig();
+                cleaned.setName(queue.getName().trim());
+                Integer workers = queue.getWorkers();
+                cleaned.setWorkers(workers == null || workers < 1 ? 1 : workers);
+                normalized.add(cleaned);
+            }
+            return normalized;
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 }

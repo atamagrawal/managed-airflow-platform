@@ -54,6 +54,7 @@ const Deployments = () => {
   const [localIdleTimeoutMinutes, setLocalIdleTimeoutMinutes] = useState(60);
   const [now, setNow] = useState(() => Date.now());
   const [form] = Form.useForm();
+  const selectedExecutorType = Form.useWatch('executorType', form);
   const [openingAirflowDeploymentId, setOpeningAirflowDeploymentId] = useState(null);
   const [localStackBusyId, setLocalStackBusyId] = useState(null);
   const [keepAliveBusyId, setKeepAliveBusyId] = useState(null);
@@ -66,6 +67,22 @@ const Deployments = () => {
       fetchTenants();
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!modalVisible) return;
+    const current = form.getFieldsValue();
+    if (!current.executorType) {
+      form.setFieldsValue({
+        executorType: deploymentProvider === 'local' ? 'CELERY' : 'LOCAL',
+      });
+    }
+    const queues = current.workerQueues;
+    if (deploymentProvider === 'local' && (!Array.isArray(queues) || queues.length === 0)) {
+      form.setFieldsValue({
+        workerQueues: [{ name: 'default', workers: 1 }],
+      });
+    }
+  }, [modalVisible, deploymentProvider, form]);
 
   // Local deploy can take minutes; poll while any row is still provisioning so status self-heals from the API.
   useEffect(() => {
@@ -175,6 +192,27 @@ const Deployments = () => {
       if (creatingDeployment) return;
       setCreatingDeployment(true);
 
+      const normalizedWorkerQueues = (values.workerQueues || [])
+        .map((queue) => ({
+          name: (queue?.name || '').trim(),
+          workers: queue?.workers ?? 1,
+        }))
+        .filter((queue) => queue.name);
+      const seen = new Set();
+      for (const queue of normalizedWorkerQueues) {
+        const key = queue.name.toLowerCase();
+        if (seen.has(key)) {
+          message.error(`Duplicate worker queue name: "${queue.name}"`);
+          return;
+        }
+        seen.add(key);
+      }
+
+      const payload = {
+        ...values,
+        workerQueues: normalizedWorkerQueues,
+      };
+
       // UX: close the form immediately, while we create the deployment in the background.
       // Also show an in-progress row in the deployments table.
       setModalVisible(false);
@@ -207,13 +245,14 @@ const Deployments = () => {
           webserverMemory: values.webserverMemory,
           webserverUrl: undefined,
           ingressHost: '',
+          workerQueues: normalizedWorkerQueues,
           createdAt: tempCreatedAt,
           updatedAt: tempCreatedAt,
           deployedAt: tempCreatedAt,
         },
       ]);
 
-      await deploymentAPI.create(values);
+      await deploymentAPI.create(payload);
       // Replace the optimistic row with server truth.
       message.success('Deployment created successfully');
       fetchDeployments();
@@ -225,6 +264,23 @@ const Deployments = () => {
     } finally {
       setCreatingDeployment(false);
     }
+  };
+
+  const addQueuePreset = (preset) => {
+    const current = form.getFieldValue('workerQueues') || [];
+    const next = [...current];
+    const pushIfMissing = (name, workers) => {
+      const exists = next.some((q) => (q?.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (!exists) next.push({ name, workers });
+    };
+    if (preset === 'default') {
+      pushIfMissing('default', 1);
+    } else if (preset === 'priority') {
+      pushIfMissing('high_priority', 1);
+      pushIfMissing('default', 2);
+      pushIfMissing('low_priority', 1);
+    }
+    form.setFieldsValue({ workerQueues: next });
   };
 
   const handleDeleteDeployment = async (deploymentId) => {
@@ -676,9 +732,12 @@ const Deployments = () => {
           onFinish={handleCreateDeployment}
           initialValues={{
             airflowVersion: DEFAULT_AIRFLOW_VERSION,
-            executorType: 'LOCAL',
+            executorType: deploymentProvider === 'local' ? 'CELERY' : 'LOCAL',
             minWorkers: 1,
             maxWorkers: 3,
+            ...(deploymentProvider === 'local' && {
+              workerQueues: [{ name: 'default', workers: 1 }],
+            }),
             ...(deploymentProvider === 'ecs' && {
               schedulerCpu: '512',
               schedulerMemory: '1024',
@@ -762,7 +821,7 @@ const Deployments = () => {
             tooltip={
               deploymentProvider === 'kubernetes'
                 ? 'LOCAL: Single-process execution. CELERY: Distributed with Redis. KUBERNETES: Each task in separate pod. CELERY_KUBERNETES: Hybrid approach.'
-                : 'LOCAL: Single-process execution (recommended for dev/test). CELERY: Distributed task execution with Redis.'
+                : 'LOCAL: Single-process execution (recommended for dev/test). CELERY: Distributed task execution with Redis. Queue routing is configured below and can be mapped by provider.'
             }
           >
             <Select placeholder="Select executor type">
@@ -777,11 +836,70 @@ const Deployments = () => {
             </Select>
           </Form.Item>
 
+          {(selectedExecutorType === 'CELERY' || selectedExecutorType === 'CELERY_KUBERNETES') && (
+            <Form.List name="workerQueues">
+              {(fields, { add, remove }) => (
+                <Form.Item
+                  label="Worker Queues"
+                  extra="Optional task queue routing. Local Docker Compose maps these to Celery workers today; other providers can map the same queue names to their runtime strategy. Leave empty to use default queue behavior."
+                >
+                  <Space style={{ marginBottom: 8 }} wrap>
+                    <Button size="small" onClick={() => addQueuePreset('default')}>
+                      Use default queue
+                    </Button>
+                    <Button size="small" onClick={() => addQueuePreset('priority')}>
+                      Add priority preset
+                    </Button>
+                  </Space>
+                  <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                    {fields.map(({ key, name, ...restField }) => (
+                      <Space key={key} align="baseline" wrap>
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'name']}
+                          rules={[
+                            { required: true, message: 'Queue name is required' },
+                            { max: 100, message: 'Max 100 chars' },
+                          ]}
+                          style={{ marginBottom: 0, minWidth: 240 }}
+                        >
+                          <Input placeholder="Queue name (e.g. default)" />
+                        </Form.Item>
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'workers']}
+                          rules={[{ required: true, message: 'Workers required' }]}
+                          style={{ marginBottom: 0 }}
+                        >
+                          <InputNumber min={1} placeholder="Workers" style={{ width: 110 }} />
+                        </Form.Item>
+                        <Button
+                          type="text"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => remove(name)}
+                          aria-label="Remove queue"
+                        />
+                      </Space>
+                    ))}
+                    <Button
+                      type="dashed"
+                      onClick={() => add({ name: '', workers: 1 })}
+                      icon={<PlusOutlined />}
+                    >
+                      Add queue
+                    </Button>
+                  </Space>
+                </Form.Item>
+              )}
+            </Form.List>
+          )}
+
           <Form.Item
             label="Worker Scaling"
             tooltip={
               deploymentProvider === 'local' || deploymentProvider === 'ec2'
-                ? 'Number of worker replicas for Celery executor. Docker Compose will maintain this count.'
+                ? 'Worker replica range. For queue-based local deployments, this acts as a general capacity target; per-queue worker counts are set above.'
                 : deploymentProvider === 'ecs'
                 ? 'Min and desired worker count. ECS auto-scaling can adjust based on metrics.'
                 : 'Min and max workers. KEDA auto-scaling adjusts based on queue depth.'
